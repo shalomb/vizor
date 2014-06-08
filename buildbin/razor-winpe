@@ -1,14 +1,27 @@
 #!/bin/bash
 
+[[ $DEBUG ]] && set -xv
 set -eu
 
 DIR=$( cd "${BASH_SOURCE[0]%/*}" && pwd )
-SCRIPT="${BASH_SOURCE[0]}"
+SCRIPT="$DIR/${BASH_SOURCE[0]}"
+SRC_DIR="${SCRIPT%/*}"
 TMP="${TMP:-$(mktemp -d)}"
 TMPDIR="$TMP"
-SRC_DIR="$PWD"
 PATH="$PATH:$PWD"
 TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
+WORKING_DIR='/usr/src'
+
+while getopts ":p:i:o:s:" opt; do
+  case $opt in
+    i) kb3aik_en_iso="$OPTARG" 
+      ;;
+    w) WORKING_DIR="$OPTARG"
+      ;;
+    o) OUTPUT_DIR="$OPTARG"
+    ;;
+  esac
+done
 
 distro=$(lsb_release -is | tr 'A-Z' 'a-z')
 case "$distro" in
@@ -26,10 +39,10 @@ fi
 
 mkdir -pv "$overlay_dir"
 
-pushd /usr/src
+pushd "$WORKING_DIR"
 
 SRC_BIN_DIR="$SRC_DIR/build-razor-winpe.d"
-time { "$SRC_BIN_DIR"/razor-server   'x86'    "$curl_amd64_url"   ; }
+# time { "$SRC_BIN_DIR"/razor-server   'x86'    "$curl_amd64_url"   ; }
 time { "$SRC_BIN_DIR"/curl-win       'x86'    "$curl_amd64_url"   ; }
 time { "$SRC_BIN_DIR"/curl-win       'amd64'  "$curl_x86_url"     ; }
 
@@ -52,6 +65,7 @@ mount -o loop,ro "/usr/src/KB3AIK_EN.iso" "$waik_mp" || true
 # Patch our bootstrap script
 winpe_bootstrap_script="/tmp/${razor_client_script##*/}"
 cp -a "$razor_client_script" "$winpe_bootstrap_script"
+
 sed -r -i 's/\[%RAZOR_SERVER%\]/'"$RAZOR_SERVER"'/' "$winpe_bootstrap_script"
 
 # build out winpe images
