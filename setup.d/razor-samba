@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -eu
+set -xv
+
+pkgs_to_install=()
+
+for pkg in \
+   samba cifs-utils \
+  ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  sudo aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+grep -Eio '\[razor\]' /etc/samba/smb.conf || >>/etc/samba/smb.conf cat <<EOF
+[razor]
+  comment   = Windows Install Images for Razor
+  path      = /var/lib/razor/repo_store/
+  guest ok  = yes
+  writable  = no
+  browsable = yes
+EOF
+
+service samba restart
+

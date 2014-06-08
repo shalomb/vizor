@@ -1,0 +1,16 @@
+#!/bin/bash
+
+cd /usr/src
+
+[[ -d razor-client ]] || git clone https://github.com/puppetlabs/razor-client.git
+cd razor-client
+git pull
+git checkout 0.15.0
+
+CFLAGS="-march=native -Os" rbenv install 2.1.2
+
+rbenv rehash && rbenv global 2.1.2
+gem install bundler
+bundle install
+/var/lib/razor/repo_store
+

@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -eu
+set -xv
+
+pkgs_to_install=()
+
+for pkg in \
+    build-essential autoconf automake bison git
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  sudo aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+grep -iq -- '--no-rdoc' ~/.gemrc || echo 'gem: --no-rdoc --no-ri --no-document' >> ~/.gemrc
+type -P gem &>/dev/null || gem install bundler

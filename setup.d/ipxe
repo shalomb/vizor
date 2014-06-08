@@ -1,0 +1,68 @@
+#!/bin/bash
+
+FORCE="$FORCE"
+
+set -eu
+
+# 'iPXE - open source boot firmware [download]' http://ipxe.org/download
+
+src_url="${1:-git://git.ipxe.org/ipxe.git}"
+bootstrap_script=$(readlink -f "$2")
+target_dir="$3"
+
+pkgs_to_install=()
+# aptitude install -y 
+for pkg in \
+  build-essential binutils make syslinux zlib1g-dev binutils-dev git \
+  syslinux syslinux-common genisoimage \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  sudo aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+if [[ -e ipxe/src/bin/ipxe.iso ]]; then
+  echo -e "ipxe already built.\n" >&2
+  [[ $FORCE ]] || exit 0
+fi
+
+[[ ! -d ipxe ]] && git clone "$src_url"
+
+cd ipxe/src
+git pull
+make
+
+set -xv
+# TODO : Generate images with embedded ipxe scripts
+for target in \
+  bin/ipxe.iso \
+  bin/ipxe.usb \
+  bin/undionly.kpxe \
+  ; do
+  if [[ $bootstrap_script ]]; then
+    make "$target" EMBED="$bootstrap_script"
+  else
+    make "$target"
+  fi
+
+  if [[ $target_dir ]]; then
+    cp -a "$target" "$target_dir"
+  fi
+done
+
+exit $?
+
+* http://ipxe.org/embed
+* make bin/undionly.kpxe EMBED=myscript.ipxe
+
+* http://ipxe.org/crypto
+* make bin/ipxe.iso TRUST=/path/to/ca1.crt,/path/to/ca2.crt
+
+* To create a bootable floppy, cat bin/ipxe.dsk > /dev/fd0
+* To create a bootable USB key, cat bin/ipxe.usb > /dev/sdX
+* To create a bootable CD-ROM, burn bin/ipxe.iso to a blank CD-ROM.
+

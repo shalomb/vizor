@@ -1,0 +1,48 @@
+#!/bin/bash
+
+set -x -v
+
+set -a
+source /etc/default/hds_global      &>/dev/null
+source /etc/default/hds_site        &>/dev/null
+source /etc/default/hds_iso_windows &>/dev/null
+
+set -e -u
+
+iso="$1"
+imgname="$2"
+
+cd $PXEROOT
+
+imgdir=img/"$imgname"
+
+for d in src boot.wim.d; do
+  mkdir -pv "$imgdir/$d"
+done
+
+cd "$imgdir"
+
+[[ -e boot.wim ]] && rm boot.wim; 
+
+if [[ -f "$iso" ]]; then
+  isodir=$(mktemp -d)
+  mount -o loop "$iso" "$isodir/"
+  was_mounted_here=1
+elif [[ -d "$iso" ]]; then
+  isodir="$iso"
+fi
+
+cp -v $CONFBASE/windows/unattend.xml "$PWD"
+
+perl -i.bak -pe 'if (/(\[%\s+([^%]+)\s+%\])/) { print STDERR join "|", "s/$1/", $ENV{$2}; print STDERR "$_ => "; if (exists $ENV{$2}) { s/\[\s+[^%]+\s+\]/$ENV{$2}/g;  print STDERR "$_ | $2 | ", $ENV{$2}; } print  STDERR "\n" }' unattend.xml
+
+echo "TIMEZONE : $TIMEZONE"
+
+echo mkwinpeimg -o --windows-dir="$isodir" boot.wim -O boot.wim.d/
+echo rsync -avP "$isodir/sources/install.wim" ./
+
+if (( was_mounted_here == 1 )); then
+  umount "$isodir"
+  rmdir "$isodir"
+fi
+

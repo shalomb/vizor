@@ -1,0 +1,385 @@
+#!/bin/bash
+
+shopt -s expand_aliases extglob nullglob
+
+[[ $DEBUG ]] && set -xv
+
+action="$1"
+args="$@"
+
+set -e -u
+
+function print_stacktrace() {
+  local fatal="$1" 
+  local frame=0
+
+  echo "$*"
+  ( set +eu
+    while caller $frame; do
+      ((frame++));
+    done 2>&1 | sed 's/^/  /'
+  )
+}
+
+function warn { print_stacktrace "WARNING : $@"; return 1; }
+function die  { print_stacktrace "ERROR : $@"; exit 3; }
+
+function assert {
+  local boolean="$1"
+  local warning="${2:-}"
+
+  (( ! boolean )) && die "$warning" >&2
+}
+
+function cmd_exists {
+  local cmd="$1"
+  type -P "$cmd" &>/dev/null || {
+    return 1
+  };
+  return 0
+}
+
+this_name="${0##*/}"
+
+       list_dir='/var/lib/hds/lists/windows'
+  list_meta_dir='/var/lib/hds/meta/windows'
+   list_iso_dir='/mnt/iso-src/windows'
+   release_dirs='/etc/default/hds_windows_release_dirs'
+
+mkdir -p "$list_dir" "$list_meta_dir"
+
+function is_empty {
+  local dir="$1"
+  files=$(shopt -s nullglob dotglob; echo "$dir"/*)
+  (( ${#files} == 0 )) && return 0
+  return 1
+} 
+
+function namesum {
+  local name="$1"
+  openssl dgst -sha1 -binary <<<"$name" | openssl base64
+}
+
+function gen_iso_list {
+  local iso_dir="$1"
+  while read -r file; do
+    stat --printf "%Y %s %i %n\n" "$file"
+  done < <( find "$iso_dir" -iname "*.iso" -type f ) |
+    sort -n | while read -r mtime size inode file; do 
+      echo "$(namesum "$file") $mtime $size $inode $file"
+    done
+}
+
+function mount_url {
+  local url="$1"
+  local type="${url%://*}"
+  
+  case "$type" in
+    cifs)
+      local username="${url#*://}"
+      local hostname="${username#*@}"
+      local username="${username%@*}"
+      local password="${username#*:}"
+      local username="${username%:*}"
+      local path="${hostname#*/}"
+      local hostname="${hostname%%/*}"
+    ;;
+    nfs)
+      local url="${url#*://}"
+      local hostname="${url%%:*}"
+      local path="/${url##*:/}"
+      ;;
+    *)
+      :;
+    ;;
+  esac
+
+  mp="$list_iso_dir/${hostname//[!0-9A-Za-z_.]/}/${path//[!0-9A-Za-z\$\/_.,]/}"
+ 
+  [[ -e $mp ]] || mkdir -p "$mp" &>/dev/null
+
+  is_mount_point_empty=0;
+  is_mount_point_mounted=0;
+  is_empty "$mp"      && is_mount_point_empty=1
+  mountpoint -q "$mp" && is_mount_point_mounted=1
+
+  if (( is_mount_point_empty && ! is_mount_point_mounted )); then
+    case "$type" in
+      nfs)
+        mount -t "$type" -o 'ro,bg,intr,soft,tcp' "$hostname:$path" "$mp"
+      ;;
+      cifs)
+        mount -t "$type" -o 'ro,intr,directio,soft' "//$hostname/$path" "$mp" -o "username=${username},password=${password}"
+      ;;
+      *)
+        mount -t "$type" "$hostname:$path"
+      ;;
+    esac
+  fi
+
+  echo "$mp"
+}
+
+function update {
+
+  # find "$list_iso_dir" -depth -exec bash -c '
+  #     for i; do mountpoint -q "$i" && umount -f "$i"; done
+  #   ' _ {} + 2> /dev/null || true
+
+  # Clear lists
+  rm -fr "$list_dir/"       || true
+  rm -fr "$list_meta_dir/"  || true
+
+  # Mount every directory, and update lists
+  echo
+  echo "Scanning for ISOs"
+  while read -r type url pathstr; do
+    [[ $url ]] || continue
+  
+    if ! [[ $type = '#'* ]]; then
+      read -a paths <<<"$pathstr"
+      echo "  ${url##*@} .. " 
+
+      for path in "${paths[@]}"; do
+        mp=$(mount_url "$url/$path")
+
+        if [[ $mp ]]; then
+          printf "    %-10s .. " "$path"
+
+          url_t="${url##*@}"
+          list="$list_dir/${url_t}/${path}"
+          list="${list//[!0-9A-Za-z.\-/]/.}"
+          list="${list//\.\./.}/list"
+
+          mkdir -p "${list%/*}"
+          gen_iso_list "$mp" > "$list"
+          c=$(wc -l < "$list")
+
+          printf "has %3s ISOs.\n" "$c"
+        else
+          echo "    Failed to mount '$path'" >&2
+        fi
+      done
+
+    fi
+  done < "$release_dirs"
+
+  echo
+  echo "Updating ISO metadata .."
+
+  while read list; do 
+    printf "  %s (%s) " "${list}" $(wc -l < "$list") >&2
+    while read namesum mtime size inode file; do
+      file -bi "$file" | grep -iq 'iso9660' && update_iso_image_metadata "$file"
+      printf '.'
+    done < "$list"
+    echo
+  done < <(find "$list_dir" -type f -iname "list")
+
+}
+
+function update_iso_image_metadata {
+  local file="$1"
+  
+  local metadir="$list_meta_dir/$file"
+
+  # if [[ -d $metadir ]]; then
+  #   echo "$list_meta_dir/$file"
+  #   find "$metadir" -type f -exec cat {} +
+  #   return
+  # fi
+
+  local filemime=$(file -bi "$file")
+
+  if [[ $filemime = *'application/x-iso9660-image'* ]]; then
+    local tmpdir=$(mktemp -d)
+
+    mount -o loop,ro "$file" "$tmpdir"
+    install_wim="$tmpdir/sources/install.wim"
+
+    if [[ -f "$install_wim" ]]; then
+      max_image_index=$(wimlib-imagex info "$install_wim" 2>/dev/null | awk '/^Index:/{print $2}' | tail -n 1)
+      cur_image_index=1
+
+      while (( cur_image_index <= max_image_index )); do
+        mkdir -p "$metadir"
+        metafile="$metadir/$cur_image_index.meta"
+        { 
+          echo "  ID : $(namesum "$file")"
+          echo " ISO : ${file##*/}"
+          echo "File : $file"
+
+          wimlib-imagex info "$install_wim" "$cur_image_index" 2>/dev/null 
+
+          echo
+        } > "$metafile"
+
+        (( cur_image_index++ ))
+      done
+    fi
+    
+    max_unmount_tries=30; c=0
+    while ! umount -f "$tmpdir" &>/dev/null; do
+      (( c >= max_unmount_tries )) && break
+      (( c++ ))
+      sleep 0.1
+    done
+
+    rmdir "$tmpdir"
+  else
+    echo "$file is not an iso9660 image .." >&2
+  fi
+  
+}
+
+function grep_color {
+  local regex="$1"
+  local file="$2"
+
+  perl -00 -ne '
+    use Term::ANSIColor qw[:constants]; 
+    if ( /'"$regex"'/is ) {
+      s/('"$regex"')/BRIGHT_GREEN $1, RESET/iegs if -t STDOUT;
+      print;
+    }
+  ' "$file" 
+}
+
+function gen_iso_master_list {
+  local master_list="$1"
+  
+  [[ -e $master_list ]] && rm -f "$master_list"
+
+  while read list; do 
+    while read namesum timestamp size inode file; do
+      
+      local filemime=$(file -bi "$file")
+      local shortname="${file##*/}"
+      local      date=$(stat -c '%y' "$file")
+      local    size_h=$(printf '%2.2f' $( echo 'scale=2;'"$size"'/1024/1024/1024' | bc -l ))
+  
+      isoinfo_tmp="$(mktemp)"
+      if isoinfo -f -d -i  "$file" > "$isoinfo_tmp" 2>/dev/null; then
+          volid=$(awk -F'[: ]' '/Volume id/{print $4}' "$isoinfo_tmp" || true)
+        bootid=$(awk          '/Bootid/{print $2" "$3}' "$isoinfo_tmp" || true)
+      fi
+      rm -f "$isoinfo_tmp"
+  
+      cat <<EOF
+        id  : $namesum
+      volid : $volid
+       name : $shortname
+       path : $file
+   mimetype : $filemime
+     bootid : $bootid
+       date : $timestamp ($date)
+       size : $size ($size_h GiB)
+      inode : $inode
+  
+EOF
+    done < "$list" | tee -a "$master_list"
+  done < <(find "$list_dir" -type f -iname "list")
+}
+
+function iso_list { iso_show "$@" ; }
+function iso_show {
+  
+  local master_list="$list_dir/master.list"
+
+  [[ ! -e $master_list ]] && gen_iso_master_list "$master_list"
+
+  if (( $# == 0 )); then
+    cat "$master_list"
+  else
+    grep_color "$@" "$master_list"
+  fi
+
+  return
+}
+
+function image_show {
+  local master_list="$list_meta_dir/master.list"
+  
+  if [[ ! -e $master_list ]]; then
+    find "$list_meta_dir" -type f -iname "*.meta" -exec cat {} + > "$master_list"
+    find "$master_list" -empty -delete
+  fi
+  
+  if [[ ! -e $master_list ]]; then
+    echo 'No list metadata found .. please update.'
+    return 
+  fi
+
+  if (( $# == 0 )); then
+    cat "$master_list"
+  else
+    grep_color "$@" "$master_list"
+  fi
+}
+
+function inputs_show {
+  if (( $# == 0 )); then
+    cat "$release_dirs"
+  fi
+}
+
+function show_help {
+  cat <<EOF
+
+$this_name - Manage windows ISOs.
+
+subcommands
+
+  update    -   update ISO list
+
+  iso       -   Work with the ISO catalog
+    show [name]
+
+  image     -   Work with the image catalog
+    show [name]
+
+  inputs    -   Work with input directories
+
+EOF
+}
+
+
+cmd_exists  isoinfo  || warn 'Command "isoinfo" not found.'
+cmd_exists  openssl  || warn 'Command "openssl" not found.'
+cmd_exists  stat     || warn 'Command "stat" not found.'
+cmd_exists  wimlib-imagex   || warn 'Command "wimlib-imagex" not found.'
+
+action=
+cmd=
+
+(( $# >= 1 )) && { action="$1"; shift; }
+(( $# >= 1 )) && { cmd="$1";    shift; }
+
+case "$action" in 
+
+  update)
+    update
+  ;;
+
+  iso)
+    iso_"${cmd:-show}" "$@"
+  ;;
+
+  image)
+    image_"${cmd:-show}" "$@"
+  ;;
+
+  inputs)
+    inputs_"${cmd:-show}" "$@"
+  ;;
+
+  uim)
+    update_iso_image_metadata "$cmd"
+  ;;
+
+  *)
+    echo "unsupported/unimplemented action '$action'."
+    show_help
+    exit 3
+  ;;
+esac

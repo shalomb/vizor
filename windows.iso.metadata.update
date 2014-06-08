@@ -1,0 +1,50 @@
+#!/bin/bash
+
+source /etc/default/hds_global
+
+# set -xv
+set -eu
+
+
+[[ -d "$ISOMETADIR" ]] || mkdir -p "$ISOMETADIR"
+
+function get_iso_metadata {
+  local file="$1"
+  printf "%s\n" "${file##*/}"
+  local filemime=$(file -bi "$file")
+
+  if [[ $filemime = *'application/x-iso9660-image'* ]]; then
+    local tmpdir=$(mktemp -d)
+
+    mount -o loop "$file" "$tmpdir"
+    install_wim="$tmpdir/sources/install.wim"
+
+    if [[ -f "$install_wim" ]]; then
+      max_image_index=$(wimlib-imagex info "$install_wim"  | awk '/^Index:/{print $2}' | tail -n 1)
+      cur_image_index=1
+      # The ISO has multiple images, query all of them
+      while (( cur_image_index <= max_image_index )); do
+        metadir="$ISOMETADIR/$file"
+        mkdir -p "$metadir"
+        metafile="$metadir/$cur_image_index.meta"
+        wimlib-imagex info "$install_wim" "$cur_image_index" | tee "$metafile"
+        echo -n '    '; 
+        awk -F':' '/Display Name/' "$metafile" | sed -r 's/.*:\ +//'
+        (( cur_image_index++ ))
+      done
+    fi
+
+    umount "$tmpdir"
+    rmdir "$tmpdir"
+  else
+    echo "$file is not an iso 9660 image.." >&2
+  fi
+  
+}
+
+for file in "$ISOLISTDIR"/*.list; do
+  while read -r time id file; do
+    get_iso_metadata "$file"
+    printf "%32s %s\n" "$(volname "$file")" "$file"
+  done < "$file"
+done

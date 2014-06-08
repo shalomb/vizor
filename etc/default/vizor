@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Attention : This file and its dependents may have bashisms!
+# Ensure $SHELL is /bin/bash before sourcing.
+
+set -a
+
+source /etc/default/keyboard
+
+# General settings
+VIZOR_VERSION='0.1'
+DATE=$(date +%F)
+TIME=$(date +%T)
+TIMESTAMP="${DATE}T${TIME}"
+USER=$(whoami)
+
+VIZOR_DEFAULTS_FILE="${BASH_SOURCE[0]##*/}"
+VIZOR_DEFAULTS_DIR="$(cd ${BASH_SOURCE[0]%/*} && pwd -P)"
+VIZOR_DEFAULTS="$VIZOR_DEFAULTS_DIR/$VIZOR_DEFAULTS_FILE"
+
+echo "VIZOR_DEFAULTS : $VIZOR_DEFAULTS"
+
+for _file in "$VIZOR_DEFAULTS_DIR/${VIZOR_DEFAULTS_FILE}.d"/*.sh; do
+  if [[ -e $_file ]]; then
+    source "$_file"
+  fi
+done
+

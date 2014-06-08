@@ -1,0 +1,116 @@
+#!/bin/bash -i
+
+### BEGIN INIT INFO
+# Provides:          razor-server
+# Required-Start:    $network $remote_fs $syslog $apache2 $time
+# Required-Stop:     $time
+# Default-Start:     2 3 4 5 S
+# Default-Stop:      0 1 6
+# Short-Description: razor-server
+# Description:       razor-server torquebox
+### END INIT INFO
+
+DESC="razor-server"
+
+INIT_FUNC_FILE='/lib/lsb/init-functions'
+# [ -f $INIT_FUNC_FILE ] && . $INIT_FUNC_FILE
+
+DEFAULTFILE='/etc/default/razor-server'
+[ -f $DEFAULTFILE ] && . $DEFAULTFILE
+
+RVM_SH='/etc/profile.d/rvm.sh'
+[ -f $RVM_SH ] && . $RVM_SH
+
+PIDFILE=/var/run/torquebox-razor-server.pid
+PREFIX=/usr/src/razor-server
+TORQUEBOXOPTS='run --bind-address 0.0.0.0'
+LOGFILE='/var/log/torquebox/razor-server.log'
+
+mkdir -p "${LOGFILE%/*}"
+
+which_torquebox() {
+  export RBENV_ROOT="${HOME}/.rbenv"
+
+  if [[ -d "${RBENV_ROOT}" ]]; then
+    export PATH="${RBENV_ROOT}/bin:${PATH}"
+  fi
+	eval "$(rbenv init -)"
+	rbenv which torquebox
+}
+
+start() {
+  cd "$PREFIX"
+  TORQUEBOX=`which_torquebox`
+
+  if start-stop-daemon --start     \
+      --pidfile "$PIDFILE"      \
+      --make-pidfile            \
+      --background --no-close   \
+      --exec "$TORQUEBOX"       \
+      -- $TORQUEBOXOPTS >> "$LOGFILE" 2>&1 ; then
+    echo "torquebox ($DESC) started successfully" >&2
+    return 0
+  else
+    echo "torquebox ($DESC) not started."
+    return 1
+  fi
+}
+
+stop () {
+  pids=()
+  if [[ -f $PIDFILE ]]; then
+    pid=$(< "$PIDFILE" )
+    kill -0 "$pid" &>/dev/null && pids+=( "$pid" )
+  fi
+
+  pid=$(netstat -antp | awk -F '[ /]+' '$4 ~ /0.0.0.0:8080/{print $7}')
+  if [[ $pid ]] && kill -0 "$pid"; then
+    pids+=( "$pid" )
+  fi
+
+  if (( ${#pids[@]} < 1 )); then
+    echo "No razor/torquebox processes found." >&2
+    return 1
+  fi
+
+  for pid in "${pids[@]}"; do
+    pstree -p "$pid" | grep -Eio '[0-9]+' | while read pid; do
+      if kill "$pid"; then
+        echo "pid $pid killed successfully." >&2
+      else
+        echo "pid $pid not killed." >&2
+        return 1
+      fi
+    done
+  done
+
+  return 0
+}
+
+status() {
+  # cd "$PREFIX"
+  # TORQUEBOX=`which_torquebox`
+  
+  if [[ -f "$PIDFILE" ]]; then
+    pid=$(< "$PIDFILE")
+    if kill -0 "$pid" &>/dev/null; then
+      echo "pid $pid (torquebox) is running." >&2
+      return 0
+    fi
+  fi
+
+  echo "torquebox ($DESC) not registered/started." >&2
+  return 1
+}
+
+restart() {
+  stop;
+  start;
+}
+
+cmd="$1"
+shift;
+
+ret=$( "$cmd" "$@" )
+exit $ret
+

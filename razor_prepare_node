@@ -1,0 +1,181 @@
+#!/bin/bash
+
+red=$(tput setaf 1)
+green=$(tput setaf 2)
+blue=$(tput setaf 4)
+cyan=$(tput setaf 6)
+reset=$(tput sgr0)
+bold=$(tput bold)
+
+set -eu
+
+mac=
+uuid=
+serial=
+asset=
+repo=
+metadata_keys=()
+metadata_values=()
+
+while getopts ":m:u:s:a:r:n:k:v:" opt; do
+  case $opt in
+    m)
+      mac="$OPTARG" 
+      ;;
+    u)
+      uuid="$OPTARG"
+      ;;
+    s)
+      serial="$OPTARG"
+      ;;
+    a)
+      asset="$OPTARG"
+      ;;
+    r)
+      repo="$OPTARG"
+      ;;
+    k)
+      metadata_keys+=( "$OPTARG" )
+      ;;
+    v)
+      metadata_values+=( "$OPTARG" )
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+[[ ! $serial ]] && serial="$uuid"
+[[ ! $asset ]] && asset="$uuid"
+
+cat <<EOF
+                      mac : $mac
+                     uuid : $uuid
+                   serial : $serial
+                    asset : $asset
+                     repo : $repo
+EOF
+
+function curl {
+  echo "${cyan}+ curl $@${reset}"
+  command curl -s -S -L \
+    -H "Accept: application/json" \
+    -H "Content-Type: application/json" \
+    "$@"
+}
+
+function razor {
+  echo "${cyan}+ razor $@${reset}"
+  command razor "$@" | grep -vEi -e '^$' -e '^From' -e '^Query' -e ' *command:'
+}
+
+razor nodes --help | \
+  awk 'BEGIN{RS="\n\n"}/dhcp_mac: '"$mac"'/' | \
+  awk -F'[: ]+' '/name:/{print $3}' | \
+  while read -r node; do
+    razor delete-node --name "$node"
+    razor delete-policy --name "$repo--$node"
+  done
+
+mac_s="${mac//:/-}"
+reg_url="http://localhost:8080/svc/boot?net0=${mac_s}&dhcp_mac=${mac_s}&uuid=${uuid}&serial=${serial}&asset=${asset}"
+out=$( curl "$reg_url" )
+checkin_url=$( grep -Eio 'http://[^ ]+' <<<"$out" | awk -F':' '/svc\/checkin/{print $0}' )
+node_id="${checkin_url##*svc/checkin/}"
+node="node$node_id" # Inferrence
+
+cat <<EOF
+
+Registered Node
+  Node ID       : $node_id
+  Node Name     : $node
+  Checkin URL   : $checkin_url
+
+EOF
+
+function checkin_node {
+
+  action=$( curl "http://localhost:8080/svc/checkin/$node_id" -X POST -d '
+    {
+      "facts": {
+        "architecture":     "x86_64",
+        "hardwareisa":      "x86_64",
+        "is_virtual":       "true",
+        "macaddress":       "'"${mac}"'",
+        "processorcount":   "1",
+        "uniqueid":         "'$node'",
+        "uuid":             "'"$uuid"'",
+        "virtual":          "true"
+      }
+    }
+  ');
+
+  sed -r -e 's/\{\}//g' <<<"$action" >&2
+  case "$action" in
+
+    *Not*Found*)
+      echo "" >&2
+      echo "Node ${node} not known to razor. Is it expected to be rebooted/reinstalled?"
+      razor reinstall-node --name "$node"
+    ;;
+
+    *action*none*)
+      razor create-tag --name "${mac}" --rule '["=", ["fact", "macaddress"], "'"$mac"'"]' || true
+      # if ! razor tags --help | awk 'BEGIN{c=0} /name: '"$mac"'/{c=0} END{exit c}'; then
+      # fi
+
+      policy_doc=$(mktemp -t "$repo--$node.XXXX.nodepolicy.json")
+      > "$policy_doc" cat <<EOPOL
+        {
+          "name"            : "$repo--$node",
+            "repo"          : { "name"   : "$repo" },
+            "task"          : { "name"   : "windows" },
+            "broker"        : { "name"   : "noop" },
+            "tags"          : [{ "name"  : "$mac"}],
+            "enabled"       : true,
+            "hostname"      : "ipxe2.test.local",
+            "max_count"     : 1,
+            "root_password" : "blah",
+            "node_metadata": {
+            }
+        }
+EOPOL
+      json=
+      for i in "${!metadata_keys[@]}"; do
+        printf -v str '"%s" : "%s",' "${metadata_keys[i]}" "${metadata_values[i]}"
+        json="$json$str"
+      done
+      json="${json%%,}"
+      sed -i "/node_metadata/a $json" "$policy_doc"
+
+      razor create-policy --json "$policy_doc"
+      rm -f "$policy_doc"
+
+      return 1
+    ;;
+
+    *action*reboot*)
+      razor nodes "$node" facts
+      razor nodes "$node" metadata
+      return 0
+      :;
+    ;;
+
+    *)
+      echo "Unimplemented action : $action"
+    ;;
+  esac
+}
+
+max_registration_tries=60
+
+c=0
+while ! checkin_node; do
+  if (( c++ >= max_registration_tries )); then
+    echo "Failed to register node after $c ($max_registration_tries) tries .. giving up." >&2
+    exit 3
+  fi
+  sleep 2
+done
+
