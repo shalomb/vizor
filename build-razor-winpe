@@ -1,0 +1,112 @@
+#!/bin/bash
+
+set -eu
+
+DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+SCRIPT="${BASH_SOURCE[0]}"
+TMP="${TMP:-$(mktemp -d)}"
+TMPDIR="$TMP"
+SRC_DIR="$PWD"
+PATH="$PATH:$PWD"
+TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "$SCRIPT.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'. You may need to assist the build process.";
+  ;;
+esac
+
+     curl_x86_url="http://www.confusedbycode.com/curl/curl-7.37.0-win32.zip"
+   curl_amd64_url="http://www.confusedbycode.com/curl/curl-7.37.0-win64.zip"
+         ipxe_url='git://git.ipxe.org/ipxe.git'
+kb3aik_en_iso_url='http://download.microsoft.com/download/8/E/9/8E9BBC64-E6F8-457C-9B8D-F6C9A16E6D6A/KB3AIK_EN.iso'
+      wimboot_url='https://git.ipxe.org/releases/wimboot/wimboot-latest.tar.bz2' # FIXME
+       wimlib_url='http://sourceforge.net/projects/wimlib/files/wimlib-1.6.2.tar.gz'
+
+overlay_dir='/usr/src/winpe-overlay'
+razor_client_script="$PWD/razor-client.cmd"
+
+# Assume RAZOR_SERVER is the current host
+RAZOR_SERVER=$(ip addr | grep -i 'inet ' | grep -i 'scope.*global' | awk -F'[ /]' '{print $6}' | sort -u)
+
+if [[ -e build.sh ]]; then
+  source build.sh  # env. vars. to override any of the above
+fi
+
+mkdir -pv "$overlay_dir"
+
+pushd /usr/src
+
+SRC_BIN_DIR="$SRC_DIR/build-razor-winpe.d"
+time { "$SRC_BIN_DIR"/razor-server   'x86'    "$curl_amd64_url"   ; }
+time { "$SRC_BIN_DIR"/curl-win       'x86'    "$curl_amd64_url"   ; }
+time { "$SRC_BIN_DIR"/curl-win       'amd64'  "$curl_x86_url"     ; }
+
+# Fetch the bootstrap.ipxe
+curl "http://$RAZOR_SERVER:8080/api/microkernel/bootstrap" -o "bootstrap.ipxe"
+[[ -e 'bootstrap.ipxe' ]] || {
+  echo 'No bootstrap.ipxe found .. will not build ipxe images with embedded script.' >&2 
+}
+time { "$SRC_BIN_DIR"/ipxe           "$ipxe_url" 'bootstrap.ipxe' '/usr/src' ; }
+
+time { "$SRC_BIN_DIR"/kb3aik_en_iso  "$kb3aik_en_iso_url"         ; }
+time { "$SRC_BIN_DIR"/wimboot        "$wimboot_url"               ; }
+time { "$SRC_BIN_DIR"/wimlib         "$wimlib_url"                ; }
+
+# waik_mp=$(mktemp -d)
+echo -e "Mounting KB3AIK_EN.iso\n" >&2
+waik_mp='/mnt/KB3AIK_EN.iso'; mkdir -p "$waik_mp"
+mount -o loop,ro "/usr/src/KB3AIK_EN.iso" "$waik_mp" || true
+
+# Patch our bootstrap script
+winpe_bootstrap_script="/tmp/${razor_client_script##*/}"
+cp -a "$razor_client_script" "$winpe_bootstrap_script"
+sed -r -i 's/\[%RAZOR_SERVER%\]/'"$RAZOR_SERVER"'/' "$winpe_bootstrap_script"
+
+# build out winpe images
+# TODO: It'd be nice not to have to create an image per architecture
+#       But for some reason the x86 winpe can't start 64-bit installers
+for arch in 'x86' 'amd64'; do
+  # Create WinPE filesystem overlay for $arch
+  echo "Building razor-winpe-${arch}.wim image .."
+  mkdir -p "$overlay_dir/$arch/Windows/System32/"
+  
+  case "$arch" in
+    x86)    curl_dir="${curl_x86_url##*/}"; 
+      ;;
+    amd64)  curl_dir="${curl_amd64_url##*/}"; 
+      ;;
+    *)
+      echo "Unsupported arch '$arch' .. skipping." >&2
+      continue
+      ;;
+  esac
+
+  curl_dir="/usr/src/${curl_dir%%.zip}"; 
+  for files in                \
+    "$curl_dir"/bin/curl.exe  \
+    "$curl_dir"/dlls/*.dll    \
+    ; do
+    cp -a "$files" "$overlay_dir/$arch/Windows/System32/"
+  done
+
+  # cp -av "$SRC_DIR"/razor-client.cmd "$overlay_dir"
+  time mkwinpeimg  --only-wim --arch="$arch" --waik-dir="$waik_mp"            \
+    --overlay="$overlay_dir/$arch/" --start-script="$winpe_bootstrap_script"  \
+    "razor-winpe-${arch}.wim"
+
+  echo
+done
+
+# wimlib-imagex mount "winpe_${arch}.wim" "$arch/t"
+
+umount "$waik_mp"
+rmdir "$waik_mp"
+
+popd
+
+

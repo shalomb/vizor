@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -xv
+
+pkgs_to_install=()
+
+for pkg in \
+  openssl libssl-dev rbenv ruby-build \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  sudo aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+if ! type -P rbenv &>/dev/null; then
+  wget https://raw.github.com/fesplugas/rbenv-installer/master/bin/rbenv-installer -O /tmp/rbenv-installer
+  chmod +x /tmp/rbenv-installer
+  /tmp/rbenv-installer
+fi
+
+grep -i 'rbenv init' ~/.bashrc || >>~/.bashrc cat <<EOF
+  # rbenv
+  export RBENV_ROOT="${HOME}/.rbenv"
+  if [ -d "${RBENV_ROOT}" ]; then
+    export PATH="${RBENV_ROOT}/bin:${PATH}"
+    eval "$(rbenv init -)"
+  fi
+EOF
+
+eval "$(rbenv init -)"
+

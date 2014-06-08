@@ -1,0 +1,32 @@
+#!/bin/bash
+
+FORCE="$FORCE"
+
+set -eu
+
+arch="$1"
+curl_url="$2"
+
+case "$arch" in
+  x86)
+    curl_url="${curl_url:-http://www.confusedbycode.com/curl/curl-7.37.0-win32.zip}"
+  ;;
+  amd64)
+    curl_url="${curl_url:-http://www.confusedbycode.com/curl/curl-7.37.0-win64.zip}"
+  ;;
+esac
+
+echo "Download curl for windows from '$curl_url' .. "
+
+curl_dir="${curl_url##*/}";
+curl_dir="${curl_dir%%.zip}";
+
+if [[ -d $curl_dir ]]; then
+  echo "curl already extracted to '$curl_dir' .. skipping." >&2
+  echo
+  [[ $FORCE ]] || exit 0
+fi
+
+wget -c "$curl_url"
+unzip -q "${curl_url##*/}"
+

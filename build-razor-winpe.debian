@@ -1,0 +1,22 @@
+#!/bin/bash
+
+pkgs_to_install=()
+# aptitude install -y 
+for pkg in \
+  unzip curl git uuid uuid-runtime \
+  autoconf automake bison build-essential curl git git-core \
+  locales-all openssl libarchive13 libarchive-dev libtext-iconv-perl \
+  liblocale-gettext-perl libuuid-perl lsof postgresql-client \
+  libtext-charwidth-perl lsof psmisc samba cifs-utils \
+  nfs-kernel-server nfs-common sudo openjdk-7-jre-headless \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  sudo aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+

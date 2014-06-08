@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# Installing wimlib
+
+FORCE="$FORCE"
+set -eu
+
+if dpkg -s wimlib &>/dev/null; then
+  echo -e "wimlib already installed.\n"
+  [[ $FORCE ]] || exit 0
+fi
+
+src_url="${1:-http://sourceforge.net/projects/wimlib/files/wimlib-1.6.2.tar.gz}"
+
+pkgs_to_install=()
+# aptitude install -y 
+for pkg in \
+  autoconf automake build-essential checkinstall intltool \
+  libcurl4-openssl-dev libevent-dev libfuse-dev  libtool libxml2-dev \
+  libxml2-dev ntfs-3g-dev pkg-config attr libattr1-dev \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  sudo aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+# wget "http://sourceforge.net/projects/wimlib/files/wimlib-1.4.2.tar.gz"
+# src_url="http://sourceforge.net/projects/wimlib/files/wimlib-1.6.1.tar.gz"
+filename="${src_url##*/}"
+ 
+set -xv
+
+[[ ! -e $filename ]] && wget -c "$src_url" -O "$filename"
+
+tmpdir="${filename%.tar.gz}"
+mkdir -p "$tmpdir"
+tar zxf "$filename" # -C "$tmpdir"
+
+cd "$tmpdir"
+./configure --prefix=/usr
+
+make clean
+make
+make check
+
+sudo checkinstall -D --install=no -y 
+
+sudo dpkg -i wimlib*.deb
+
