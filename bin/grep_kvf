@@ -1,0 +1,115 @@
+#!/usr/bin/perl 
+
+# Utility to filter/format colon-separated key/value records.
+
+use strict;
+use warnings NONFATAL => 'all', FATAL => 'uninitialized';
+use Carp qw{ carp croak cluck confess };
+
+use JSON;
+
+use Data::Dumper;
+  $Data::Dumper::Terse  = 1;  # don't output names where possible
+  $Data::Dumper::Indent = 1;  # no pretty printing
+  $Data::Dumper::Pair   = ' : ';
+  $Data::Dumper::Useqq  = 1;
+  $Data::Dumper::Quotekeys = 0;
+  $Data::Dumper::Sortkeys = 1;
+
+my ($filter_expression, $end_expression) = (shift @ARGV, shift @ARGV)
+  if @ARGV;
+
+my ( $primary_key, $lastkey, %dictionary );
+
+local $/ = "";  # set to do reads in paragraph mode
+
+while (<>) {
+
+  RECORD:
+  for my $line (split /\n+/) {
+
+    chomp($line);
+    if ( /^\s*$/ ) {
+      next;
+    }
+
+    my ($key, $value) = 
+      ( $line =~ /
+            ^            # start of line
+            \s*          # optional whitespace
+              ([^:]+?)   # key
+              \s*:\s*    # colon
+              (?:
+                (\S+.*?) # value
+              )?         # if present
+              \s*
+            $            # end of line
+          /x
+      );
+
+    if ( defined $key ) {
+      $primary_key //= $value // $key;
+      $dictionary{$primary_key}->{$key} = $value // undef;
+    }
+
+  } # RECORD:
+
+  $primary_key = undef;
+}
+
+local $\ = "\n"; # output records are NL terminated
+
+for my $uuid (sort keys %dictionary) { 
+  for my $k (sort keys %{$dictionary{$uuid}}) { 
+    # use a typeglob reference to create a subroutine that
+    #  returns the required element in the dictionary.
+    # The subroutine is then available to be evaled at the
+    #  command line.
+
+    no strict   qw{ refs };     # to permit the creation of the sub
+    no warnings qw{ redefine }; # to turn off warnings about redefinition
+    # change dashes, whitespace and dots into underscores
+    my $key = $k; $key =~ s/[\s\-\.]+/_/g; 
+
+    die "no key" unless $key;
+
+    # create our subroutine and a lowercase version of it
+    #  there are a few caveats with this approach
+    #   we potentially taint the main:: namespace 
+    #   and override previously defined subs, care needed
+    *$key = *{lc $key} = sub () { $dictionary{$uuid}->{$k} };
+  }
+  
+  { no strict   qw{ refs };
+    no warnings qw{ redefine once };
+    *_record = sub () {
+      # my $json = JSON->new->allow_nonref;
+      # $json->pretty->encode( $dictionary{$uuid} );
+      join $\, Dumper($dictionary{$uuid}) 
+    };
+    *_keys   = sub () { join $\, keys %{$dictionary{$uuid}};  };
+  }
+
+  if (defined $filter_expression) {
+    no warnings FATAL => 'uninitialized';
+
+    # if a filter expression is passed in at the command line
+    #  we evaluate it as a perl expression
+    #   eval is evil (necessary here though) 
+    #   TODO: expressions ought to be untainted in -T mode
+    local $, = " ";
+    eval $filter_expression;
+    warn "EVAL: $@\n" if $@;
+  }
+  else {
+    print "'$uuid' => ", Dumper( $dictionary{$uuid} ), ",";
+  }
+}
+
+if (defined $end_expression) {
+    eval $end_expression;
+    warn "END: $@\n" if $@;
+}
+
+__END__
+

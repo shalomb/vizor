@@ -1,0 +1,67 @@
+#!/usr/bin/perl -l
+
+# SYNOPSIS
+#   Output mount point information for easy selection.
+
+use strict;
+use warnings;
+use autodie;
+use Getopt::Long;
+
+sub usage {
+  print <<EOF
+$0 - list mount points
+EOF
+}
+
+my $key;
+my $val;
+my @fields;
+my $quiet;
+
+GetOptions(
+    'key=s'     => \$key,
+    'val=s'     => \$val,
+    'fields=s'  => \@fields,
+    'quiet'     => \$quiet,
+) or do {
+  usage;
+  exit 3;
+};
+
+($val) = (@ARGV) if @ARGV;
+
+open my $fh, '-|', 'mount';
+
+while (<$fh>) {
+  my %h;
+  if ( m{^(.*?) on (/.*?) type \S+ \((.*)\)$} ) {
+    $h{device}    = $h{dev}   = $1;
+    $h{directory} = $h{dir}   = $2;
+    $h{options}   = $h{opts}  = $3;
+
+    if ( $key and $val ) {
+      my $r = quotemeta $val;
+      next unless $h{$key} =~ m@$r@x; 
+    }
+    elsif ( $val ) {
+      my $r = quotemeta $val;
+      next unless m@$r@;
+    }
+
+    if ( $quiet ) {
+      exit 0
+    }
+    if ( scalar @fields ) {
+      print $h{$_} for @fields;
+    }
+    else {
+      printf "device    : %s\ndirectory : %s\noptions   : %s\n\n",
+        @h{qw[device dir options]};
+    }
+  }
+}
+
+if ( $quiet ) { 
+  exit 1;
+}
