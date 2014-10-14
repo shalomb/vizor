@@ -31,3 +31,4 @@ function patch_yaml {
 
 }
 
+export -f patch_yaml

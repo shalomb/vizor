@@ -1,0 +1,52 @@
+#!/usr/bin/perl -l -CS
+
+use strict;
+use warnings;
+
+use 5.010_000;
+use utf8;
+
+use Text::CSV;
+use Text::TabularDisplay;
+use Getopt::Long;
+use Data::Dumper;
+
+our $VERSION = '0.1';
+
+sub usage {
+  print STDERR <<EOF
+  $0 - Convert a CSV stream to a Text Table
+··
+  -h    print this help messagge
+EOF
+}
+
+my $result = GetOptions (
+  "h|help"       => sub { usage; exit 2; }
+);
+
+my $csv = Text::CSV->new ( { binary => 1 } )  # should set binary attribute.
+  or die "Cannot use CSV: ".Text::CSV->error_diag (); 
+
+my ($table, $heading_done);
+while (<>) {
+  next if /^\s*$/g;
+  tr/\x{feff}//d;
+  $csv->parse($_);
+  my @row = $csv->fields();
+  if ( not $heading_done ) { 
+    $table = Text::TabularDisplay->new(@row);
+    $heading_done ||= scalar @row;
+  }
+  else {
+    $table->add(@row)
+  }
+}
+
+my $rendered_table = $table->render();
+$rendered_table =~ s/\+([^\n]+)\+$/ $1 /s;
+$rendered_table =~ s/^\+([^\n]+)\+/ $1 /s;
+$rendered_table = join "\n", map { if (/--.*-\+/) { s/\+/ /g; } $_ } split /\n/, $rendered_table;
+
+print $rendered_table;
+

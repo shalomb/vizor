@@ -1,0 +1,11 @@
+#!/usr/bin/perl -l
+
+use strict;
+use warnings;
+
+use MIME::Base32 qw( RFC );
+
+undef $/;
+
+print MIME::Base32::encode(<STDIN>);
+

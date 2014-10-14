@@ -1,0 +1,152 @@
+#!/usr/bin/perl 
+
+# Utility to filter/format xen's xe records.
+#
+# e.g. select subset of fields and format them
+#   xe vm-list params=all |\
+#     ./xe_grep 'printf "%32s %s\n", name_label, networks'
+#
+# Note: hyphens and other special characters are translated to
+#       underscores i.e. the xe key name-label becomes name_label,
+#       sr-uuid becomes sr_uuid, etc
+#
+# e.g  match records on some criteria
+#   xe vm-list | ./xe_grep 'print name_label if power_state !~ /halted/'
+#     # list labels of VMs in a power state that is not 'halted'
+#
+# e.g. use in walking some tree
+#      here we find out which VMs own the list of VDIs/VHDs on an SR
+#
+#   xe sr-param-list uuid=$(xe sr-list |\
+#         ./xe_grep 'print uuid if name_label eq "NFSNetApp"') | \
+#     ./xe_grep 'print VDIs' | \
+#     while read -d ';' uuid; do 
+#       for vbd in $(xe vdi-param-list uuid="$uuid" | \
+#             ./xe_grep 'print vbd_uuids if vbd_uuids'); do
+#           vm_name=$(xe vbd-param-list uuid="$vbd" | \
+#             ./xe_grep 'print vm_name_label');
+#           printf "${uuid}.vhd => $vm_name\n";
+#       done
+#     done
+#
+# e.g.  default action as a data dumper 
+#   xe vm-list | ./xe_grep   
+#   format records as a Data::Dumper serialized structure
+#    that can be read in to perl later
+#
+
+use strict;
+use warnings NONFATAL => 'all', FATAL => 'uninitialized';
+use Carp qw{ carp croak cluck confess };
+
+use Data::Dumper;
+  $Data::Dumper::Terse  = 1;  # don't output names where possible
+  $Data::Dumper::Indent = 1;  # no pretty printing
+
+my ($filter_expression, $end_expression) = (shift @ARGV, shift @ARGV)
+  if defined @ARGV;
+
+my ( %dictionary, $primary_key, $lastkey );
+
+local $/ = "";  # set to do reads in paragraph mode
+
+while (<>) {
+
+  RECORD:
+  for my $line (split /\n+/) {
+
+#    name-description ( RW): 
+#                host ( RO): camautoxs7.eng.citrite.net
+    my ($key, $mod, $value) = 
+      ( $line =~ /
+            ^            # start of line
+            \s*          # optional whitespace
+              (\S+.*)    # key
+              \s+        # mandatory white space
+              \(         # opening parenthesis
+                \s*
+                  (\S+)  # key attribute
+                \s*
+              \)         # closing parenthesis
+              \s*:\s*    # colon
+              (?:
+                (\S+.*)  # value
+              )?         # if present
+              \s*
+            $            # end of line
+          /x
+      );
+
+    # append multiline values to the previous key
+    if (defined $line and not defined $key) {
+      $dictionary{$primary_key}->{$lastkey} .= $line;
+      next RECORD;
+    }
+    elsif ($key =~ /\Auuid\Z/ix) {
+      if (defined $value) {
+        $dictionary{$value}->{$key} = $primary_key = $value;
+      } 
+      else {
+        last;  # assume record is broken as we have no value for UUID
+               #  probably needs more consideration
+      }
+    } 
+    else {
+      $dictionary{$primary_key}->{$key} = defined $value ? $value : undef;
+    }
+
+    $lastkey = $key;
+  } # RECORD:
+
+}
+
+local $\ = "\n"; # output records are NL terminated
+
+for my $uuid (keys %dictionary) 
+{ 
+  for my $k (keys %{$dictionary{$uuid}}) { 
+    # use a typeglob reference to create a subroutine that
+    #  returns the required element in the dictionary.
+    # The subroutine is then available to be evaled at the
+    #  command line.
+
+    no strict   qw{ refs };     # to permit the creation of the sub
+    no warnings qw{ redefine }; # to turn off warnings about redefinition
+    # change dashes, whitespace and dots into underscores
+    my $key = $k; $key =~ s/[\s\-\.]+/_/g; 
+
+    # create our subroutine and a lowercase version of it
+    #  there are a few caveats with this approach
+    #   we potentially taint the main:: namespace 
+    #   and override previously defined subs, care needed
+    *$key = *{lc $key} = sub () { $dictionary{$uuid}->{$k} };
+  }
+  
+  { no strict   qw{ refs };
+    no warnings qw{ redefine once };
+    *xe_record = sub () {
+      join $\, Dumper($dictionary{$uuid}) 
+    };
+    *xe_keys   = sub () { join $\, keys %{$dictionary{$uuid}};      };
+  }
+
+  if (defined $filter_expression) {
+    no warnings FATAL => 'uninitialized';
+
+    # if a filter expression is passed in at the command line
+    #  we evaluate it as a perl expression
+    #   eval is evil (necessary here though) 
+    #   TODO: expressions ought to be untainted in -T mode
+    local $, = " ";
+    eval $filter_expression;
+    warn "EVAL: $@\n" if $@;
+  }
+  else {
+    print "'$uuid' => ", Dumper( $dictionary{$uuid} ), ",";
+  }
+}
+
+if (defined $end_expression) {
+    eval $end_expression;
+    warn "END: $@\n" if $@;
+}
