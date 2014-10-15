@@ -1,0 +1,166 @@
+<!-- sysprep.xml -->
+<!-- product_version = <%= @product_version %> -->
+
+<settings pass="specialize">
+  <component name="Microsoft-Windows-Deployment" processorArchitecture="<%= @arch %>" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  </component>
+
+  <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="<%= @arch %>" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" >
+    <OEMInformation>
+      <HelpCustomized>true</HelpCustomized>
+    </OEMInformation>
+    <ComputerName><%=   node.hostname             || '*' %></ComputerName>
+    <RegisteredOwner><% node.metadata['owner']    || 'owner' %></RegisteredOwner>
+    <TimeZone><%=       node.metadata['timezone'] || 'GMT Standard Time' %></TimeZone>
+    <DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
+  </component>
+</settings>
+
+<settings pass="oobeSystem">
+
+  <component name="Microsoft-Windows-International-Core" processorArchitecture="<%= @arch %>" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <InputLocale><%=  node.metadata['input_locale']  || 'en-US' %></InputLocale>
+    <SystemLocale><%= node.metadata['system_locale'] || 'en-US' %></SystemLocale>
+    <UILanguage><%=   node.metadata['ui_language']   || 'en-US' %></UILanguage>
+    <UILanguageFallback>en-US</UILanguageFallback>
+  </component>
+
+  <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="<%= @arch %>" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    <UserAccounts>
+      <AdministratorPassword>
+        <Value><%= node.metadata.key?('administrative_password') ? node.metadata['administrative_password'] : node.root_password ? node.root_password : 'P455w0rd' %></Value>
+        <PlainText>true</PlainText>
+      </AdministratorPassword>
+      <LocalAccounts>
+        <LocalAccount wcm:action="add">
+          <Name><%=         node.metadata['administrative_user'] || 'Admin' %></Name>
+          <DisplayName><%=  node.metadata['administrative_user'] || 'Admin' %></DisplayName>
+          <Description><%=  node.metadata['administrative_user'] || 'Admin' %></Description>
+          <Group>Administrators</Group>
+          <Password>
+            <Value><%= node.metadata.key?('administrative_password') ? node.metadata['administrative_password'] : node.root_password ? node.root_password : 'P455w0rd' %></Value>
+            <PlainText>true</PlainText>
+          </Password>
+        </LocalAccount>
+        <LocalAccount wcm:action="add">
+          <Name><%=         node.metadata['regular_user'] || 'user' %></Name>
+          <DisplayName><%=  node.metadata['regular_user'] || 'user' %></DisplayName>
+          <Description><%=  node.metadata['regular_user'] || 'user' %></Description>
+          <Group>Users</Group>
+          <Password>
+            <Value><%= node.metadata['regular_password'] || 'P455w0rd' %></Value>
+            <PlainText>true</PlainText>
+          </Password>
+        </LocalAccount>
+      </LocalAccounts>
+    </UserAccounts>
+
+    <AutoLogon>
+      <Username><%= node.metadata.key('administrative_user')     || 'Administrator' %></Username>
+      <Password>
+        <Value><%=  node.metadata.key('administrative_password') || node.root_password || 'P455w0rd' %></Value>
+        <PlainText>true</PlainText>
+      </Password>
+      <Enabled><%=  node.metadata['enable_autologon'] || true %></Enabled>
+      <LogonCount>9999</LogonCount>
+    </AutoLogon>
+
+    <OOBE>
+      <HideEULAPage>true</HideEULAPage>
+      <ProtectYourPC>3</ProtectYourPC>
+      <NetworkLocation>Work</NetworkLocation>
+    </OOBE>
+
+<%=
+  if @product_version >= 6.1
+  <<-eos
+    <RegisteredOrganization>#{  node.metadata['organization'] || 'organization' }</RegisteredOrganization>
+
+    <OEMInformation>
+      <HelpCustomized>true</HelpCustomized>
+      <Manufacturer>#{          node.metadata['manufacturer']  || 'manufacturer'    }</Manufacturer>
+      <Model>#{                 node.metadata['model']         || 'model'           }</Model>
+      <SupportHours>#{          node.metadata['support_hours'] || '0900-1700'       }</SupportHours>
+      <SupportPhone>#{          node.metadata['support_phone'] || '+1-234-567-890'  }</SupportPhone>
+      <SupportURL>#{            node.metadata['support_url']   || 'http://support'  }</SupportURL>
+    </OEMInformation>
+
+    <Display>
+      <HorizontalResolution>#{  node.metadata['horizontal_resolution'] || '1024' }</HorizontalResolution>
+      <VerticalResolution>#{    node.metadata['vertical_resolution']   || '768'  }</VerticalResolution>
+      <ColorDepth>#{            node.metadata['colour_depth']          || '32'   }</ColorDepth>
+      <DPI>#{                   node.metadata['dpi']                   || '96'   }</DPI>
+      <RefreshRate>#{           node.metadata['refresh_rate']          || '60'   }</RefreshRate>
+    </Display>
+eos
+end
+%>
+
+<%=
+
+  def exec(cmd)
+    return %q{cmd /c "%s"} % cmd
+  end
+
+  def exec_powershell(cmd)
+    return exec(%q{start /max /realtime /wait %%SystemRoot%%\system32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -nologo -noprofile -executionpolicy bypass -command "%s"} % cmd)
+    # return %q{\ProgramData\FirstBoot\powershell.cmd "Set-PSDebug -Tr 1; %s"} % cmd
+    # return %q{powershell.exe -executionpolicy bypass -command "Set-PSDebug -Tr 1; %s"} % cmd
+    # return %q{powershell.exe -nologo -noprofile -noninteractive -executionpolicy bypass -command "Set-PSDebug -Tr 1; %s"} % cmd
+  end
+
+  def http_get(url)
+    return exec_powershell( %q{(New-Object System.Net.WebClient).DownloadString('%s'); sleep 5;} % url )
+  end
+
+  def download_file(url,file)
+    return exec_powershell( %q{(New-Object System.Net.WebClient).DownloadFile('%s','%s'); sleep 5} % [url,file] )
+  end
+
+  def get_task_file(file,dest)
+    return download_file( (%q{%s/%s} % ["#{ file_url('') }",file]), dest)
+  end
+
+  def get_task_file_raw(file,dest)
+    return download_file( (%q{%s/%s} % ["#{ file_url('', true) }",file]), dest)
+  end
+
+  def log_msg(level,msg)
+    return http_get("#{  log_url('', level).gsub('msg=', 'msg=%s' % msg.gsub(/\s+/,'+')) }")
+    # return http_get(%q{%s%s} % ["#{stage_done_url}", msg.to_s.gsub(/\s+/,'+')])
+  end
+
+%>
+
+<%=
+  @cmd_order = 0
+
+  cmds = ({
+    'wait_for_os_to_settle'   => exec('ping -n 10 %s' % @razor_server),
+
+    'dl_google'           => download_file('http://google.com','\google.txt'),
+    'notepad_fb'           => exec('notepad \google.txt'),
+  }.each.collect { |desc, cmd|
+    <<-eos
+      <SynchronousCommand wcm:action="add">
+        <Order>#{ @cmd_order += 1 }</Order>
+        <Description>#{ desc } (length #{ cmd.length })</Description>
+        <CommandLine>#{ cmd }</CommandLine>
+        <RequiresUserInput>true</RequiresUserInput>
+      </SynchronousCommand>
+eos
+  }).join("\n")
+
+    '<FirstLogonCommands>%s</FirstLogonCommands>' % cmds
+%>
+
+  </component>
+</settings>
+
+<!-- sysprep.xml -->
+
+<!-- <%= log_url('', 'debug') %> -->
+<!-- <%= log_url('', 'info') %> -->
+<!-- <%= log_url('', 'error') %> -->
+
