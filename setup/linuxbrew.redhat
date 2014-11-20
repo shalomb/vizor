@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -eu
+
+
+sudo yum groupinstall 'Development Tools'
+
+pkgs_to_install=()
+for pkg in \
+    curl git m4 ruby texinfo bzip2-devel curl-devel expat-devel \
+    ncurses-devel zlib-devel \
+ ; do
+  if ! rpm -qa "$pkg" | grep -iq "^pkg"; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  sudo yum install -y "${pkgs_to_install[@]}"
+fi
+
