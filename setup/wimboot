@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Build the latest wimboot version from source.
+
+source defaults.sh
+
+while getopts ":i:w:o:d:s:u:" opt; do
+  case $opt in
+    w) working_dir="$OPTARG"
+      ;;
+    o) output_dir="$OPTARG"
+    ;;
+    s) src_url="$OPTARG"
+    ;;
+  esac
+done
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+src_url='https://git.ipxe.org/releases/wimboot/wimboot-2.3.0.tar.bz2'
+working_dir="${working_dir:-/usr/src}"
+output_dir="${output_dir:-"$working_dir"}"
+filename="${src_url##*/}"
+dirname="${filename%.tar.*}"
+
+function latest {
+  local latest=( $( printf "%s\n" "$@" | \
+                      sort -t . -k 1,1n -k 2,2n -k 3,3n -k 4,4n ) )
+  if [[ -e ${latest-} ]]; then
+    echo "${latest[-1]}"
+  fi
+}
+
+cd "$working_dir"
+latest=$(latest wimboot-*.tar.bz2)
+
+latest="${latest%.tar.bz2}"
+if [[ -e "$latest"/wimboot ]]; then
+  cp -a "$latest"/wimboot "$output_dir"
+  echo "wimboot (${latest%/}) already unpacked ($working_dir/$latest), skipping ..."
+  [[ ${FORCE:-} ]] || exit 0
+fi
+
+[[ ${FORCE:-} ]] && rm -f "$filename"
+wget -c "$src_url" -O "$filename"
+
+tar xf "$filename"
+latest=$(latest wimboot-*/)
+
+( if cd "$latest"; then
+    rm -f wimboot
+    ( cd src && make clean && make )
+    cp -a "$PWD"/wimboot "$output_dir"
+  fi
+)
+
