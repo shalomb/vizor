@@ -1,0 +1,95 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Build puppetlabs/razor-server from source.
+
+source defaults.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+version=
+working_dir='/usr/src'
+url='https://github.com/puppetlabs/razor-server.git'
+
+while getopts ":o:w:u:" opt; do
+  case $opt in
+    o) version="$OPTARG"
+    ;;
+    w) working_dir="$OPTARG"
+    ;;
+    u) url="$OPTARG"
+    ;;
+  esac
+done
+
+# aptitude install razor-server
+# 500 http://apt.puppetlabs.com/ sid/main amd64 Packages
+
+mkdir -p /var/lib/razor
+adduser razor --home /var/lib/razor --shell /bin/false --system || true
+adduser razor src
+
+# Test Database access
+echo "localhost:5432:razor:razor:***REMOVED***" > /var/lib/razor/.pgpass
+chmod 0600 /var/lib/razor/.pgpass
+sudo -u razor psql -U razor razor -w -l
+
+cd "${working_dir:-/usr/src/}"
+
+RAZOR_ROOT="$working_dir/razor-server-0.15.0"
+
+if [[ ! -d  razor-server-0.15.0 ]]; then
+  wget -c "https://github.com/puppetlabs/razor-server/archive/0.15.0.tar.gz" -O razor-server-0.15.0.tar.gz
+  mkdir razor-server-0.15.0/
+  tar xf razor-server-0.15.0.tar.gz 
+fi
+
+cd razor-server-0.15.0/
+
+# [[ -d razor-server ]] || git clone "$url"
+# cd razor-server
+# git checkout master
+# git pull
+# [[ $version ]] && git checkout "$version"
+
+jruby_required_ver=$( grep -i '^ruby' "$RAZOR_ROOT/Gemfile" | \
+  sed -r 's/,\ +/\n/g'  | \
+  awk '/engine_version/{print $3}' |\
+  sed -r "s/'//g" )
+
+# jruby_required_ver='1.7.8'
+
+source ~/.profile # init for rbenv
+
+if ! rbenv versions | grep -iq jruby-"$jruby_required_ver"; then
+  CONFIGURE_OPTS="--disable-install-doc" \
+  CFLAGS="-march=native -Os" \
+    rbenv install -f "jruby-$jruby_required_ver"
+fi
+
+rbenv rehash && rbenv local jruby-"$jruby_required_ver"
+
+# function jruby {
+#   jruby=$( rbenv which jruby | grep -i jruby-"$jruby_required_ver" )
+#   "$jruby" "$@"
+# }
+
+function gem {
+  jruby -S gem "$@"
+}
+
+gem list | grep -iq '^bundler' || \
+  gem install bundler
+
+bundle clean --force || true
+bundle check || true
+bundle install
+

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+cd /usr/src/
+wget -c "https://github.com/puppetlabs/razor-server/archive/0.15.0.tar.gz" -O razor-server-0.15.0.tar.gz
+
+tar xvf razor-server-0.15.0.tar.gz -C razor-server-0.15.0/
+
+cd razor-server-0.15.0/
+gem install bundler
