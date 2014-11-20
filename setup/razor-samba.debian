@@ -1,0 +1,19 @@
+#!/bin/bash
+
+pkgs_to_install=()
+
+for pkg in \
+  build-essential binutils make syslinux zlib1g-dev binutils-dev git \
+  syslinux syslinux-common genisoimage samba cifs-utils \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  DEBIAN_FRONTEND=noninteractive \
+    aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+
