@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Build puppetlabs/razor-client from source.
+
+source defaults.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+version=
+working_dir='/usr/src'
+url='https://github.com/puppetlabs/razor-client.git'
+ruby_required_ver=2.1.2
+
+while getopts ":o:w:u:" opt; do
+  case $opt in
+    o) version="$OPTARG"
+    ;;
+    w) working_dir="$OPTARG"
+    ;;
+    u) url="$OPTARG"
+    ;;
+    m) ruby_required_ver="$OPTARG"
+  esac
+done
+
+cd "$working_dir"
+
+[[ -d razor-client ]] || git clone "$url"
+cd razor-client
+git checkout master
+git pull
+[[ $version ]] && git checkout "$version"
+
+rbenv rehash && rbenv local "$ruby_required_ver" || true
+
+if ! rbenv which ruby | grep -iq "$ruby_required_ver"; then
+  CONFIGURE_OPTS="--disable-install-doc" \
+  CFLAGS="-march=native -Os" \
+    rbenv install "$ruby_required_ver"
+fi
+
+ruby -S gem list | grep -iq '^bundler' || \
+  ruby -S gem install bundler
+
+ruby -S bundle check || true
+ruby -S bundle install
+
+ruby -S bundle install
+gem query -n json_pure | grep -iq json_pure || ruby -S gem install json_pure
+
+> razor cat <<EOF
+#!/bin/sh
+exec "$PWD/bin/razor" "\$@"
+EOF
+
+install "$PWD/razor" /usr/bin/razor
