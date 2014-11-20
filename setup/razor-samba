@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Prepare the razor samba share.
+
+# TODO
+#  Some of these settings need to be parameterized
+#   e.g. razor-repo location
+
+source defaults.sh
+source utils.sh
+source apache.sh
+
+set -xv
+# Disable kernel oplocks
+if ! grep -Eiq 'kernel oplocks' /etc/samba/smb.conf; then
+  tmpfile=$(mktemp)
+
+  > "$tmpfile" cat <<EOF
+  security        = share
+  public          = yes
+  kernel oplocks  = no
+  nt acl support  = no
+
+EOF
+
+  sed -i -r '/# Networking/ r '"$tmpfile"'' /etc/samba/smb.conf 
+  rm "$tmpfile"
+fi
+
+# Setup samba for syslog
+if grep -Eiq 'syslog = 0' /etc/samba/smb.conf; then
+  sed -i -r 's/syslog = 0/syslog = 1/' /etc/samba/smb.conf
+fi
+
+# Setup the razor repo share
+grep -Eiq '\[razor\]' /etc/samba/smb.conf || >>/etc/samba/smb.conf cat <<EOF
+[razor]
+  comment               = Windows Install Images for Razor
+  path                  = /var/lib/razor/repo-store/
+  available             = yes
+  browsable             = yes
+  guest ok              = yes
+  read only             = yes
+  writable              = no
+  share modes           = no
+  ack check permissions = false
+  locking               = no
+  opslocks              = no
+  level2 opslocks       = no
+  strict locking        = no
+
+EOF
+
+# Setup the mnt share
+grep -Eiq '\[mnt\]' /etc/samba/smb.conf || >>/etc/samba/smb.conf cat <<EOF
+[mnt]
+  comment               = Mounted Filesystems
+  path                  = /mnt/
+  available             = yes
+  browsable             = yes
+  guest ok              = yes
+  read only             = yes
+  writable              = no
+  share modes           = no
+  ack check permissions = false
+  locking               = no
+  opslocks              = no
+  level2 opslocks       = no
+  strict locking        = no
+
+EOF
+
+# Setup the html share
+grep -Eiq '\[html\]' /etc/samba/smb.conf || >>/etc/samba/smb.conf cat <<EOF
+[html]
+  comment               = Apache WWW HTML Share
+  path                  = $DOCUMENT_ROOT
+  available             = yes
+  browsable             = yes
+  guest ok              = yes
+  read only             = yes
+  writable              = no
+  share modes           = no
+  ack check permissions = false
+  locking               = no
+  opslocks              = no
+  level2 opslocks       = no
+  strict locking        = no
+
+EOF
+
+service samba restart
+
