@@ -1,0 +1,23 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+arch=$(arch)
+
+case "$arch" in
+  x86_64)
+      curl -sS -f -L 'http://stedolan.github.io/jq/download/linux64/jq' -o '/usr/local/bin/jq'
+    ;;
+  x86)
+      curl -sS -f -L 'http://stedolan.github.io/jq/download/linux32/jq' -o '/usr/local/bin/jq'
+    ;;
+  *)
+    die "Unknown architecture '$arch'"
+    ;;
+esac
+
+chmod +x /usr/local/bin/jq
+
+jq_ver=$( jq -V )
+log "jq ($jq_ver) installed"
