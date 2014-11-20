@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Use fesplugas/rbenv-installer to setup rbenv.
+
+source defaults.sh
+source utils.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+working_dir='/usr/src'
+src_url='https://raw.github.com/fesplugas/rbenv-installer/master/bin/rbenv-installer'
+
+while getopts ":w:u:" opt; do
+  case $opt in
+    w) working_dir="$OPTARG"
+    ;;
+    u) src_url="$OPTARG"
+    ;;
+  esac
+done
+
+RBENV_ROOT="$working_dir/rbenv"
+
+tmpdir="$(mktemp -d)"
+outfile="$tmpdir/${src_url##*/}"
+wget -q -c "$src_url" -O "$outfile"
+chmod +x "$outfile"
+"$outfile"
+rm -f "$outfile"
+
+> "$RBENV_ROOT/.profile" cat <<EOF
+# rbenv
+export RBENV_ROOT="$working_dir/rbenv"
+if [[ -d \$RBENV_ROOT ]]; then
+  export PATH="\$RBENV_ROOT/bin:\$PATH"
+  eval "\$(rbenv init - --no-rehash)"
+fi
+EOF
+  
+source "$RBENV_ROOT/.profile"
+
+grep -iq "source '$RBENV_ROOT/.profile'"    ~/.profile || \
+    echo "source '$RBENV_ROOT/.profile'" >> ~/.profile
+
+# sudo install "$RBENV_ROOT/bin/rbenv" "/usr/bin"
+cat <<EOF > /usr/bin/rbenv
+#!/bin/bash
+export RBENV_ROOT="$working_dir/rbenv"
+export PATH="\$RBENV_ROOT/bin:\$PATH"
+"$RBENV_ROOT/bin/rbenv" "\$@"
+EOF
+chmod +x /usr/bin/rbenv
+
+hash -r
+
+type -a rbenv &>/dev/null && rbenv versions || true
+
+eval "$(rbenv init - --no-rehash)"
+
