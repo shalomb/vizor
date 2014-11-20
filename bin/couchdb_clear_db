@@ -1,0 +1,36 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+while getopts ":d:h" opt 2>/dev/null; do
+  case $opt in
+    d) database="$OPTARG"
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented command '$opt'"
+      ;;
+  esac
+done
+
+[[ -z $database ]] && die "No database (-d) specified"
+
+records=( $(curl -fsSL -X GET "http://localhost:5984/$database/_all_docs" |
+  jq -r -c '
+      del(.total_rows) | del(.offset) | .[][] | .value.rev as $rev | .id as $id | [$id,$rev]
+    ' | sed -r -e 's/^\["|"\]$//g' -e 's/","/,/') )
+
+for row_num in "${!records[@]}"; do
+  IFS=',' read -r id rev <<<"${records[row_num]}"
+  id_url="http://localhost:5984/$database/$id?rev=$rev"
+  if ! ret=$( curl -sSfL -X DELETE "$id_url" ) ec=$?; then
+    warn "Failed to delete record at $id_url : $ret, $ec" || true
+  fi
+  printf -v logmsg "Clearning documents from database '$database' : [%s/%s;%s] %4.2f%% " \
+      "$row_num" "${#records[@]}"  \
+      "$(( ${#records[@]} - $row_num ))" $(bc <<<"scale=16; $row_num/${#records[@]}*100")
+  log_status "$logmsg"
+done
+
+
