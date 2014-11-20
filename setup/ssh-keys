@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Generate SSH RSA/DSA keys.
+
+set -eu
+
+for key_type in rsa dsa; do
+  if [[ ! -e ~/.ssh/id_"${key_type}" ]]; then
+    ssh-keygen  -t "$key_type"                    \
+      -C "SSH $key_type for $HOSTNAME"  \
+      -N ""                             \
+      -f ~/.ssh/id_"${key_type}"
+  fi
+done
+
