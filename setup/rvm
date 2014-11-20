@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# SYNOPSIS
+#  Install rvm from http://get.rvm.io 
+
+set -eu
+
+# http://www.cschramm.net/howtos/installing-ruby-1-9-3-debian-squeeze-rvm/
+echo rvm_autoupdate_flag=0 >> ~/.rvmrc
+curl -L https://get.rvm.io | bash -s stable
+source /etc/profile.d/rvm.sh
+
+rvm list known
+
+# rvm install ruby-1.9.3
+# rvm use 1.9.3
+# 
+# rvm install jruby-1.7.8
+# rvm use jruby-1.7.8
