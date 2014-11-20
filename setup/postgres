@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Prepare the Postgres DB server for Razor.
+
+source defaults.sh
+source utils.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+cd $( getent passwd postgres | awk -F':' '{print $6}' ) || true
+
+# sudo -u postgres createuser -P -SDR razor
+sudo -u postgres psql template1 <<<"CREATE USER razor WITH PASSWORD '***REMOVED***';"
+sudo -u postgres psql template1 <<<"CREATE DATABASE razor;"
+
+# sudo -u postgres psql template1 <<<"CREATE DATABASE razor_dev;"
+# sudo -u postgres psql template1 <<<"GRANT ALL PRIVILEGES ON DATABASE razor_dev TO razor;"
+sudo -u postgres createdb -O razor "razor_${RAZOR_DEVELOPMENT_ENV}" || true
+
+# sudo -u postgres psql template1 <<<"CREATE DATABASE razor_test;"
+# sudo -u postgres psql template1 <<<"GRANT ALL PRIVILEGES ON DATABASE razor_test TO razor;"
+sudo -u postgres createdb -O razor "razor_${RAZOR_TEST_ENV}" || true
+
+# sudo -u postgres psql template1 <<<"CREATE DATABASE razor_prd;"
+# sudo -u postgres psql template1 <<<"GRANT ALL PRIVILEGES ON DATABASE razor_prd TO razor;"
+sudo -u postgres createdb -O razor "razor_${RAZOR_PRODUCTION_ENV}" || true
+
