@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if ! type -a /usr/local/bin/cpanm &>/dev/null; then
+  curl -sS -f -L http://cpanmin.us | \
+    perl - App::cpanminus 
+fi
+
+/usr/local/bin/cpanm --version | grep -i version
