@@ -1,0 +1,97 @@
+#/bin/bash
+
+# SYNOPSIS
+#   Build ipxe from source. Also support building custom loaders.
+
+source defaults.sh
+source utils.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "$SCRIPT.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+# 'iPXE - open source boot firmware [download]' http://ipxe.org/download
+
+bootstrap_script=
+src_url='http://git.ipxe.org/ipxe.git'
+working_dir='/usr/src'
+output_dir="$working_dir/ipxe"
+
+function usage {
+cat <<EOF
+$0 -b script -o dir -u url -w dir -h
+EOF
+}
+
+while getopts ":b:o:u:w:h" opt; do
+  case $opt in
+    b) bootstrap_script="$OPTARG"
+      ;;
+    o) output_dir="$OPTARG"
+    ;;
+    u) src_url="$OPTARG"
+    ;;
+    w) working_dir="$OPTARG"
+    ;;
+    h) usage; exit 3;
+      ;;
+  esac
+done
+
+bootstrap_script=$(readlink -f "$bootstrap_script" || true)
+cd "$working_dir"
+
+if [[ -z $bootstrap_script && -e ipxe/src/bin/ipxe.iso ]]; then
+  echo -e "ipxe already built.\n" >&2
+  [[ $FORCE ]] || exit 0
+fi
+
+[[ ! -d ipxe ]] && git clone "$src_url"
+
+cd ipxe/src
+git pull
+
+if [[ ! -e bin ]] || [[ ${FORCE:-} ]]; then
+  make clean
+  (unset DEBUG; make;)
+fi
+
+# TODO : Generate images with embedded ipxe scripts
+for target in         \
+    bin/ipxe.dsk      \
+    bin/ipxe.hd       \
+    bin/ipxe.lkrn     \
+    bin/ipxe.iso      \
+    bin/ipxe.usb      \
+    bin/undionly.kpxe \
+  ; do
+  if [[ $bootstrap_script ]]; then
+    (unset DEBUG; set -xv; make "$target" EMBED="$bootstrap_script";) || true
+  else
+    (unset DEBUG; set -xv; make "$target";)
+  fi
+
+  if [[ $output_dir ]]; then
+    mkdir -p "$output_dir"
+    cp -av "$target" "$output_dir"
+  fi
+done
+
+exit $?
+
+* http://ipxe.org/embed
+* make bin/undionly.kpxe EMBED=myscript.ipxe
+
+* http://ipxe.org/crypto
+* make bin/ipxe.iso TRUST=/path/to/ca1.crt,/path/to/ca2.crt
+
+* To create a bootable floppy, cat bin/ipxe.dsk > /dev/fd0
+* To create a bootable USB key, cat bin/ipxe.usb > /dev/sdX
+* To create a bootable CD-ROM, burn bin/ipxe.iso to a blank CD-ROM.
+
