@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Install and configure apache2
+
+source defaults.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  centos|rhel)
+    source "${DIR}/${SCRIPT##*/}.rhel"
+  ;;
+  *)
+    dir "Unsupported distribution '$distro'.";
+  ;;
+esac
+
