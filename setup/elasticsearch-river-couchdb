@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Install and configure elasticsearch-river-couchdb
+
+source defaults.sh
+source utils.sh
+
+declare db_names=() restart=
+
+while getopts "d:r" opt; do
+  case $opt in
+    d) db_names+=( "$OPTARG" )
+      ;;
+    r) restart=1
+      ;;
+  esac
+done
+
+no_plugin_detected=
+if /usr/share/elasticsearch/bin/plugin --list | grep -iq 'No plugin detected'; then
+  no_plugin_detected=1
+fi
+
+if [[ -n $no_plugin_detected ]] || [[ -n $restart ]]; then
+  log 'Installing elasticsearch plugin elasticsearch-river-couchdb/2.3.0'
+  /usr/share/elasticsearch/bin/plugin --remove  elasticsearch/elasticsearch-river-couchdb
+  /usr/share/elasticsearch/bin/plugin --install elasticsearch/elasticsearch-river-couchdb/2.3.0
+fi
+
+[[ -z $db_names ]] && die "No DB name (-d) specified."
+
+for db in "${db_names[@]}"; do
+  # Create CouchDB db
+  if ! curl -sS -f -I "http://localhost:5984/$db" &>/dev/null; then
+    log "Creating couch db http://localhost:5984/$db"
+    curl -sS -f -X PUT "http://localhost:5984/$db" | jq '.'
+  fi
+  
+  # Create ES rivers to monitor CouchDB changes
+  if ! curl -sS -f -I "http://localhost:9200/_river/$db/$db" &> /dev/null; then
+    log "Creating elasticsearch river for couch db http://localhost:9200/_river/$db/_meta"
+    curl -ss -f -X PUT "http://localhost:9200/_river/$db/_meta" -d '
+      {
+        "type" : "couchdb",
+        "couchdb" : {
+            "host"   : "localhost",
+            "port"   : 5984,
+            "db"     : "'"$db"'",
+            "filter" : null
+          },
+        "index" : {
+          "index"        : "'"$db"'",
+          "type"         : "'"$db"'",
+          "bulk_size"    : "100",
+          "bulk_timeout" : "10ms"
+        }
+      }
+    ' | jq '.'
+    echo >&2
+  fi
+done
+
+if [[ -n $restart ]]; then
+  service couchdb       restart
+  service elasticsearch restart
+fi
