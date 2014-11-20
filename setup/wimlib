@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Build WimLib from source.
+
+# Installing wimlib
+
+source defaults.sh
+
+# wget "http://sourceforge.net/projects/wimlib/files/wimlib-1.4.2.tar.gz"
+# src_url="http://sourceforge.net/projects/wimlib/files/wimlib-1.6.1.tar.gz"
+# src_url="${1:-http://sourceforge.net/projects/wimlib/files/wimlib-1.6.2.tar.gz}"
+src_url="${1:-http://sourceforge.net/projects/wimlib/files/wimlib-1.7.2.tar.gz}"
+
+required_version="${src_url##*/}"
+required_version="${required_version#*-}"
+required_version="${required_version%.tar.gz}"
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+set -xv
+cd "${WORKING_DIR:-/usr/src}"
+
+filename="${src_url##*/}"
+
+[[ ! -e $filename ]] && wget -c "$src_url" -O "$filename"
+
+tmpdir="${filename%.tar.gz}"
+mkdir -p "$tmpdir"
+tar zxf "$filename" # -C "$tmpdir"
+
+cd "$tmpdir"
+./configure --prefix=/usr
+
+make clean
+make
+make check
+
+sudo checkinstall -D --install=no -y 
+
+sudo dpkg -i wimlib*.deb
+

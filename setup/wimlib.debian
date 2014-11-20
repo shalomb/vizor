@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Build WimLib from source.
+
+# Installing wimlib
+
+pkgs_to_install=()
+# aptitude install -y 
+for pkg in \
+  autoconf automake build-essential checkinstall intltool \
+  libcurl4-openssl-dev libevent-dev libfuse-dev  libtool libxml2-dev \
+  libxml2-dev ntfs-3g-dev pkg-config attr libattr1-dev \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  DEBIAN_FRONTEND=noninteractive \
+    aptitude install -y -t stable --without-recommends "${pkgs_to_install[@]}"
+fi
+
+if dpkg -s wimlib &>/dev/null; then
+  wimlib_version=$(dpkg-query -W -f='${Version}\n' wimlib)
+  wimlib_version="${wimlib_version%-*}"
+  if [[ $wimlib_version = $required_version ]]; then
+    echo -e "wimlib ($wimlib_version) already installed, skipping ..."
+    [[ ${FORCE:-} ]] || exit 0
+  fi
+fi
+
+
