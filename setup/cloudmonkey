@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Install and configure cloudmonkey
+
+source defaults.sh
+source utils.sh
+set -eu
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+declare host= url= api_key= secret_key= username= password=
+
+while getopts ":h:a:s:u:p:U:" opt; do
+  case $opt in
+    h) url="$OPTARG"
+      ;;
+    a) api_key="$OPTARG"
+      ;;
+    s) secret_key="$OPTARG"
+      ;;
+    u) username="$OPTARG"
+      ;;
+    p) password="$OPTARG"
+      ;;
+    U) url="$OPTARG"
+      ;;
+  esac
+done
+
+
+PATH="/usr/local/bin:/usr/bin:$PATH"
+
+if ! type -a /usr/local/bin/cloudmonkey; then
+  rm -rf /usr/local/lib/python2.7/dist-packages/requests*
+  easy_install requests==2.3.0
+  pip install --upgrade cloudmonkey
+fi
+
+type -a cloudmonkey &>/dev/null ||
+  die "cloudmonkey failed to install."
+
+if cloudmonkey list zones 2>&1 | grep -iq 'Client.*Error'; then
+  cloudmonkey set display         json
+  cloudmonkey set color           false
+  cloudmonkey set paramcompletion true
+fi
+
+[[ -n $host ]] && url="$host"
+
+[[ -n $url ]] &&
+  [[ $url != *api* ]] &&
+  warn "Are you sure this is an API Url? '$url'" || true
+
+[[ -n $url ]] &&
+  cloudmonkey set url       "$url"
+
+[[ -n $api_key ]] &&
+  cloudmonkey set apikey    "$api_key"
+
+[[ -n $secret_key ]] &&
+  cloudmonkey set secretkey "$secret_key"
+
+[[ -n $username ]] &&
+  cloudmonkey set username  "$api_key"
+
+[[ -n $password ]] &&
+  cloudmonkey set password  "$secret_key"
+
+echo
+log "Logging on as .."
+cloudmonkey list accounts listall=true |
+  jq -e 'del(.count) | .[][] | select(.user[].apikey | contains("'"$api_key"'")) ' |
+  jq -e -r '.user[] | {username:.username,account:.account,firstname:.firstname,lastname:.lastname,email:.email}'
+
+log "Syncing APIs"
+cloudmonkey sync apis
