@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Download the unzip.exe package for win32 systems.
+
+source defaults.sh
+source utils.sh
+
+unzip_url="http://stahlworks.com/dev/unzip.exe"
+[[ -e unzip.exe ]] || wget -c "$unzip_url" -O "${unzip_url##*/}"
+
+zip_url="http://stahlworks.com/dev/zip.exe"
+[[ -e zip.exe ]] || wget -c "$zip_url" -O "${zip_url##*/}"
+
