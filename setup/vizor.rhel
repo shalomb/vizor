@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -eu
+set -xv
+yum install wget -y
+
+if ! rpm -qa | grep -iq epel-release-6; then
+  wget http://download.fedoraproject.org/pub/epel/6/i386/epel-release-6-8.noarch.rpm
+  rpm -ivh epel-release-6-8.noarch.rpm
+fi
+
+yum groupinstall "Development Tools" -y
+
+yum install sudo expect genisoimage curl make autoconf nfs-utils perl-JSON perl-XML-Simple \
+  python-pip gzip bzip2 zip unzip shared-mime-info expect ack perl-ExtUtils-MakeMaker \
+  redhat-lsb-core -y

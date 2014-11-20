@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Setup/build vizor on this system.
+
+source defaults.sh
+source utils.sh
+source razor-winpe.sh
+
+TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+if [[ -z $distro ]]; then
+  grep -Eqi -e 'centos|fedora|redhat' /etc/redhat-release && distro=rhel
+fi
+
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  centos|rhel)
+    source "${DIR}/${SCRIPT##*/}.rhel"
+    ;;
+  *)
+    die "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+
+dev_env=
+official_env=
+build_winpe=
+build_client=
+
+while getopts ":cdow" opt; do
+  case $opt in
+    c) build_client=1
+    ;;
+    d) dev_env=1
+      ;;
+    o) official_env=1
+    ;;
+    w) build_winpe=1
+    ;;
+  esac
+done
+
+ssh-keys
+
+if (( $# == 0 )); then
+  warn "No arguments ($@ == $#) supplied .. building dev environment." || true
+  dev_env=1
+fi
+
+
+if [[ $dev_env ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+  
+  log "Installing cpanm"
+  time { "$DIR"/cpanm; }
+  log "Setting up loop devices"
+  time { "$DIR"/loop-devices -m 1024; }
+  log "Installing perl libs"
+  time { "$DIR"/perl-libs; }
+  log "Installing cloudmonkey"
+  time { "$DIR"/cloudmonkey; }
+  log "Installing elasticsearch"
+  time { "$DIR"/elasticsearch; }
+  log "Installing couchdb"
+  time { "$DIR"/couchdb; }
+  log "Setting up CouchDB and ES Databases"
+  time { "$DIR"/elasticsearch-river-couchdb -d iso -d image -d container -d box; }
+  log "Installing apache"
+  time { "$DIR"/apache; }
+  log "Installing wimlib"
+  time { "$DIR"/wimlib ; }
+  log "Installing postgres"
+  time { "$DIR"/postgres; }
+  log "Installing rbenv"
+  time { "$DIR"/rbenv ; }
+  log "Installing gem-builder"
+  time { "$DIR"/gem-bundler ; }
+  log "Installing razor-server-dev"
+  time { "$DIR"/razor-server-dev ; }
+  log "Installing razor-server init script"
+  time { 
+    cp -a "$DIR/../etc/init.d/razor-server" /etc/init.d/razor-server; 
+  }
+  log "Installing torquebox logrotate.script"
+  time {
+    [[ -d /etc/logrotate.d ]] && \
+      cp -a "$DIR/../etc/logrotate.d/torquebox-razor-server" /etc/logrotate.d;
+  }
+  log "Completing razor-server post-install tasks"
+  time { "$DIR"/razor-server-dev-post-install ; }
+elif [[ $official_env ]]; then
+  "$DIR"/razor-server
+fi
+
+if [[ $build_winpe ]]; then
+  "$DIR"/razor-samba
+  "$DIR"/razor-winpe
+fi
+
+if [[ $build_client ]]; then
+  log "Installing razor-client"
+  time { "$DIR"/razor-client ; }
+fi

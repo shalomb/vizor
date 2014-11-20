@@ -1,0 +1,27 @@
+#!/bin/bash
+
+source defaults.sh
+
+pkgs_to_install=()
+
+for pkg in    \
+  sudo expect aptitude ack-grep libjson-perl cifs-utils nfs-common \
+  genisoimage libmime-base64-urlsafe-perl libjson-xs-perl libxml-simple-perl \
+  python-pip zip unzip curl build-essential make autoconf automake git \
+  shared-mime-info libxml2-utils \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  cmd="aptitude install -y --without-recommends ${pkgs_to_install[@]}"
+  if whoami | grep -iq root; then
+    $cmd
+  else
+    sudo $cmd
+  fi
+fi
+
+
