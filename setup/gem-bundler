@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Install the bundler ruby gem.
+
+FORCE="$FORCE"
+DEBUG="$DEBUG"
+
+[[ $DEBUG ]] && set -xv
+set -eu
+
+DIR=$( cd "${BASH_SOURCE[0]%/*}" && pwd )
+SCRIPT="$DIR/${BASH_SOURCE[0]}"
+SRC_DIR="${SCRIPT%/*}"
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+grep -iq -- '--no-rdoc' ~/.gemrc 2>/dev/null || echo 'gem: --no-rdoc --no-ri --no-document' >> ~/.gemrc
+type -P bundle &>/dev/null || gem install bundler
