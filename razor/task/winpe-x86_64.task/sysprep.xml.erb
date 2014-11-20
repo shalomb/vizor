@@ -1,5 +1,4 @@
-<!-- sysprep.xml -->
-<!-- product_version = <%= @product_version %> -->
+<!-- product_version = <%= @product_version ||= 6.1 %> -->
 
 <settings pass="specialize">
   <component name="Microsoft-Windows-Deployment" processorArchitecture="<%= @arch %>" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -98,69 +97,42 @@ end
 %>
 
 <%=
-
   def exec(cmd)
-    return %q{cmd /c "%s"} % cmd
+    return %q{cmd.exe /c "%s"} % cmd
   end
 
   def exec_powershell(cmd)
-    return exec(%q{start /max /realtime /wait %%SystemRoot%%\system32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -nologo -noprofile -executionpolicy bypass -command "%s"} % cmd)
-    # return %q{\ProgramData\FirstBoot\powershell.cmd "Set-PSDebug -Tr 1; %s"} % cmd
-    # return %q{powershell.exe -executionpolicy bypass -command "Set-PSDebug -Tr 1; %s"} % cmd
-    # return %q{powershell.exe -nologo -noprofile -noninteractive -executionpolicy bypass -command "Set-PSDebug -Tr 1; %s"} % cmd
+    exec(%q{start /wait %%SystemRoot%%\System32\WindowsPowerShell\v1.0\powershell.exe -command "%s"} % cmd)
   end
 
-  def http_get(url)
-    return exec_powershell( %q{(New-Object System.Net.WebClient).DownloadString('%s'); sleep 5;} % url )
+  def download_file(url, dest)
+    exec_powershell( %q{(New-Object System.Net.WebClient).DownloadFile('%s','%s')} % [ url, dest] )
   end
-
-  def download_file(url,file)
-    return exec_powershell( %q{(New-Object System.Net.WebClient).DownloadFile('%s','%s'); sleep 5} % [url,file] )
-  end
-
-  def get_task_file(file,dest)
-    return download_file( (%q{%s/%s} % ["#{ file_url('') }",file]), dest)
-  end
-
-  def get_task_file_raw(file,dest)
-    return download_file( (%q{%s/%s} % ["#{ file_url('', true) }",file]), dest)
-  end
-
-  def log_msg(level,msg)
-    return http_get("#{  log_url('', level).gsub('msg=', 'msg=%s' % msg.gsub(/\s+/,'+')) }")
-    # return http_get(%q{%s%s} % ["#{stage_done_url}", msg.to_s.gsub(/\s+/,'+')])
-  end
-
 %>
 
 <%=
-  @cmd_order = 0
+  if @sysprep_context == 'firstboot'
+    @cmd_order = 0
+    cmds = ({
+      'mkdir_firstboot_d'     => exec('mkdir \ProgramData\firstboot'),
+      'fetch_firstboot_cmd'   => download_file(file_url('firstboot.cmd'), '\ProgramData\firstboot\firstboot.cmd'),
+      'invoke_firstboot_cmd'  => exec('start "firstboot.cmd" /b /wait /max /realtime \ProgramData\firstboot\firstboot.cmd'),
 
-  cmds = ({
-    'wait_for_os_to_settle'   => exec('ping -n 10 %s' % @razor_server),
-
-    'dl_google'           => download_file('http://google.com','\google.txt'),
-    'notepad_fb'           => exec('notepad \google.txt'),
-  }.each.collect { |desc, cmd|
-    <<-eos
-      <SynchronousCommand wcm:action="add">
-        <Order>#{ @cmd_order += 1 }</Order>
-        <Description>#{ desc } (length #{ cmd.length })</Description>
-        <CommandLine>#{ cmd }</CommandLine>
-        <RequiresUserInput>true</RequiresUserInput>
-      </SynchronousCommand>
+    }.each.collect { |desc, cmd|
+      <<-eos
+        <SynchronousCommand wcm:action="add">
+          <Order>#{ @cmd_order += 1 }</Order>
+          <Description>#{ desc } (length #{ cmd.length })</Description>
+          <CommandLine>#{ cmd.encode(:xml => :text) }</CommandLine>
+          <RequiresUserInput>true</RequiresUserInput>
+        </SynchronousCommand>
 eos
-  }).join("\n")
+    }).join("\n")
 
-    '<FirstLogonCommands>%s</FirstLogonCommands>' % cmds
+      '<FirstLogonCommands>%s</FirstLogonCommands>' % cmds
+  end
 %>
 
   </component>
 </settings>
-
-<!-- sysprep.xml -->
-
-<!-- <%= log_url('', 'debug') %> -->
-<!-- <%= log_url('', 'info') %> -->
-<!-- <%= log_url('', 'error') %> -->
 
