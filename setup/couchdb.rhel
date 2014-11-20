@@ -1,0 +1,7 @@
+#!/bin/bash
+
+yum install couchdb -y
+
+chkconfig --level 345 couchdb on
+
+service couchdb start

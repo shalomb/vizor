@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Install and configure couchdb
+
+source defaults.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  centos|rhel)
+    source "${DIR}/${SCRIPT##*/}.rhel"
+  ;;
+  *)
+    die "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+service couchdb status || service couchdb start
+
+c=0
+while ! curl -s 'http://localhost:5984/' &>/dev/null; do
+  fuser -n tcp 5984 || true
+  printf '.' >&2 && sleep 2
+  if (( ++c == 60 )); then
+    die "Timeout waiting for couchdb to start"
+  fi
+done | jq -S '.'
+
+curl -sS -f http://localhost:5984/ | jq -S '.'

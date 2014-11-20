@@ -1,0 +1,39 @@
+#!/bin/bash
+
+source defaults.sh
+
+if ! service couchdb status >/dev/null; then 
+  service couchdb restart || true
+fi
+
+if service couchdb status >/dev/null; then 
+  return
+fi
+
+find /etc/apt/sources.list.d/sid.list -empty -delete &>/dev/null || true
+
+if [[ ! -e /etc/apt/sources.list.d/sid.list ]]; then
+  perl -lane 'do { $F[2]=q[sid]; print "@F" } unless /^#|^\s*$/' /etc/apt/sources.list |
+    grep -vi 'security.debian.org' | sort -u > /etc/apt/sources.list.d/sid.list
+fi
+
+
+aptitude update -y
+
+pkgs_to_install=()
+
+for pkg in      \
+  couchdb \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y -t stable --no-install-recommends "${pkgs_to_install[@]}"
+fi
+
+mv /etc/apt/sources.list.d/sid.list{,_}
+aptitude update -y
