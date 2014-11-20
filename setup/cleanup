@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Cleanup vizor installed components
+
+source defaults.sh
+source utils.sh
+
+warn "Uninstalling vizor components" || true
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+rm -frv /tmp/vizor /usr/src/{bootstrap.ipxe,curl,ipxe,wimboot,winpe}*

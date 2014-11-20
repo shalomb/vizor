@@ -1,0 +1,22 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+pkgs_to_uninstall=()
+
+for pkg in \
+    apache2 elasticsearch couchdb python-pip wimlib \
+    python-pip \
+ ; do
+  if dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_uninstall+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_uninstall[@]} > 0 )); then
+  log "aptitude purge -y ${pkgs_to_uninstall[@]}"
+  DEBIAN_FRONTEND=noninteractive \
+    aptitude purge -y "${pkgs_to_uninstall[@]}"
+fi
+
