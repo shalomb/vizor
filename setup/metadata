@@ -1,0 +1,24 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+for db in metadata; do
+  if ! curl -sS -f -I "http://localhost:5984/$db" &> /dev/null; then
+     vizor setup elasticsearch-river-couchdb -d "$db"
+   fi
+done
+
+if [[ -z ${PUBLIC_IP-} ]]; then
+  PUBLIC_IP=$( curl -fsSL -X GET http://www.telize.com/ip )
+fi
+
+geo_metadata=$( curl -fsSL -X GET "http://freegeoip.net/json/$PUBLIC_IP" | jq -S '.' )
+geo_metadata=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata") <(curl -fsSL -X GET "http://ipinfo.io/$PUBLIC_IP") )
+geo_metadata=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata") <(curl -fsSL -X GET "http://www.telize.com/geoip/$PUBLIC_IP") )
+geo_metadata=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata") <(curl -fsSL -X GET 'http://ip-api.com/json') )
+
+if ! result=$( curl -fsSL "http://localhost:5984/metadata/geo" -X PUT -d "$geo_metadata" ) ec=$?; then
+  die "Failed to set geo metadata : $ec"
+fi
+
