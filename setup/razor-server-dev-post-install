@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Prepare a razor-server installation for use.
+
+source defaults.sh
+source utils.sh
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+working_dir='/usr/src'
+url='http://links.puppetlabs.com/razor-microkernel-latest.tar'
+password=
+
+while getopts ":w:u:p:" opt; do
+  case $opt in
+    w) working_dir="$OPTARG"
+    ;;
+    u) url="$OPTARG"
+    ;;
+    p) password="$OPTARG"
+    ;;
+  esac
+done
+
+set -xv
+RAZOR_ROOT="$working_dir/razor-server-0.15.0"
+cd "$RAZOR_ROOT"
+
+[[ -e config.yaml ]] || cp -a config.yaml.sample config.yaml
+
+repo_root=$(awk -F'[: ]+' '/repo_store_root/{print $3}' \
+  "$RAZOR_ROOT"/config.yaml)
+mkdir -p "$repo_root" &>/dev/null
+
+source ~/.profile # rbenv init
+
+jruby_required_ver=$( grep -i '^ruby' "$RAZOR_ROOT/Gemfile" | \
+  sed -r 's/,\ +/\n/g'  | \
+  awk '/engine_version/{print $3}' |\
+  sed -r "s/'//g" )
+
+if ! rbenv versions | grep -iq jruby-"$jruby_required_ver"; then
+  CONFIGURE_OPTS="--disable-install-doc" \
+  CFLAGS="-march=native -Os" \
+    rbenv install -f "jruby-$jruby_required_ver"
+fi
+
+rbenv rehash && rbenv global jruby-"$jruby_required_ver"
+
+for env in \
+  "$RAZOR_DEVELOPMENT_ENV" \
+  "$RAZOR_TEST_ENV" \
+  "$RAZOR_PRODUCTION_ENV" \
+  ; do
+    patch_yaml "$RAZOR_ROOT/config.yaml" \
+      "${env}/database_url" \
+      "jdbc:postgresql:razor_${env}?user=razor&password=${RAZOR_DB_PASSWORD}"
+    bin/razor-admin -e "$env" check-migrations || \
+      bin/razor-admin -e "$env" migrate-database
+done
+
+set -xv
+# # Download razor-microkernel
+# cd "$repo_root" 2>/dev/null
+# pwd && sleep 5
+# mk_tar="${url##*/}"
+# # [[ $mk_tar ]] && wget -c "$url"
+# # tar xvf razor-microkernel-latest.tar || true
+
+jruby -S torquebox deploy --env production
+service razor-server restart
+
+if type -P razor; then
+  while ! razor -f commands 2>/dev/null; do
+    printf '.'
+    sleep 1
+  done
+fi
+

@@ -1,0 +1,20 @@
+#!/bin/bash
+
+pkgs_to_install=()
+
+for pkg in \
+    autoconf automake bison build-essential git git-core \
+    libarchive-dev postgresql-client gawk \
+    openjdk-7-jre-headless ipmitool \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  DEBIAN_FRONTEND=noninteractive \
+    aptitude install -y --without-recommends "${pkgs_to_install[@]}"
+fi
+
+
