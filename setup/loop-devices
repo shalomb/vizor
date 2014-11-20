@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Create a number of loop devices upfront for vizor to mount
+#   images against.
+
+source defaults.sh
+source utils.sh
+
+declare max_loop_devices=1024
+
+while getopts "m:" opt; do
+  case $opt in
+    m) max_loop_devices="$OPTARG"
+      ;;
+  esac
+done
+
+# Create enough loop device to support the number of ISOs
+# we intend to 'proxy'
+if [[ -e /etc/modules ]]; then
+  sed -i '/loop/d' /etc/modules
+  echo "loop max_loop=${max_loop_devices}" >> /etc/modules
+fi
+echo "options loop max_loop=${max_loop_devices}" > /etc/modprobe.d/loop_devs.conf
+rmmod loop    || true
+modprobe loop || true
+
+i=0
+while (( i < max_loop_devices )); do
+  loop_dev="/dev/loop$i"
+  if [[ ! -e $loop_dev ]]; then
+    mknod -m0660 "$loop_dev" b 7 "$i"
+    chown root.disk "$loop_dev"
+  fi
+  ((i++)) || true
+done
+
+echo "$i loop devices setup." >&2
+
