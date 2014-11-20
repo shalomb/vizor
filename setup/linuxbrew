@@ -1,0 +1,51 @@
+#!/bin/bash
+
+FORCE="$FORCE"
+DEBUG="$DEBUG"
+
+[[ $DEBUG ]] && set -xv
+set -eu
+
+DIR=$( cd "${BASH_SOURCE[0]%/*}" && pwd )
+SCRIPT="$DIR/${BASH_SOURCE[0]}"
+SRC_DIR="${SCRIPT%/*}"
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    echo "Unsupported distribution '$distro'.";
+  ;;
+esac
+
+working_dir='/usr/src'
+src_url='https://github.com/Homebrew/linuxbrew.git'
+
+while getopts ":w:u:" opt; do
+  case $opt in
+    w) working_dir="$OPTARG"
+    ;;
+    u) src_url="$OPTARG"
+    ;;
+  esac
+done
+
+cd "$working_dir"
+[[ -d linuxbrew ]] || git clone "$src_url"
+cd linuxbrew
+git pull
+
+if ! type -P brew &>/dev/null; then
+  ( set +eu
+    {
+      echo PATH="$PWD/bin:"'$PATH'
+      echo LD_LIBRARY_PATH="$PWD/lib:"'$LD_LIBRARY_PATH'
+      echo exec "$PWD/bin/brew" '"$@"'
+    } > brew
+    install brew '/usr/local/bin'
+  )
+fi
+
+brew update
