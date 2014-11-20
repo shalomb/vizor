@@ -10,39 +10,56 @@
 # Description:       razor-server torquebox
 ### END INIT INFO
 
-DESC="razor-server"
+FORCE="$FORCE"
+DEBUG="$DEBUG"
+
+[[ $DEBUG ]] && set -xv
+set -eu
+
+DIR=$( cd "${BASH_SOURCE[0]%/*}" && pwd )
+SCRIPT="$DIR/${BASH_SOURCE[0]}"
+
+RAZOR_ROOT="/usr/src/razor-server-0.15.0"
+DESC="${RAZOR_ROOT%/}"
+DESC="${RAZOR_ROOT##*/}"
 
 INIT_FUNC_FILE='/lib/lsb/init-functions'
 # [ -f $INIT_FUNC_FILE ] && . $INIT_FUNC_FILE
 
-DEFAULTFILE='/etc/default/razor-server'
-[ -f $DEFAULTFILE ] && . $DEFAULTFILE
+DEFAULTFILE="/etc/default/$DESC"
+[[ -f $DEFAULTFILE ]] && source $DEFAULTFILE
 
-RVM_SH='/etc/profile.d/rvm.sh'
-[ -f $RVM_SH ] && . $RVM_SH
-
-PIDFILE=/var/run/torquebox-razor-server.pid
-PREFIX=/usr/src/razor-server
-TORQUEBOXOPTS='run --bind-address 0.0.0.0'
-LOGFILE='/var/log/torquebox/razor-server.log'
+PIDFILE="/var/run/torquebox-$DESC.pid"
+LOGFILE="/var/log/torquebox/$DESC.log"
+export TORQUEBOXOPTS='run --bind-address 0.0.0.0'
+export JAVA_OPTS="-Xms128m -Xmx1024m -XX:MaxPermSize=256m -Djava.net.preferIPv4Stack=true"
 
 mkdir -p "${LOGFILE%/*}"
 
-which_torquebox() {
-  export RBENV_ROOT="${HOME}/.rbenv"
+source ~/.profile
+jruby=$(grep -i jruby $RAZOR_ROOT/Gemfile | \
+  sed -r 's/, +/\n/g' | \
+  awk -F "'" '/engine_version/{print $2}')
+eval "$(rbenv init -)"
+rbenv rehash && rbenv global "jruby-$jruby"
 
-  if [[ -d "${RBENV_ROOT}" ]]; then
-    export PATH="${RBENV_ROOT}/bin:${PATH}"
-  fi
-	eval "$(rbenv init -)"
-	rbenv which torquebox
+export PATH="$(rbenc which jruby)/bin/jruby:$PATH"
+
+echo "jruby is $jruby" >&2
+
+which_torquebox() {
+  export RBENV_ROOT="/usr/src/rbenv"
+
+  [[ -d "${RBENV_ROOT}" ]] && export PATH="${RBENV_ROOT}/bin:${PATH}"
+
+  rbenv which torquebox
 }
 
 start() {
-  cd "$PREFIX"
-  TORQUEBOX=`which_torquebox`
+  TORQUEBOX=$(which_torquebox)
 
-  if start-stop-daemon --start     \
+  if JAVA_OPTS="$JAVA_OPTS" start-stop-daemon
+      --start                   \
       --pidfile "$PIDFILE"      \
       --make-pidfile            \
       --background --no-close   \
@@ -88,9 +105,6 @@ stop () {
 }
 
 status() {
-  # cd "$PREFIX"
-  # TORQUEBOX=`which_torquebox`
-  
   if [[ -f "$PIDFILE" ]]; then
     pid=$(< "$PIDFILE")
     if kill -0 "$pid" &>/dev/null; then
@@ -100,12 +114,24 @@ status() {
   fi
 
   echo "torquebox ($DESC) not registered/started." >&2
+  [[ $PIDFILE ]] && rm -f "$PIDFILE"
   return 1
 }
 
 restart() {
   stop;
   start;
+}
+
+which() {
+  ( set -xv
+    { (set +xv; which_torquebox;)
+      rbenv versions --list
+      jruby -v
+      ruby -v
+    } >&2
+  )
+  exit 0
 }
 
 cmd="$1"
