@@ -1,0 +1,162 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Build WinPE images for razor windows provisioning.
+
+source defaults.sh
+source utils.sh
+source razor-winpe.sh
+source mount.utils.sh
+source apache.sh
+
+TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
+WORKING_DIR='/usr/src'
+OUTPUT_DIR="$DOCUMENT_ROOT"
+OUTPUT_DIR_IPXE="$DOCUMENT_ROOT/ipxe"; mkdir -p "$OUTPUT_DIR_IPXE"
+razor_client_script="$RAZOR_WINPE_CLIENT_SCRIPT"
+DEBUG="${DEBUG:-}"
+VERSION=$(date +%F%X%N | tr -d '[\-:]')
+wimlib_version=$(dpkg-query -W -f='${Version}\n' wimlib || true)
+
+while getopts ":i:w:o:d:s:" opt; do
+  case $opt in
+    i) kb3aik_en_iso="$OPTARG"
+      ;;
+    w) WORKING_DIR="$OPTARG"
+      ;;
+    o) OUTPUT_DIR="$OPTARG"
+      ;;
+    d) overlay_dir="$OPTARG"
+      ;;
+    s) razor_client_script="$OPTARG"
+      ;;
+  esac
+done
+
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  *)
+    die "Unsupported distribution '$distro'"
+  ;;
+esac
+
+for task in "$DIR/../razor/task"/winpe.task/; do
+  task_name="${task%/}"
+  rsync -a "$task/" "$RAZOR_ROOT/tasks/${task_name##*/}/"
+done
+
+if [[ -e "$razor_client_script" ]]; then
+  razor_client_script=$( readlink -f "$razor_client_script" )
+else
+  razor_client_script=( "$RAZOR_ROOT"/tasks/winpe*.task/razor-client.cmd )
+fi
+
+razor_client_script=$( readlink -f "$razor_client_script" )
+if [[ ! -e "$razor_client_script" ]]; then
+  die "razor client script for winpe '$razor_client_script', does not exist."
+fi
+
+pushd "$WORKING_DIR"
+
+mkdir -pv "$overlay_dir"
+
+log "Getting unzip for windows."
+time { vizor setup unzip-win; }
+
+log "Getting curl for windows."
+time { vizor setup curl-win       'x86_64'  "$curl_x86_url"  ; }
+time { vizor setup curl-win       'x86'     "$curl_x86_64_url"     ; }
+
+log "Getting wimboot"
+time { vizor setup wimboot        "$wimboot_url"               ; }
+
+log "Getting wimlib"
+time { vizor setup wimlib         "$wimlib_url"                ; }
+
+log "Getting KB3AIK_EN.iso."
+time { vizor setup kb3aik_en_iso  "$kb3aik_en_iso_url"         ; }
+
+log "Mounting KB3AIK_EN.iso" >&2
+mount_iso "/usr/src/KB3AIK_EN.iso"
+waik_dir=( $( mount-point -k device -v KB3AIK_EN.iso -f directory ) )
+
+# TODO: It'd be nice not to have to create an image per architecture
+#       But for some reason the x86 winpe can't start 64-bit installers
+
+# Overlay the task dir with necessary binaries
+winpe_task_dir="$RAZOR_ROOT/tasks/winpe.task"
+log "Installing binaries into task dir $winpe_task_dir ..."
+cp -av wimboot unzip.exe zip.exe "$winpe_task_dir"
+
+for arch in 'x86_64' 'x86'; do
+  # Create WinPE filesystem overlay for $arch
+  winpe_wim="$winpe_task_dir/winpe-${arch}.wim"
+
+  log "Building $arch WinPE image ($winpe_wim) ..."
+  mkdir -p "$overlay_dir/$arch/Windows/System32/"
+
+  if [[ ! -d "$winpe_task_dir" ]]; then
+    warn "Task not defined for winpe-$arch .. dir '$winpe_task_dir' not found." || true
+    continue
+  fi
+
+  case "$arch" in
+    x86)
+        curl_dir="${curl_x86_url##*/}"
+        wimlib_arch="x86"
+      ;;
+    x86_64)
+        curl_dir="${curl_x86_64_url##*/}"
+        wimlib_arch="amd64"
+      ;;
+    *)  warn "Unsupported arch '$arch' .. skipping." >&2 || true
+        continue
+      ;;
+  esac
+
+  # Install curl into the overlay
+  curl_src="/usr/src/${curl_dir%%.zip}"
+  for files in                \
+    "$curl_src"/bin/curl.exe  \
+    "$curl_src"/dlls/*.dll    \
+    ; do
+    cp -a "$files" "$overlay_dir/$arch/Windows/System32/"
+  done
+
+  # Patch the razor client script
+  winpe_bootstrap_script="/tmp/${razor_client_script##*/}"
+  log "Patching WinPE client script ($winpe_bootstrap_script)"
+  cp -a "$razor_client_script" "$winpe_bootstrap_script"
+
+  curl_win_version="${curl_dir%.zip}"
+  for key in \
+    RAZOR_SERVER DEBUG VERSION curl_win_version wimlib_version \
+    ; do
+      value="${!key:-}"
+      printf "%16s : %s\n" "$key" "$value" >&2
+      sed -r -i 's/\[%'"${key}"'%\]/'"${value}"'/' "$winpe_bootstrap_script"
+  done
+
+  # Generate the WinPE image
+  time mkwinpeimg  --only-wim --arch="${wimlib_arch:-amd64}" \
+                   --waik-dir="$waik_dir"                    \
+                   --overlay="$overlay_dir/$arch/"           \
+                   --start-script="$winpe_bootstrap_script"  \
+                   "$winpe_wim"
+
+done
+
+log "Building ipxe formats"
+time {
+  rm -f "$OUTPUT_DIR_IPXE/bootstrap.ipxe"
+  wget  -q "http://$RAZOR_SERVER:8080/api/microkernel/bootstrap" \
+        -O "$OUTPUT_DIR_IPXE/bootstrap.ipxe"
+  vizor setup ipxe -b "$OUTPUT_DIR_IPXE/bootstrap.ipxe" -o "$OUTPUT_DIR_IPXE"
+}
+
+umount -f "$waik_dir"
+popd &>/dev/null
+
