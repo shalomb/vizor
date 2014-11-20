@@ -5,24 +5,36 @@
 
 set -a
 
-source /etc/default/keyboard
+VIZOR_DEFAULT_FILE="${BASH_SOURCE[0]##*/}"
+VIZOR_DEFAULT_DIR="$(cd ${BASH_SOURCE[0]%/*} &>/dev/null && pwd -P)"
+VIZOR_DEFAULT="$VIZOR_DEFAULT_DIR/$VIZOR_DEFAULT_FILE"
 
-# General settings
-VIZOR_VERSION='0.1'
-DATE=$(date +%F)
-TIME=$(date +%T)
-TIMESTAMP="${DATE}T${TIME}"
-USER=$(whoami)
+[[ ! -e $VIZOR_DEFAULT_DIR/lc_identification.sh ]] && \
+  locale -ck LC_IDENTIFICATION |
+    grep -Ei -e '^(language|territory|identification-codeset)' |
+    sed -r 's/identification-codeset/identification_codeset/' \
+      > "$VIZOR_DEFAULT_DIR/lc_identification.sh"
 
-VIZOR_DEFAULTS_FILE="${BASH_SOURCE[0]##*/}"
-VIZOR_DEFAULTS_DIR="$(cd ${BASH_SOURCE[0]%/*} && pwd -P)"
-VIZOR_DEFAULTS="$VIZOR_DEFAULTS_DIR/$VIZOR_DEFAULTS_FILE"
+source "$VIZOR_DEFAULT_DIR/lc_identification.sh"
 
-echo "VIZOR_DEFAULTS : $VIZOR_DEFAULTS"
-
-for _file in "$VIZOR_DEFAULTS_DIR/${VIZOR_DEFAULTS_FILE}.d"/*.sh; do
+for _file in "$VIZOR_DEFAULT_DIR/${VIZOR_DEFAULT_FILE}.d"/*.sh; do
   if [[ -e $_file ]]; then
     source "$_file"
   fi
 done
+
+source /etc/default/keyboard
+
+# General settings
+VIZOR_VERSION='0.1'
+RFC_3339_DATE=$(date --rfc-3339=ns | tr ' ' 'T')
+DATE=${RFC_3339_DATE%T*}
+TIME=${RFC_3339_DATE#*T}
+TIME=${TIME%.*}
+TIMESTAMP="${DATE}T${TIME}"
+TZ="${TZ:-$(< /etc/timezone)}"
+TZ_OFFSET=$(TZ=$TZ date +%z)
+TZ_ABBREV=$(TZ=$TZ date +%z)
+USER="${USER:-$LOGNAME}"
+USER="${USER:-$(whoami)}"
 
