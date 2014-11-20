@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Download the KB3AIK_EN.iso, needed to prepare WinPE images for razor.
+
+[[ $DEBUG ]] && set -xv
+set -eu
+
+src_url='http://download.microsoft.com/download/8/E/9/8E9BBC64-E6F8-457C-9B8D-F6C9A16E6D6A/KB3AIK_EN.iso'
+outfile="${src_url##*/}"
+working_dir='/usr/src/'
+
+while getopts ":o:u:" opt; do
+  case $opt in
+    o) outfile="$OPTARG"
+    ;;
+    u) src_url="$OPTARG"
+    ;;
+    w) working_dir="$OPTARG"
+    ;;
+  esac
+done
+
+if [[ -e $outfile ]]; then
+  echo -e "$outfile already downloaded, skipping ..."
+  exit 0;
+fi
+
+echo "Downloading '$outfile' from '$src_url' "
+wget -c "$src_url" -O "$outfile"
+
