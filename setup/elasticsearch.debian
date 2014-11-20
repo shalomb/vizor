@@ -1,0 +1,38 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+pkgs_to_install=()
+
+list_file=/etc/apt/sources.list.d/X14_elasticsearch.org-stable_main.list
+
+if [[ ! -e $list_file ]]; then
+  wget -qO - http://packages.elasticsearch.org/GPG-KEY-elasticsearch | apt-key add -
+  echo 'deb http://packages.elasticsearch.org/elasticsearch/1.3/debian stable main' > "$list_file"
+fi
+
+for pkg in      \
+   openjdk-7-jre-headless elasticsearch \
+ ; do
+  if ! dpkg -s "$pkg" &> /dev/null; then
+    pkgs_to_install+=( "$pkg" )
+  fi
+done
+
+if (( ${#pkgs_to_install[@]} > 0 )); then
+  export DEBIAN_FRONTEND=noninteractive
+  cmd="aptitude install -y -t stable --without-recommends ${pkgs_to_install[@]}"
+  if whoami | grep -iq root; then
+    aptitude update
+    $cmd; exit $?
+  else
+    $cmd; exit $?
+  fi
+
+  update-rc.d elasticsearch defaults 95 10
+  update-rc.d elasticsearch enable 2 3 4 5
+  rm -f "$list_file" || true
+  aptitude update
+fi
+
