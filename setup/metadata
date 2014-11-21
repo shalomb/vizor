@@ -79,10 +79,10 @@ if ! result=$( curl -fsSL "http://localhost:5984/metadata/site" -X PUT -d "$meta
   die "Failed to set site metadata : $ec"
 fi
 
-public_ip=$(curl -fsSL -X GET 'http://www.telize.com/ip')
-   ip_api=$(curl -fsSL -X GET 'http://ip-api.com/json' | jq -e '.')
-  free_ip=$(curl -fsSL -X GET "http://freegeoip.net/json/$public_ip" | jq -e '.')
-   ipinfo=$(curl -fsSL -X GET "http://ipinfo.io/$public_ip" | jq -e '.')
+public_ip=$(curl -fsSL --max-time 30 -X GET 'http://www.telize.com/ip')
+   ip_api=$(curl -fsSL --max-time 30 -X GET 'http://ip-api.com/json' | jq -e '.')
+  free_ip=$(curl -fsSL --max-time 30 -X GET "http://freegeoip.net/json/$public_ip" | jq -e '.')
+   ipinfo=$(curl -fsSL --max-time 30 -X GET "http://ipinfo.io/$public_ip" | jq -e '.')
 
 printf -v geo_metadata_doc '{"public_ip":"%s"}' "$public_ip"
 [[ $ip_api  ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$ip_api") )
