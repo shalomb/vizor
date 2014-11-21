@@ -1,0 +1,182 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Pre-register a node and then call razor create-node
+
+source defaults.sh
+source colours.sh
+source utils.sh
+
+declare architecture='x86_64' asset= broker= mac= metadata_doc=     \
+        processor_count=2 repo= root_password= serial= task= uuid=  \
+        virtual='false'
+
+while getopts ":A:a:b:h:k:M:m:P:p:r:s:t:u:v" opt; do
+  case $opt in
+    A) architecture="$OPTARG"
+      ;;
+    a) asset="$OPTARG"
+      ;;
+    b) broker="$OPTARG"
+      ;;
+    h) hostname="$OPTARG"
+      ;;
+    M) metadata_doc="$OPTARG"
+      ;;
+    m) mac="$OPTARG" 
+      ;;
+    P) root_password="$OPTARG"
+      ;;
+    p) processor_count="$OPTARG"
+      ;;
+    r) repo="$OPTARG"
+      ;;
+    s) serial="$OPTARG"
+      ;;
+    t) task="$OPTARG"
+      ;;
+    u) uuid="$OPTARG"
+      ;;
+    v) virtual='true'
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+[[ -z $mac ]]   && die "No mac  (-m) supplied."
+[[ -z $repo ]]  && die "No repo (-r) supplied."
+[[ -z $task ]]  && die "No task (-t) supplied."
+
+uuid="${uuid:-$(</proc/sys/kernel/random/uuid)}"
+hostname="${hostname:-*}"
+serial="${serial:-$uuid}"
+asset="${asset:-$uuid}"
+broker="${broker:-noop}"
+
+cat <<EOF
+$0 Config
+
+     mac : $mac
+    uuid : $uuid
+  serial : $serial
+   asset : $asset
+    repo : $repo
+    task : $task
+  broker : $broker
+hostname : $hostname
+
+EOF
+
+function curl {
+  command curl -fsSL                    \
+    -H "Accept: application/json"       \
+    -H "Content-Type: application/json" \
+    "$@"
+}
+
+if ! razor brokers "$broker"; then
+  if [[ $broker = noop ]]; then
+    razor create-broker --name="$broker" --broker-type="$broker"
+  else
+    die "Error discovering broker $broker."
+  fi
+fi
+
+razor nodes --help | \
+  awk 'BEGIN{RS="\n\n"}/dhcp_mac: '"$mac"'/' | \
+  awk -F'[: ]+' '/name:/{print $3}' | \
+  while read -r node; do
+    razor delete-node --name "$node"
+    razor delete-policy --name "$repo--$node"
+  done
+
+mac_s="${mac//:/-}"
+reg_url="http://localhost:8080/svc/boot?net0=${mac_s}&dhcp_mac=${mac_s}&uuid=${uuid}&serial=${serial}&asset=${asset}&domain=foo"
+out=$( curl "$reg_url" )
+checkin_url=$( grep -Eio 'http://[^ ]+' <<<"$out" | awk -F':' '/svc\/checkin/{print $0}' )
+node_id="${checkin_url##*svc/checkin/}"
+node="node$node_id" # Inferrence
+
+cat <<EOF
+
+Registered Node
+  Node ID       : $node_id
+  Node Name     : $node
+  Checkin URL   : $checkin_url
+
+EOF
+
+function checkin_node {
+
+  action=$( curl "http://localhost:8080/svc/checkin/$node_id" -X POST -d '
+    {
+      "facts": {
+        "architecture":     "'"$architecture"'",
+        "hardwareisa":      "'"$architecture"'",
+        "is_virtual":       "'"$virtual"'",
+        "macaddress":       "'"$mac"'",
+        "processorcount":   "'"$processor_count"'",
+        "uniqueid":         "'"$node"'",
+        "uuid":             "'"$uuid"'",
+        "virtual":          "'"$virtual"'"
+      }
+    }
+  ');
+
+  action=$( jq -c -e -r '.action' <<<"$action")
+
+  case "$action" in
+
+    *Not*Found*)
+      warn "Node ${node} not known to razor. Is it expected to be rebooted/reinstalled?" || true
+      razor reinstall-node --name "$node"
+    ;;
+
+    none)
+      razor create-tag --name "$mac" --rule '["=", ["fact", "macaddress"], "'"$mac"'"]' || true
+
+      razor create-policy --json <( jq . <<EOPOL
+        {
+          "name"            : "$repo--$node",
+            "repo"          : { "name"   : "$repo"    },
+            "task"          : { "name"   : "$task"    },
+            "broker"        : { "name"   : "$broker"  },
+            "tags"          : [{ "name"  : "$mac"     }],
+            "enabled"       : true,
+            "hostname"      : "$hostname",
+            "max_count"     : 1,
+            "root_password" : "$root_password",
+            "node_metadata": { }
+        }
+EOPOL
+      )
+      return 1
+    ;;
+
+    reboot)
+        [[ ${DEBUG-} ]] && razor nodes "$node" 
+        [[ ${DEBUG-} ]] && razor nodes "$node" facts
+        [[ ${DEBUG-} ]] && razor nodes "$node" metadata
+        return 0
+      :;
+    ;;
+
+    *)
+      warn "Unimplemented action '$action' for node checkin" || true
+    ;;
+  esac
+}
+
+max_registration_tries=600
+
+c=0
+while ! checkin_node; do
+  if (( c++ >= max_registration_tries )); then
+    echo "Failed to register node after $c ($max_registration_tries) tries .. giving up." >&2
+    exit 3
+  fi
+  sleep 0.0625
+done
+

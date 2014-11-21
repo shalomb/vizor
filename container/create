@@ -1,0 +1,25 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare type=
+
+while getopts "t:" opt 2>/dev/null; do
+  case $opt in
+    t) type="$OPTARG"
+      ;;
+  esac
+done
+
+[[ -z $type ]] && die "No type (-t) specified."
+
+case "$type" in
+  cloudstack) vizor cloudstack vm-container create "$@"
+    ;;
+  xenserver)  vizor xenserver  vm-container create "$@"
+    ;;
+  *) die "Unsupported/unimplemented type '$type'"
+    ;;
+esac
+

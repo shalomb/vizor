@@ -1,0 +1,334 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+source apache.sh
+
+declare box_name= container_name= hostname= instance_name= metadata= \
+        metadata_file= root_password= boot_iso_def=
+
+while getopts "b:B:c:C:m:M:n:" opt; do
+  case $opt in
+    b) box_name="$OPTARG"
+      ;;
+    c) container_name="$OPTARG"
+      ;;
+    m) metadata="$OPTARG"
+      ;;
+    M) metadata_file="$OPTARG"
+      ;;
+    n) instance_name="$OPTARG"
+      ;;
+  esac
+done
+
+[[ -z $box_name ]] && die "Box name (-b) not specified."
+[[ -z $container_name ]] && die "Container name (-c) not specified."
+
+box_url='http://localhost:5984/box/'"$box_name"
+if box_def=$( curl -fsS "$box_url" ) ec=$?; then
+  image_id=$( jq -e -c -r '.image_id' <<<"$box_def" )
+else
+  die "Unable to find box definition for at '$box_url': $ec"
+fi
+
+[[ -z $image_id ]] && die "Unable to determine image ID."
+
+image_url='http://localhost:5984/image/'"$image_id"
+if image_def=$( curl -fsS "$image_url" ) ec=$?; then
+   vstring=$( jq -e -c -r '.vstring' <<<"$image_def" )
+    iso_id=$( jq -e -c -r '.iso_id'  <<<"$image_def" )
+  if [[ $iso_id ]]; then
+    iso_def=$( curl -fsS "http://localhost:5984/iso/$iso_id" )
+    iso_file=$( jq -e -c -r '.path' <<<"$iso_def" )
+  fi
+else
+  die "Unable to find image definition at '$image_url': $ec"
+fi
+
+container_url='http://localhost:5984/container/'"$container_name"
+if container_def=$( curl -fsS "$container_url" ) ec=$?; then
+  container_type=$( jq -c -e -r '.type' <<<"$container_def" )
+else
+  die "Unable to find container definition at '$container_url': $ec"
+fi
+
+if [[ -z $instance_name ]]; then
+  node_suffix="$(date +'%Y%m%d')$(head -c 4 < /proc/sys/kernel/random/uuid)"
+  instance_name="$box_name-$node_suffix"
+  instance_name="${instance_name//[!a-zA-Z0-9\-]/-}"
+fi
+
+
+# Setup instance metadata
+os_architecture=$( jq -e -r '.architecture' <<<"$image_def" )
+        os_name=$( jq -e -r '.name'         <<<"$image_def" )
+       box_name=$( jq -e -r '.name'         <<<"$box_def" )
+       box_type=$( jq -e -r '.type'         <<<"$box_def" )
+
+     metadata_doc='{}'
+   image_metadata=$( jq -e '.'  <<<"$image_def" )
+     box_metadata=$( jq -e '.metadata'  <<<"$box_def" )
+instance_metadata=$( jq -e -S -s '.[0] * .[1]'  <(echo "$image_metadata") <(echo "$box_metadata") )
+
+if [[ -e $metadata_file ]]; then
+  instance_metadata=$( jq -e -S -s '.[0] * .[1]' <(echo "$instance_metadata") <(cat "$metadata_file") )
+fi
+
+if [[ -n $metadata ]]; then
+  metadata=$( jq -e '.' <<<"$metadata" )
+  instance_metadata=$( jq -e -S -s '.[0] * .[1]' <(echo "$instance_metadata") <(echo "$metadata") )
+fi
+
+# Determine hostname and other parameters
+[[ -z $root_password ]] && root_password=$( jq -r '.root_password // empty' <<<"$instance_metadata" )
+[[ -z $root_password ]] && root_password=$( grep -Eio '^[^-]+' /proc/sys/kernel/random/uuid )
+
+[[ -z $hostname ]]      && hostname=$( jq -r '.hostname // empty' <<<"$instance_metadata" )
+if [[ -z $hostname ]]; then
+  hostname="${instance_name##*-}-$(< /proc/sys/kernel/random/uuid)"
+  case "$box_type" in
+    windows) 
+      hostname="${hostname:0:15}"
+      ;;
+    *) hostname="${hostname:0:$(getconf HOST_NAME_MAX)}"
+      ;;
+  esac
+fi
+
+# Map box_type to razor task
+razor_task=
+case "$box_type" in
+  windows)
+    case "$os_architecture" in
+      x86) razor_task='winpe'
+        ;;
+      x86_64) razor_task='winpe'
+    esac
+    ;;
+  *) die "Box type '$box_type' unknown or unimplemented."
+    ;;
+esac
+[[ -z $razor_task ]] && die "Unable to determine razor task"
+
+# Validate boot iso exists
+ipxe_iso_url=$( file_url "$DOCUMENT_ROOT/ipxe/ipxe.iso" )
+if ! curl -sS -f -I "$ipxe_iso_url" >/dev/null; then
+  die "Boot iso not found at '$ipxe_iso_url'"
+fi
+log "  Task task '$razor_task'"
+
+instance_name="${instance_name//[!A-Za-z0-9]/-}"
+[[ $instance_name = *[!A-Za-z0-9\-]* ]] && die "Instance name '$instance_name' has invalid characters [!A-Za-z0-9\-]"
+(( ${#instance_name} > 64 ))            && die "Instance name '$instance_name' is too long (>64 chars)."
+
+log  "Building box instance '$instance_name' in $container_type container '$container_name'"
+if [[ ${DEBUG-} ]]; then
+  echo "  instance_name  : $instance_name"
+  echo "  box_name       : $box_name"
+  echo "  os_name        : $os_name"
+  echo "  os_type        : $box_type $os_architecture"
+  echo "  iso            : $iso_file"
+  echo "  razor_task     : $razor_task"
+  echo "  hostname       : $hostname"
+  echo "  root_password  : $root_password"
+fi
+
+# create instance
+case "$container_type" in
+
+  cloudstack)
+
+    for key in              \
+        disk_offering_id    \
+        disk_size           \
+        group               \
+        hypervisor          \
+        keyboard_type       \
+        name                \
+        network_id          \
+        os_type             \
+        os_type_id          \
+        service_offering_id \
+        template_id         \
+        zone_id             \
+      ; do
+        val=$( jq -r ".$key // empty" <<<"$container_def" )
+        [[ $key = name ]] && key="container_name"
+        printf -v "$key" "%s" "$val"
+    done
+
+    boot_iso_def=$(
+      vizor cloudstack iso register -b -B \
+        -a "$os_architecture"             \
+        -n "$vstring"                     \
+        -O "$os_name"                     \
+        -o "$os_type_id"                  \
+        -u "$ipxe_iso_url"                \
+        -z "$zone_id"                     \
+        -d "ipxe_Boot_CD_for_$vstring" | jq -S 'del(.count) | .[][]'
+      )
+
+      boot_iso_id=$( jq -c -e -r '.id'    <<<"$boot_iso_def" )
+    boot_iso_name=$( jq -c -e -r '.name'  <<<"$boot_iso_def" )
+
+    log "Creating vm instance '$instance_name' to boot from iso '$boot_iso_name'"
+    instance_def=$(
+      vizor cloudstack vm create -S       \
+        -d "$disk_offering_id"            \
+        -D "$disk_size"                   \
+        -g "$group"                       \
+        -h "$hypervisor"                  \
+        -k "$keyboard_type"               \
+        -N "$network_id"                  \
+        -n "$instance_name"               \
+        -s "$service_offering_id"         \
+        -t "$boot_iso_id"                 \
+        -z "$zone_id" 
+    )
+    [[ -z $instance_def ]] && die "Error getting instance data."
+
+       job_result=$( jq -c -e -r '.jobresult' <<<"$instance_def" )
+      instance_id=$( jq -c -e -r '.virtualmachine.id'   <<<"$job_result" )
+    instance_name=$( jq -c -e -r '.virtualmachine.name' <<<"$job_result" )
+      mac_address=$( jq -c -e -r '.virtualmachine.nic[0].macaddress' <<<"$job_result" )
+
+    instance_ha_def=$( cloudmonkey update virtualmachine id="$instance_id" haenable=false isdynamicallyscalable=false ostypeid="$os_type_id" )
+    instance_ha_status=$( jq -c -r '.virtualmachine.haenable' <<<"$instance_ha_def" )
+    log "  Instance id : $instance_id ($instance_name/$mac_address) (haenable: $instance_ha_status)"
+  ;;
+
+  xenserver)
+                 host=$( jq -c -e -r '.host'                <<< "$container_def" )
+             iso_name=$( jq -c -e -r '.iso_name'            <<< "$container_def" )
+    memory_static_max=$( jq -c -e -r '.memory_static_max'   <<< "$container_def" )
+    memory_static_min=$( jq -c -e -r '.memory_static_min'   <<< "$container_def" )
+              sr_name=$( jq -c    -r '.sr_name // empty'    <<< "$container_def" )
+        template_name=$( jq -c -e -r '.name_label'          <<< "$container_def" )
+     VCPUs_at_startup=$( jq -c -e -r '.VCPUs_at_startup'    <<< "$container_def" )
+           vdisk_size=$( jq -c -e -r '.disk_size'           <<< "$container_def" )
+           vm_network=$( jq -c    -r '.vm_network // empty' <<< "$container_def" )
+           vm_network="${vm_network:-eth0}"
+
+    instance_def=$( "$host" "
+      export TERM="$TERM"
+      iso_name='$iso_name'                    \
+      memory_static_max='$memory_static_max'  \
+      memory_static_min='$memory_static_min'  \
+      sr_name='$sr_name'                      \
+      VCPUs_at_startup='$VCPUs_at_startup'    \
+      vdisk_size='$vdisk_size'                \
+      vm_description='$instance_name'         \
+      vm_name='$instance_name'                \
+      vm_network='$vm_network'                \
+      template_name='$template_name'          \
+      xe_vm_create -S
+    " )
+
+     instance_def=$( jq -e -S '.' < <(kvf_to_json <<< "$instance_def") )
+      instance_id=$( jq -c -e -r '.vm_uuid'       <<< "$instance_def" )
+    instance_name=$( jq -c -e -r '.vm_name'       <<< "$instance_def" )
+      mac_address=$( jq -c -e -r '.mac_address'   <<< "$instance_def" )
+
+    log "  Instance id : $instance_id ($instance_name/$mac_address)"
+
+  ;;
+esac
+
+repo_name="$vstring-$(head -c 4 /proc/sys/kernel/random/uuid)"
+log "Creating razor repo '$repo_name' ($iso_file)"
+vizor razor repo prepare  \
+  -i "$iso_file"          \
+  -r "$repo_name"         \
+  -t "$razor_task" | debug_handler
+
+log "Checking in to razor on behalf of node ($mac_address)"
+vizor razor node prepare  \
+  -A "$os_architecture"   \
+  -h "$hostname"          \
+  -m "$mac_address"       \
+  -P "$root_password"     \
+  -r "$repo_name"         \
+  -t "$razor_task"        \
+  -u "${instance_id:-$(< /proc/sys/kernel/random/uuid)}" | debug_handler
+
+node_id=$( curl -sSL 'http://localhost:8080/api/collections/tags/'"$mac_address"'/nodes' |
+            jq -e -r '.items[].name' )
+
+node_def=$(curl -sSL 'http://localhost:8080/api/collections/nodes/'"$node_id" | jq '.')
+
+log "Setting node metadata for '$node_id' (${#instance_metadata})"
+vizor razor node metadata define  \
+  -n "$node_id"                   \
+  -m "$instance_metadata" | debug_handler
+
+# start instance
+log "Starting $container_type instance '$instance_id'"
+case "$container_type" in
+  cloudstack)
+    if ! vm_start_def=$( vizor cloudstack vm start -i "$instance_id" ) ec=$?; then
+      die "Failed to start vm : $ec"
+    else
+      vm_start_def=$( jq -e 'del(.jobresult.virtualmachine)' <<<"$vm_start_def" )
+    fi
+  ;;
+  xenserver)
+    "$host" "xe vm-start uuid='$instance_id'"
+    vm_start_def=$( jq -c -e -r '.start_time = "'"$(date +%s)"'"' <<<"{}" )
+  ;;
+esac
+
+master_doc='{}'
+      name="$instance_name"
+        id="$instance_id"
+     ctime=$(date +%FT%T)
+     mtime=$(date +%FT%T)
+
+for i in  \
+  id      \
+  name    \
+  ctime   \
+  mtime   \
+  ; do 
+    key="$i"
+    value="${!i-}"
+    master_doc=$( jq -r '.'"$key"' = "'"$value"'"' <<<"$master_doc" )
+done
+
+      box_doc=$( jq '. | {box:.}'    <<<"$box_def" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$box_doc") )
+
+    image_doc=$( jq '. | {image:.}'  <<<"$image_def" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$image_doc") )
+
+container_doc=$( jq '. | {container:.}' <<<"$container_def" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$container_doc") )
+
+if [[ -n $boot_iso_def ]]; then
+ boot_iso_doc=$( jq '. | {boot_iso:.}'  <<<"$boot_iso_def" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$boot_iso_doc") )
+fi
+
+     node_doc=$( jq '. | {node:.}' <<<"$node_def" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$node_doc") )
+
+ instance_doc=$( jq -s '.[] | {vm:.}' <<<"$instance_def" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$instance_doc") )
+
+if [[ $vm_start_def ]]; then
+ instance_doc=$( jq -s '.[] | {start_event:.}' <<<"$vm_start_def" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$instance_doc") )
+fi
+
+instance_url="http://localhost:5984/instance/$name"
+
+_rev=$( curl -fsSL "$instance_url?revs_info=true" 2>/dev/null |
+        jq -r '._revs_info[0].rev' )
+[[ -n $_rev ]] && master_doc=$( jq -r '._rev = "'"$_rev"'"' <<< "$master_doc" )
+
+if ! ret=$(curl -fsSL -X PUT "$instance_url" -d "$master_doc") ec=$?; then
+  warn "Error updating record for instance '$name' : $ec, $ret"
+fi
+
+log "Updated instance data at '$instance_url'"
+

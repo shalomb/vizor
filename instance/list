@@ -1,0 +1,12 @@
+#!/bin/bash
+
+declare size=
+
+size="$1"
+
+{
+  echo 'instance_id,box_id,created,box type,container type'
+  curl -sS 'http://localhost:9200/instance/instance/_search?sort=ctime:desc&from=0&size='"${size:-50}" |
+    jq -S -r -c '.hits.hits[]._source | [._id,.box._id,.ctime,.box.type,.container.type]' |
+    sed -r 's/^\[|\]$//g'
+} | csv_to_table

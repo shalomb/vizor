@@ -1,0 +1,11 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+{
+  echo 'id,vstring_long,image,type,ctime'
+  curl -sS 'http://localhost:9200/box/box/_search?sort=_id&from=0&size=99999&sort=_id' |
+    jq -S -r -c '.hits.hits[]._source | [._id,.vstring_long,.image_id,.type,.ctime]' |
+    sed -r 's/^\[|\]$//g' 
+} | csv_to_table

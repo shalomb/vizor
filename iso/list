@@ -1,0 +1,9 @@
+#!/bin/bash
+
+{
+  echo 'iso,create time,volume,name'
+  curl -sS 'http://localhost:9200/iso/iso/_search?from=0&size=9999&sort=ctime' |
+    jq -S -r -c '.hits.hits[]._source | [.id,.ctime,.volume_id,.name]' |
+    sed -r 's/^\[|\]$//g' |
+    tac
+} | csv_to_table
