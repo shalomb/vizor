@@ -149,9 +149,9 @@ eos
         <UILanguage><%= node.metadata['setup_ui_language']   || node.metadata['default_language'] %></UILanguage>
       </SetupUILanguage>
       <SystemLocale><%= node.metadata['system_locale'] || node.metadata['default_language'] %></SystemLocale>
-      <UILanguage><%=   node.metadata['ui_language']   || node.metadata['system_locale'] %></UILanguage>
-      <InputLocale><%=  node.metadata['input_locale']  || node.metadata['ui_language'] %></InputLocale>
-      <UserLocale><%=   node.metadata['user_locale']   || node.metadata['ui_language'] %></UserLocale>
+      <UILanguage><%=   node.metadata['ui_language']   || node.metadata['system_loale'] || node.metadata['default_language'] %></UILanguage>
+      <InputLocale><%=  node.metadata['input_locale']  || node.metadata['ui_language']  || node.metadata['default_language'] %></InputLocale>
+      <UserLocale><%=   node.metadata['user_locale']   || node.metadata['ui_language']  || node.metadata['default_language'] %></UserLocale>
       <UILanguageFallback>en-US</UILanguageFallback>
     </component>
 
