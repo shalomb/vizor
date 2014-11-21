@@ -1,0 +1,45 @@
+WINDOWS UPDATE
+
+This module contains convencience functions used in Windows Update tasks.
+
+
+Enabling and Disabling Windows Update
+-------------------------------------
+  Enable-WindowsUpdate      - Enable WU through registry and start WU services.
+  Disable-WindowsUpdate     - Disable WU through registry and stop WU services.
+
+
+Finding and Installing Updates
+------------------------------
+  Search-WindowsUpdate      - Search for Installed or Applicable Updates.
+  Install-WindowsUpdate     - Only takes parameters in from the pipeline.
+                                (from Search-WindowsUpdate)
+  Get-WindowsUpdateHistory  - Alias for Search-WindowsUpdate -History
+
+
+Bootstrapping Windows Update for Automation
+-------------------------------------------
+These functions are only required on Windows XP and Vista systems
+that have not previously been subject to Windows Update.
+
+  Invoke-WUDependencyChecks - Run checks to ensure this module's 
+                              dependencies are met.
+  Install-KB898461HotFix    - Download and install KB898461.
+  Get-KB898461HotFix        - Download KB898461.
+                              (Called by Install-KB898461HotFix)
+  Show-KB898461URLInBrowser - Open the URL for KB898461 in 
+                              Internet Explorer.
+
+
+Miscellaneous
+-------------
+  Show-WindowsUpdateBrowser - Open http://windowsupdate.microsoft.com/ in
+                              Internet Explorer.
+  Show-WindowsUpdateSettingsDialog - Open the WU settings dialog to control the 
+                                    frequency of WU checks.
+
+TODO
+----
+  * Translate KBIDs to descriptions (Get-WindowsUpdateHistory provides some of this information).
+    * Needs to support KBIDs that are not necessarily windows updates
+  * HKLM\Software\Wow6432Node\Policies\Microsoft\Windows\WindowsUpdate DisableWindowsUpdateAccess - 1

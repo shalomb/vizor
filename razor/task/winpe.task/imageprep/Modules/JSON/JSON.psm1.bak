@@ -1,0 +1,135 @@
+# PowerShell module
+
+
+# JSON functions for Powershell v2
+
+# Based on
+#   'ConvertTo-JSON for Powershell 2.0' https://gist.github.com/mdnmdn/6936714
+
+
+Set-StrictMode  -Version 2.0
+Set-PSDebug     -Trace 0
+$ErrorActionPreference = "STOP"
+
+
+if ( $PSVersionTable.PSVersion.Major -ge 3 ) {
+  $ModuleName = (Get-Command -Name ConvertTo-JSON).ModuleName
+  Write-Warning "  PSVersion=($($PSVersionTable.PSVersion)) >= 3."
+  Write-Warning "  JSON Functionality is already provided by existing Module '$ModuleName'"
+}
+else {
+  # Define Functions for PS Host under PS v2
+
+  function ConvertTo-EscapedJSONString {
+    [CmdletBinding()] Param (
+      [Parameter(
+        Position=0, 
+        Mandatory=$true, 
+        ValueFromPipeline=$true,
+        ValueFromPipelineByPropertyName=$true)
+      ] [AllowEmptyString()] [String] $String = $Null
+    )
+  
+    # Should conform to escaping as per RFC 4627
+    if ( $String ) {
+      $String.Replace('"','\"').Replace('\','\\').Replace("`n",'\n').Replace("`r",'\r').Replace("`t",'\t')
+    } else {
+      "`"`""
+    }
+  }
+  
+
+  function ConvertTo-JSON {
+    [CmdletBinding()] Param(
+      [Parameter(
+        Position=0, 
+        Mandatory=$true, 
+        ValueFromPipeline=$true,
+        ValueFromPipelineByPropertyName=$true)
+      ] [AllowEmptyString()] [Object] $Data = @(),
+      [Int]     $MaxDepth = 4,
+      [Switch]  $ForceArray = $false
+    )
+  
+    # Begin { }
+  
+    # Process { $Data += $_ }
+  
+    End {
+  
+      if ($Data.length -eq 1 -and $forceArray -eq $false) {
+        $Value = $Data[0]
+      } else {
+        $Value = $Data
+      }
+  
+      if ($Value -eq $null) {
+        return "null"
+      }
+  
+      switch -regex ( $Value.GetType().Name ) {
+        'String'                { return  "`"{0}`"" -f (ConvertTo-EscapedJSONString $Value) }
+  
+        'Int\d+|Double'         { return  "$Value" }
+  
+        '(System\.)?Object\[\]' { # Array
+          if ($MaxDepth -le 0){ return "`"$Value`"" }
+  
+          $JSON = ''
+          foreach($elem in $Value){
+            #if ($elem -eq $null) {continue}
+            if ($JSON.Length -gt 0) { $JSON +=', ' }
+            $JSON += ($elem | ConvertTo-JSON -MaxDepth ($MaxDepth -1))
+          }
+          return "[" + $JSON + "]"
+        }
+  
+        '(System\.)?Hashtable'  { # Hashtable
+          $JSON = ''
+          foreach($Key in $Value.Keys){
+            if ($JSON.Length -gt 0) { $JSON +=', ' }
+            $JSON += "`"{0}`":{1}" -f $Key , ($Value[$Key] | ConvertTo-JSON -MaxDepth ($MaxDepth -1))
+          }
+          return ("{" + $JSON + "}")
+        }
+  
+        'Boolean'             { return  "$Value".ToLower() }
+  
+        '(System\.)?DateTime' { return  "`"{0:yyyy-MM-dd}T{0:HH:mm:ss}`"" -f $Value }
+  
+        default { # Object
+          if ($MaxDepth -le 0) { return  "`"{0}`"" -f (ConvertTo-EscapedJSONString $Value) }
+  
+          return "{" +
+            (($Value | Get-Member -MemberType *property | % {
+              "`"{0}`": {1}" -f $_.Name , ($Value.($_.Name) | ConvertTo-JSON -MaxDepth ($MaxDepth -1))
+            }) -join ', ') + "}"
+        }
+      }
+  
+    }
+  }
+  
+
+  function ConvertFrom-JSON {
+    [CmdletBinding()] Param(
+      [Parameter(ValueFromPipeline=$True,  Position=0)] 
+        [Object]  $InputObject
+    )
+  
+    Begin {
+      Add-Type -AssemblyName System.Web.Extensions
+    }
+  
+    Process {
+      try {
+        $Dictionary = (New-Object -TypeName System.Web.Script.Serialization.JavascriptSerializer).DeSerializeObject($InputObject)
+        $PSObject   =  New-Object -TypeName PSObject -Property ([HashTable]$Dictionary)
+      } catch [Exception] {
+        throw $Error[0]
+      }
+      $PSObject
+    }
+  }
+
+}

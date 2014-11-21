@@ -1,0 +1,121 @@
+::cmd.exe
+
+
+:: SYNOPSIS
+::  Second-Stage - Start the windows installer with answerfile from the razor share.
+
+
+@echo off
+
+setlocal enabledelayedexpansion
+
+cd !TEMP!
+
+set /a DEBUG=<%= node.metadata['debug_level'] || 0 %>
+
+:: TODO. Determine the razor_share in a better way.
+
+@echo.
+@echo.Razor WinPE Stage 2
+@echo.  
+
+@echo.          script : %0
+@echo.    razor_server : <%= URI.parse(repo_url).host %>
+@echo.     razor_share : razor
+@echo.            task : <%= task.label %>
+@echo.     description : <%= task.description %>
+@echo.            repo : <%= repo_url.split('/').last %>
+@echo.        repo_url : <%= repo_url %>
+@echo.        node_url : <%= node_url %>
+@echo.            node : <%= node_url.split('/').last %>
+@echo.       installer : \\<%= URI.parse(repo_url).host %>\razor\<%= repo_url.split('/').last %>\setup.exe
+@echo.  answerfile_src : <%= file_url('unattended.xml') %>
+@echo.  
+
+set              server=<%= URI.parse(repo_url).host %>
+set               share=razor
+set                repo=<%= repo_url.split('/').last %>
+set           installer=\\!server!\!share!\!repo!\setup.exe
+set      answerfile_src=<%= file_url('unattended.xml') %>
+set          answerfile=<%= file_url('unattended.xml').split('/').last %>
+set       log_url_debug=<%= log_url('', 'debug').gsub(/msg=[^&]*&?/, '') %>
+set       log_url_error=<%= log_url('', 'error').gsub(/msg=[^&]*&?/, '') %>
+set               DEBUG=<%= node.metadata['debug_level'] || 0 %>
+
+:: Net use install share
+set /a net_use_try=0
+set /a net_use_max_tries=30
+
+@echo.Map network share   : \\!server!\!share!
+curl -s -S -L -X GET "!log_url_debug!" --data-urlencode "msg=map_network_share:\\!server!\!share!"
+
+:net_use
+net use * /delete /yes >NUL 2>&1
+net use \\!server!\!share! /persistent:yes > net_use.log 2>&1
+set /a net_use_exit_code=!ERRORLEVEL!
+
+set net_use_msg=
+for /f "tokens=*" %%g in ('type net_use.log') do (
+  set net_use_msg=!net_use_msg! %%g
+)
+
+@echo.  net use exit_code:!net_use_exit_code! try:!net_use_try! msg:!net_use_msg!
+curl -s -S -L -X GET "!log_url_debug!" --data-urlencode "msg=net_use try:!net_use_try!, exit_code:!net_use_exit_code!, msg:!net_use_msg!"
+
+set /a net_use_try=net_use_try+1
+if !net_use_try! GEQ !net_use_max_tries! exit /b !net_use_exit_code!
+if !net_use_exit_code! NEQ 0 (
+  ping -n !net_use_try! 127.0.0.1 >NUL 2>&1
+  goto net_use
+)
+
+
+@echo.Fetching answerfile : !answerfile_src!
+curl -s -S -L -X GET !answerfile_src! -o !answerfile!
+
+@echo.Starting installer  : !installer! /unattend:!answerfile! /noreboot
+curl -s -S -L -X GET "!log_url_debug!" --data-urlencode "msg=start_installer:!installer! /unattend:!answerfile! /noreboot"
+!installer! /unattend:!answerfile! /noreboot
+
+set exit_code=!ERRORLEVEL!
+@echo.Installer exit_code : !exit_code!
+curl -s -S -L -X GET "!log_url_debug!&msg=exit_code=!exit_code!"
+
+if !DEBUG! NEQ 0 (
+  start /max "exit_code:!exit_code!, debug_level:!DEBUG!" cmd.exe
+  pause
+)
+
+:: TODO. The exit codes returned from windows setup are simply unreliable.
+::       Since we pass the exit code naively back to razor, it causes the 
+::       node to progress through to the next stages.
+::       We require a better mechanism to detect install status.
+:: 'Windows Installer Error Messages (Windows)' 
+::  http://msdn.microsoft.com/en-us/library/aa372835(v=vs.85).aspx
+
+if !exit_code!==0 (
+  @echo.Notifying Razor that the installer completed.
+  curl <%= stage_done_url('finished') %>
+) else (
+  @echo.Unexpected exit_code : !exit_code!
+  curl -s -S -L -X GET "!log_url_debug!" --data-urlencode "msg=unexpected_exit_code:!exit_code!"
+)
+
+:: TODO. It'd be nice to have a mechanism to upload files to razor for 
+::        troubleshooting/debug.
+::  'Windows 7, Windows Server 2008 R2, and Windows Vista setup log file locations'
+::  http://support2.microsoft.com/kb/927521
+if !DEBUG! NEQ 0 (
+  if exist "\Windows\setupact.log"          start "" notepad.exe \Windows\setupact.log
+  if exist "\Windows\panther\setuperr.log"  start "" notepad.exe \Windows\panther\setuperr.log
+  if exist "\Windows\panther\setupact.log"  start "" notepad.exe \Windows\panther\setupact.log
+  if exist "\Windows\debug\NetSetup.log"    start "" notepad.exe \Windows\debug\NetSetup.log
+  start "Post-Bootstrap" cmd.exe /k "@echo.Entering debug shell, exit to reboot"
+  pause
+)
+
+@echo.Exiting
+
+exit /b !exit_code!
+
+:: vim:filetype=dosbatch

@@ -1,0 +1,164 @@
+# PowerShell
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'STOP'
+$PSModuleAutoLoadingPreference='None'
+
+Set-PSDebug -Trace 0
+
+Import-Module Microsoft.PowerShell.Host       -ea 0
+Import-Module Microsoft.PowerShell.Management -ea 0
+Import-Module Microsoft.PowerShell.Utility    -ea 0
+
+$ScriptDir = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).Directory.FullName
+
+Write-Host -Fore Cyan "Begin firstboot script"
+
+# Files to be downloaded from the razor task
+<%=
+  files = ([
+     file_url('metadata.ps1'),
+     file_url('l18n.xml'),
+     file_url('nodeprep.seq.ps1'),
+     file_url('imageprep.zip', true),
+     file_url('unzip.exe', true),
+     file_url('Start-Bootstrap.cmd', true),
+     file_url('Start-Bootstrap.ps1', true),
+     file_url('Set-CADIFirewall.ps1', true),
+     file_url('Start-AsyncAsfDiscovery.ps1', true),
+     file_url('Invoke-DefaultBootstrapScript.ps1'),
+
+  ].each.collect { |url| %q{'%s'} % url }).join(",\n\t")
+
+    '$files = @(
+        %s
+      );' % files
+%>
+
+cd $ScriptDir
+
+foreach ($url in $files) {
+  $file = ($url -split "/")[-1]
+  rm -Force $file -ea 0
+  ($retry, $retry_count) = ($False, 0)
+  do {
+    try{
+      Write-Host -Fore Cyan "  * Download $url"
+      (New-Object System.Net.WebClient).DownloadFile($url, $file)
+    } catch{
+      Write-Host -Fore Red "  Failed to download $url"; # Not set to Warning due to EAP
+      $retry=$True
+      $retry_count++
+      sleep 1
+    }
+  } while($retry -and ($retry_count -le 10))
+}
+
+reg.exe add "HKCU\Control Panel\International" /f
+reg.exe add "HKCU\Control Panel\International\User Profile" /f
+
+if (Test-Path 'lp.cab') {
+  Write-Host -Fore Cyan " Installing language pack - Dism /online /Add-Package /PackagePath:lp.cab"
+  Dism /online /Add-Package /PackagePath:lp.cab
+}
+
+# reg.exe add 'HKCU\Control Panel\International
+$f = '/f:"{0}"' -f (ls l18n.xml).FullName
+Write-Host -Fore Magenta "Applying l18n settings - control.exe 'intl.cpl,,' $f"
+control.exe 'intl.cpl,,' $f
+
+$SequenceFile = Join-Path $PWD 'nodeprep.seq.ps1'
+
+Write-Host -Fore Cyan "  Unzipping imageprep.zip"
+.\unzip.exe -o -q imageprep.zip -d .
+
+
+$Env:BootstrapScript = (ls Start-Bootstrap.cmd).FullName
+
+# reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v $BootstrapScript /t REG_SZ /d $BootstrapScript
+# Write-Host -Fore Magenta "Register StartupTasks $StartupTasks"
+
+
+$PSCmdLet = @'
+# Resume-ImagePrep.ps1
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'STOP'
+$PSModuleAutoLoadingPreference='None'
+
+Set-PSDebug -Trace 2
+
+Import-Module Microsoft.PowerShell.Host       -ea 0
+Import-Module Microsoft.PowerShell.Management -ea 0
+Import-Module Microsoft.PowerShell.Utility    -ea 0
+
+$ScriptDir = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).Directory.FullName
+cd ($Env:IPBaseDir=$ScriptDir)
+
+$Env:PSModulePath+=";$Env:IPBASEDIR;$Env:IPBASEDIR\Modules;$PWD;$PWD\Modules;"
+
+Import-Module SystemUtils
+Import-Module ImageMaintenance
+
+Write-Host -Fore Cyan "Resume-ImageMaintenance {0}"
+
+$Env:IPBootScript = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).FullName
+ImageMaintenance\Resume-ImageMaintenance -Sequence {0} -Verbose
+
+Write-Host -Fore Cyan "Resume-ImageMaintenance COMPLETE"
+
+'@
+
+$PSCmdLet = $PSCmdLet -f $SequenceFile
+
+$CmdLet = @'
+:: cmd.exe
+@echo off
+
+:: mode con:cols=112 lines=9999
+:: mode con:cols=112 lines=32766
+
+:: Resume-ImagePrep.cmd
+
+prompt . 
+@echo on
+
+setlocal enabledelayedexpansion
+
+set THISDIR=%~dp0
+cd !THISDIR!
+
+if not exist Resume-ImagePrep.ps1 (
+  del %0
+  exit
+)
+
+start "Resume-ImagePrep.ps1" /b /wait /realtime !SystemRoot!\System32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -file Resume-ImagePrep.ps1
+
+exit /b !ERRORLEVEL!
+'@
+
+# Create powershell script
+$PsFile = Join-Path $PWD 'Resume-ImagePrep.ps1'
+$PSCmdLet | Out-File -encoding ASCII $PsFile -Force
+
+# Create powershell runner
+$CmdFile = Join-Path $PWD 'Resume-ImagePrep.cmd'
+$CmdLet   | Out-File -encoding ASCII $CmdFile -Force
+
+"\ProgramData\firstboot\Bootstrap\Invoke-ImagePrep.cmd" | Out-File -encoding ASCII '\ip.cmd'
+
+# Register runner to run at every boot - until deleted
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v $CmdFile /t REG_SZ /d $CmdFile
+
+
+try {
+  & $CmdFile
+} catch {
+  Write-Error "'$PSFile' : $_"
+  sleep 300
+  Restart-Computer
+}
+
+Write-Host -Fore Cyan "End firstboot script"
+

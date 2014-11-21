@@ -1,0 +1,75 @@
+Set                       	  : <%= node.metadata['FOO'] = 'bar' %>
+
+# file_url                        : <%= file_url('') %>
+# file_url                        : <%= file_url('filethatdoesntexit') %>
+# 
+# log_url_message                 : <%= log_url("Testing Debug", "DEBUG") %>
+# log_url_message                 : <%= log_url("Testing Debug", "WARNING") %>
+# log_url_message                 : <%= log_url("Testing Debug", "ERROR") %>
+# log_url_message                 : <%= log_url("Testing Debug", "FATAL") %>
+# 
+# repo_url                        : <%= repo_url("") %>
+# repo_url                        : <%= repo_url("/isolinux/vmlinux") %>
+
+# config                          : <%= config %>
+# config                          : <%= config.to_s %>
+# config                          : <%= config.inspect %>
+
+# boot_count                      : <%= node.boot_count     %>
+# dhcp_mac                        : <%= node.dhcp_mac       %>
+# hostname                        : <%= node.hostname       %>
+# hostname short                  : <%= node.shortname      %>
+# domainname                      : <%= node.domainname     %>
+# id                              : <%= node.id             %>
+# ipmi_hostname                   : <%= node.ipmi_hostname  %>
+# ipmi_password                   : <%= node.ipmi_password  %>
+# ipmi_username                   : <%= node.ipmi_username  %>
+# last_checkin                    : <%= node.last_checkin   %>
+# name                            : <%= node.name           %>
+# policy_id                       : <%= node.policy_id      %>
+# root_password                   : <%= node.root_password  %>
+# 
+# hw_info                         : <%= node.hw_info        %>
+# 
+# facts                           : <%= node.facts          %>
+#   node.facts['architecture']    : <%= node.facts['architecture']      %>
+#   node.facts['hardwareisa']     : <%= node.facts['hardwareisa']       %>
+#   node.facts['is_virtual']      : <%= node.facts['is_virtual']        %>
+#   node.facts['processorcount']  : <%= node.facts['processorcount']    %>
+#   node.facts['uniqueid']        : <%= node.facts['uniqueid']          %>
+#   node.facts['uuid']            : <%= node.facts['uuid']              %>
+#   node.facts['virtual']         : <%= node.facts['virtual']           %>
+# 
+# node.metadata                   : <%= node.metadata %>
+node.metadata                   : <%= node.metadata['timezone'] %>
+
+stage_done_url 			  : <%= stage_done_url %>
+
+Conditional                       : <%= node.metadata.key?('DEBUG') ? 'OnError' : 'Never' %>
+config                         	  : <%= config['checkin_interval'] < 15 ? 60 : 40 %>
+
+Get                       	  : <%= node.metadata['FOO'] %>
+
+Get                       	  : <%= node.metadata['driver_path'] = '//server/drivers' %>
+<%=
+if node.metadata.key?('driver_path')
+       <<-eos
+       <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"                      
+           <DriverPaths>
+               <PathAndCredentials wcm:action="add" wcm:keyValue="1">
+                   <Path>#{node.metadata['driver_path'].gsub('/','\\')}</Path>
+               </PathAndCredentials>
+           </DriverPaths>
+       </component>
+ eos
+ end
+ %>
+
+ENV	: <%= ENV.keys %>
+ENV	: <%= ENV['LANGUAGE'] %>
+ENV	: <%= ENV['LANG'] %>
+
+ENV	: <%= ENV['LC_ALL'] %>
+
+drivers : <%= (node.metadata.key?('driver_paths') ? node.metadata['driver_paths'] : node.metadata.key?('driver_path') ? node.metadata['driver_path'] : '').gsub(/\W/,'_')  %>
+

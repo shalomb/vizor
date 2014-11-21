@@ -1,0 +1,91 @@
+#!/bin/bash
+
+log_file="/tmp/Clone_VM.$(date +%s).test.log"
+max_count=60
+function ISO8601ts() { echo "$(date --rfc-3339=ns | tr ' ' T)"; }
+
+uuids=()
+echo "$(ISO8601ts) $0 : start_test"
+while read uuid name; do 
+  nuuid=$(xe vm-clone uuid="$uuid" new-name-label="__PVTest_${name##*_}"); 
+  uuids+=( "$nuuid" )
+  xe template-param-set is-a-template=false uuid="$nuuid"; 
+  printf "%s %s : vm_start %s parent %s %s\n" "$(ISO8601ts)" "$0" "$nuuid" "$uuid" "${name}" | tee -a "$log_file"
+  xe vm-start uuid="$nuuid";
+done 2>&1 < <(xe template-list other-config:instant=true | 
+                xe_grep 'print uuid,name_label if name_label =~ /universal/i' )
+
+echo "$(ISO8601ts) $0 : sleep 180"
+sleep 180
+count=0
+state_dir=/tmp/vm_state
+mkdir -p "$state_dir"
+
+while :; do
+  ((count++))
+
+  for i in "${uuids[@]}"; do
+    vm_name=$(xe vm-list uuid="$i" params=name-label --minimal)
+    [[ $vm_name ]] || continue
+
+    echo "$(ISO8601ts) $0 : vm_check $i count $count vms_remaining ${#uuids[@]}  vm_name ($vm_name)"
+    pv_driver_version=$(xe vm-list uuid="$i" params=all | xe_grep 'print PV_drivers_version';)
+
+    if [[ $pv_driver_version = *major*minor*micro* ]] || ((count >= max_count)); then
+
+      # if (( count < max_count )); then
+        state_file="$state_dir/$i"
+        if [[ ! -e $state_file ]]; then
+          reboot_count=0
+        fi
+
+        if [[ -e $state_file ]]; then
+          reboot_count=$(< "$state_file" )
+          if (( reboot_count < 3 )); then
+            ((++reboot_count))
+            echo "$reboot_count" > $state_file
+            echo "$(ISO8601ts) $0 :   vm_reboot : $i reboot_count $reboot_count"
+            xe vm-reboot uuid="$i"
+            continue
+          fi
+        fi
+      # fi
+
+      cd_names=( $(xe vbd-list vm-uuid="$i" type=CD empty=false params=vdi-name-label --minimal | sed 's/,/\n/g') )
+      echo "$(ISO8601ts) $0 :   pv_driver_version $pv_driver_version  cd_names ${cd_names[@]} $i"
+      if (( count >= max_count )); then
+        echo "$(ISO8601ts) $0 :   vm_shutdown_hard : $i"
+        xe vm-shutdown uuid="$i" force=true
+      else
+        echo "$(ISO8601ts) $0 :   vm_shutdown : $i"
+        xe vm-shutdown uuid="$i"
+      fi
+      echo "$(ISO8601ts) $0 :   vm_shutdown_complete : $i"
+      xe vbd-list vm-uuid="$i" type=Disk | 
+        xe_grep 'print vdi_uuid if vdi_uuid =~ /.{36}/' | 
+        while read uuid; do 
+          xe vdi-destroy uuid="$uuid"; 
+          echo "$(ISO8601ts) $0 :   vdi_destroy_complete : $uuid $i"
+        done
+      xe vm-destroy uuid="$i"
+      echo "$(ISO8601ts) $0 :   vm_destroy_complete : $i"
+    fi
+  done
+
+  sleep $(perl -e 'print eval pop' 5/${#uuids[@]} )
+
+  if (( count >= max_count )); then
+    echo "$(ISO8601ts) $0 :   max_time_reached ... breaking"
+    break
+  fi
+
+  uuids=( $(xe vm-list | xe_grep 'print uuid if name_label =~ /x[68][46]/i') )
+
+  if (( ${#uuids[@]} == 0 )); then
+    echo "$(ISO8601ts) $0 :   no_vms_left ... breaking"
+    break
+  fi
+
+done 2>&1 | tee -a "$log_file"
+
+

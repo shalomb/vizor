@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Pull down the scripts from the build
+#
+#  TODO
+#  * Sync down SAL modules from build
+
+set -xv
+DIRNAME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+asf_main="/mnt/camarc/planb/automation/asf/main"
+image_prep="$DIRNAME/../ASF/"
+
+if [[ ! -d "$asf_main" ]]; then
+  echo "'$asf_main' is not present, //camarc/planb not mounted??" >&2
+  exit 3
+fi
+
+if cd "$asf_main"; then
+  echo "Entering '$asf_main'"
+  for build in [0-9]*; do
+    echo -n "  Processing build # : $build => "
+    if grep GOOD "$build"/done.txt; then
+      rsync -avP --delete "$PWD/$build"/binaries/Tests/ASF/Common/ "$image_prep/"
+      rsync -avP --delete "$PWD/$build"/binaries/AsfBootstrapService/scripts/Start-AsyncAsfDiscovery.ps1 "$image_prep/../StartupTasks/"
+    fi
+  done
+else
+  echo "Error, entering '$asf_main', $!" >&2
+  exit 3
+fi

@@ -1,0 +1,2 @@
+Write-Host -Fore Magenta "Hello World!!"
+exit 15

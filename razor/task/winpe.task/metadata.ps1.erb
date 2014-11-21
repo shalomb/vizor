@@ -1,0 +1,23 @@
+# metadata begin
+@{
+                 'date'='<%= (time = Time.new).strftime("%Y-%m-%dT%H:%M:%S%z") %>'
+         'razor_server'='<%= @razor_server = URI.parse(repo_url).host %>'
+          'razor_share'='<%= @razor_share = 'razor' %>'
+     'razor_dist_share'='<%= @razor_dist_share = '\\\\%s\%s' % [@razor_server, @razor_share] %>'
+             'repo_url'='<%= repo_url %>'
+            'repo_name'='<%= @repo_name = repo_url.split('/').last %>'
+           'repo_share'='<%= '%s\%s' % [@razor_dist_share, @repo_name] %>'
+                 'task'='<%= task.label %>'
+     'task_description'='<%= task.description %>'
+       'answerfile_src'='<%= file_url('unattended.xml') %>'
+          'sysprep_src'='<%= file_url('sysprep.xml') %>'
+             'node_url'='<%= node_url %>'
+                 'node'='<%= node_url.split('/').last %>'
+     'razor_status_url'='<%= stage_done_url('') %>'
+  <%=
+    (node.metadata.each.collect { |k,v|
+      %q{  '%s'='%s';} % [k,v]
+    }).join("\n")
+  %>
+};
+# end

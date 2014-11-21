@@ -1,0 +1,7 @@
+---
+os_version: WinPE
+label: winpe
+description: WinPE Task with Razor Client to perform Windows Installs
+boot_sequence:
+  1: boot_winpe
+  default: boot_local

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/ 2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <AutoLogon>
+        <Password>
+          <Value>***REMOVED***</Value>
+          <PlainText>true</PlainText>
+        </Password>
+        <Enabled>true</Enabled>
+        <LogonCount>99</LogonCount>
+        <Username>Administrator</Username>
+      </AutoLogon>
+      <Display>
+        <ColorDepth>16</ColorDepth>
+        <HorizontalResolution>1024</HorizontalResolution>
+        <VerticalResolution>768</VerticalResolution>
+      </Display>
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <SkipUserOOBE>true</SkipUserOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+      </OOBE>
+      <RegisteredOrganization>Citrix Systems, Inc.</RegisteredOrganization>
+      <RegisteredOwner>Citrix Systems, Inc.</RegisteredOwner>
+      <UserAccounts>
+        <AdministratorPassword>
+          <Value>***REMOVED***</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+      <TimeZone>GMT Standard Time</TimeZone>
+      <DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
+      <FirstLogonCommands>
+        <!-- <SynchronousCommand wcm:action="add"> <CommandLine></CommandLine> <Order>1</Order> <Description>Post Setup Commands</Description> <RequiresUserInput>False</RequiresUserInput> </SynchronousCommand> -->
+      </FirstLogonCommands>
+    </component>
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="x86" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/ WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <InputLocale>0809:00000809;0409:00000409</InputLocale>
+      <SystemLocale>en-GB</SystemLocale>
+      <UILanguage>en-GB</UILanguage>
+      <UILanguageFallback>en-GB</UILanguageFallback>
+      <UserLocale>en-GB</UserLocale>
+    </component>
+  </settings>
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/ 2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <ComputerName>*</ComputerName>
+      <CopyProfile>true</CopyProfile>
+    </component>
+    <component name="Networking-MPSSVC-Svc" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/ State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <PublicProfile_EnableFirewall>true</PublicProfile_EnableFirewall>
+      <DomainProfile_EnableFirewall>true</DomainProfile_EnableFirewall>
+      <PrivateProfile_EnableFirewall>true</PrivateProfile_EnableFirewall>
+    </component>
+  </settings>
+  <settings pass="generalize">
+    <component name="Microsoft-Windows-Security-Licensing-SLC" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/ WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <SkipRearm>0</SkipRearm>
+    </component>
+  </settings>
+  <cpi:offlineImage cpi:source="wim:c:/vista_install/install.wim#Windows Vista ENTERPRISE" xmlns:cpi="urn:schemas-microsoft-com:cpi" />
+</unattend>

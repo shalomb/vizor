@@ -1,0 +1,5 @@
+@echo off
+
+echo Forcing a w32time sync
+w32tm /resync /rediscover /nowait
+exit /b %errorlevel%
