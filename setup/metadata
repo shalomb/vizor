@@ -3,22 +3,90 @@
 source defaults.sh
 source utils.sh
 
+tmpfile=$(mktemp)
+locale -ck LC_IDENTIFICATION |
+  grep -Ei -e '^(language|territory|identification-codeset)' |
+  sed -r 's/identification-codeset/identification_codeset/' > "$tmpfile"
+source "$tmpfile"
+source /etc/default/keyboard
+source /etc/default/console-setup
+source /etc/default/locale
+rm -f "$tmpfile"
+
+USER="${USER:-$LOGNAME}"
+USER="${USER:-$(whoami)}"
+TZ="${TZ:-$(</etc/timezone)}"
+
 for db in metadata; do
   if ! curl -sS -f -I "http://localhost:5984/$db" &> /dev/null; then
      vizor setup elasticsearch-river-couchdb -d "$db"
    fi
 done
 
+metadata_doc=$(
+jq -S '.' <<EOF
+{
+  "owner"                   : "$USER",
+  "organization"            : "$(hostname -d)",
+
+  "timezone"                : "${TZ:-$(</etc/timezone)}",
+  "windows_timezone"        : "GMT Standard Time",
+  "timezone_utc_offset"     : "$(TZ=$TZ date +%z)",
+
+  "language"                : "$LANGUAGE",
+  "lang"                    : "$LANG",
+  "language_common"         : "$language",
+  "territory"               : "$territory",
+
+  "ui_language"             : "en-US",
+  "input_locale"            : "en-GB;en-US",
+  "user_locale"             : "en-GB",
+  "system_locale"           : "en-GB",
+  "keyboard_charmap"        : "$CHARMAP",
+  "xkblayout"               : "$XKBLAYOUT",
+
+  "model"                   : "Model",
+  "manufacturer"            : "vizor",
+  "support_hours"           : "9am - 5pm GMT",
+  "support_phone"           : "support@$(hostname -d)",
+  "support_url"             : "http://support.$(hostname -d)/",
+ 
+  "hostname"                : "*",
+  "root_password"           : "P455w0rd",
+  "administrative_user"     : "admin",
+  "administrative_password" : "P455w0rd",
+  "regular_user"            : "user",
+  "regular_password"        : "P455w0rd",
+
+  "horizontal_resolution"   : "1024",
+  "vertical_resolution"     : "768",
+  "colour_depth"            : "32",
+  "dpi"                     : "96",
+  "refresh_rate"            : "60",
+  "sysprep"                 : "true",
+  "localize"                : "true",
+
+  "wsus_url"                : "http://wsus.$(hostname -d):8530",
+  "kms_server"              : "kms.$(hostname -d)",
+  "kms_port"                : "1688",
+  "ntp_servers"             : "ntp.$(hostname -d),pool.ntp.org,time.windows.com,time.nis.gov"
+}
+EOF
+)
+
+if ! result=$( curl -fsSL "http://localhost:5984/metadata/site" -X PUT -d "$metadata_doc" ) ec=$?; then
+  die "Failed to set site metadata : $ec"
+fi
+
 if [[ -z ${PUBLIC_IP-} ]]; then
   PUBLIC_IP=$( curl -fsSL -X GET http://www.telize.com/ip )
 fi
 
-geo_metadata=$( curl -fsSL -X GET "http://freegeoip.net/json/$PUBLIC_IP" | jq -S '.' )
-geo_metadata=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata") <(curl -fsSL -X GET "http://ipinfo.io/$PUBLIC_IP") )
-geo_metadata=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata") <(curl -fsSL -X GET "http://www.telize.com/geoip/$PUBLIC_IP") )
-geo_metadata=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata") <(curl -fsSL -X GET 'http://ip-api.com/json') )
+geo_metadata_doc=$( curl -fsSL -X GET "http://freegeoip.net/json/$PUBLIC_IP" | jq -S '.' )
+geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(curl -fsSL -X GET "http://ipinfo.io/$PUBLIC_IP") )
+geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(curl -fsSL -X GET "http://www.telize.com/geoip/$PUBLIC_IP") )
+geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(curl -fsSL -X GET 'http://ip-api.com/json') )
 
-if ! result=$( curl -fsSL "http://localhost:5984/metadata/geo" -X PUT -d "$geo_metadata" ) ec=$?; then
+if ! result=$( curl -fsSL "http://localhost:5984/metadata/geo" -X PUT -d "$geo_metadata_doc" ) ec=$?; then
   die "Failed to set geo metadata : $ec"
 fi
-
