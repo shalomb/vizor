@@ -1,0 +1,8 @@
+#!/bin/bash
+
+{
+  echo '.id,.name,.vmname,.account,.serviceofferingname,.serviceofferingdisplaytext'
+  cloudmonkey list volumes listall=true |
+    jq -c -r '.[][] | [.id,.name,.vmname,.account,.serviceofferingname,.serviceofferingdisplaytext]' 2>/dev/null |
+    sed -r 's/^\[|\]$//g'; 
+} | csv_to_table

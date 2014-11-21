@@ -1,0 +1,8 @@
+#!/bin/bash
+
+{
+  echo 'id,name,network type'
+  cloudmonkey list zones |
+    jq -c -r '.[][] | [.id,.name,.networktype]' 2>/dev/null |
+    sed -r 's/^\[|\]$//g'; 
+} | csv_to_table

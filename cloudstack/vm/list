@@ -1,0 +1,14 @@
+#!/bin/bash
+
+declare keyword=
+
+if (( $# >= 1 )); then
+  keyword="$@"
+fi
+
+{
+  echo 'id,name,account,service offering,state'
+  cloudmonkey list virtualmachines listall=true keyword="$keyword" |
+    jq -c -r '.[][] | [.id,.name,.account,.serviceofferingname,.state]' 2>/dev/null |
+    sed -r 's/^\[|\]$//g'; 
+} | csv_to_table

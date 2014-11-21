@@ -1,0 +1,84 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare instance_id= template_name= is_featured=false is_public=false snapshot_id= volume_id=
+
+while getopts ":fi:n:p" opt; do
+  case $opt in
+    i) instance_id="$OPTARG"
+      ;;
+    n) template_name="$OPTARG"
+      ;;
+    f) is_featured=true
+      ;;
+    p) is_public=true
+      ;;
+  esac
+done
+
+[[ -z $instance_id ]] && die "No instance id (-i) specified."
+
+instance_url="http://localhost:5984/instance/$instance_id"
+instance_def=$( curl -fsSLX GET "$instance_url" )
+container_type=$( jq -c -e -r '.container.type' <<<"$instance_def" )
+
+case "$container_type" in
+  cloudstack)
+    os_type_id=$( jq -c -e -r '.vm.jobresult.virtualmachine.guestosid' <<<"$instance_def" )
+         vm_id=$( jq -c -e -r '.vm.jobresult.virtualmachine.id'        <<<"$instance_def" )
+      is_ds_vm=$( jq -c -e -r '.vm.jobresult.virtualmachine.isdynamicallyscalable // "false"' <<<"$instance_def" )
+    template_name="${template_name:-$instance_id}"
+    template_name="${template_name:0:32}" # TODO, this truncation is not what the user would prefer
+
+    if [[ -z $snapshot_id ]]; then
+      volumes_def=$( cloudmonkey list volumes virtualmachineid="$vm_id" )
+      if (( $(jq -e '.count' <<<"$volumes_def") > 1 )); then
+        die "VM has multiple volumes"
+      else
+        volume_id=$( jq -c -e -r '.volume[0].id' <<<"$volumes_def" )
+      fi
+
+set -xv
+     template_def=$(
+       cloudmonkey create template \
+         displaytext="$template_name"      \
+         isdynamicallyscalable="$is_ds_vm" \
+         isfeatured="$is_featured"         \
+         ispublic="$is_public"             \
+         name="$template_name"             \
+         ostypeid="$os_type_id"            \
+         virtualmachineid="$vm_id"         \
+         volumeid="$volume_id"
+     )
+
+     if grep -iq 'Error' <<<"$template_def"; then
+       die "Error creating template for '$instance_id' (${#instance_id}) : '$template_def'"
+     fi
+
+     # TODO, Cloudmonkey's progress output taints record
+     template_def=$( sed -r '1 s/.*\{/{/' <<<"$template_def" | jq -S -e '.' )  
+    fi
+    ;;
+  *) die "Unsupported/unimplemented type $container_type"
+esac
+
+# TODO, refactor for multiple hypervisor types
+
+template_doc=$( jq -s '.[] | {template:.jobresult.template}' <<<"$template_def" )
+  master_doc=$( jq '.name = "'"$template_name"'" | .type = "'"$container_type"'"' <<<'{}' )
+  master_doc=$( jq -s '.[0] * .[1]' <(echo "$master_doc") <(echo "$template_doc") )
+
+_rev=$( curl -sS -f "http://localhost:5984/template/$template_name?revs_info=true" 2>/dev/null |
+        jq -r '._revs_info[0].rev' )
+[[ -n $_rev ]] && master_doc=$( jq -r '._rev = "'"${_rev}"'"' <<< "$master_doc" )
+
+template_url="http://localhost:5984/template/$template_name"
+
+if ! curl -sS -f -X PUT "$template_url" -d "$master_doc" &>/dev/null; then
+  warn "Error updating record for template '$template_name'"
+fi
+
+log "Updated instance data at '$template_url'"
+

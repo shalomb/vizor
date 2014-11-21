@@ -1,0 +1,49 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+cloudmonkey_config="$DIR/../cloudmonkey.config"
+
+if [[ ! -e $cloudmonkey_config ]]; then
+  if [[ -e ~/.cloudmonkey/config ]]; then
+    cp -a -- ~/.cloudmonkey/config "$cloudmonkey_config"
+  fi
+fi
+
+color=
+display=
+api_key=
+secret_key=
+host=
+port=
+path=
+
+while getopts "d:c:a:s:h:p:P" opt; do
+  case $opt in
+    c) color="$OPTARG"
+    ;;
+    d) display="$OPTARG"
+    ;;
+    a) api_key="$OPTARG"
+    ;;
+    s) secret_key="$OPTARG"
+    ;;
+    h) host="$OPTARG"
+    ;;
+    p) port="$OPTARG"
+    ;;
+    P) path="$OPTARG"
+    ;;
+  esac
+done
+
+[[ $color ]]      && sed -r -i 's/^color.*/color = '"$color"'/'               "$cloudmonkey_config"
+[[ $display ]]    && sed -r -i 's/^display.*/display = '"$display"'/'         "$cloudmonkey_config"
+[[ $api_key ]]    && sed -r -i 's/^apikey.*/api_key = '"$api_key"'/'          "$cloudmonkey_config"
+[[ $secret_key ]] && sed -r -i 's/^secretkey.*/secret_key = '"$secret_key"'/' "$cloudmonkey_config"
+[[ $host ]]       && sed -r -i 's/^host.*/host = '"$host"'/'                  "$cloudmonkey_config"
+[[ $port ]]       && sed -r -i 's/^port.*/port = '"$port"'/'                  "$cloudmonkey_config"
+[[ $path ]]       && sed -r -i 's/^path.*/path = '"$path"'/'                  "$cloudmonkey_config"
+
+

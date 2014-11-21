@@ -1,0 +1,68 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare disk_offering_id= display_name= group= hypervisor= keyboard= key_pair= name= \
+        network_id= service_offering_id= start_vm=true template_id= userdata= zone_id=
+
+while getopts "a:d:D:g:G:h:k:K:n:N:p:s:St:u:U:z:" opt; do
+  case $opt in
+    d) disk_offering_id="$OPTARG"
+      ;;
+    D) disk_size="$OPTARG"
+      ;;
+    n) display_name="$OPTARG"
+      ;;
+    g) group="$OPTARG"
+      ;;
+    h) hypervisor="$OPTARG"
+      ;;
+    k) keyboard="$OPTARG"
+      ;;
+    N) network_id="$OPTARG"
+      ;;
+    s) service_offering_id="$OPTARG"
+      ;;
+    S) start_vm='false'
+      ;;
+    t) template_id="$OPTARG"
+      ;;
+    u) userdata=$( base64 <<<"$OPTARG" )
+      ;;
+    z) zone_id="$OPTARG"
+      ;;
+  esac
+done
+
+args=()
+
+[[ -z $service_offering_id  ]] && die "ServiceOffering ID (-s) not specified."
+[[ -z $template_id          ]] && die "Template ID (-t) not specified."
+[[ -z $zone_id              ]] && die "Zone ID (-z) not specified."
+[[ -z $display_name         ]] && display_name=$(tr -cd 'a-f' < /dev/urandom | head -c 32)
+
+hostname="${hostname:-$display_name}"
+
+[[ $disk_offering_id        ]] && args+=( diskofferingid="$disk_offering_id"       )
+[[ $keyboard                ]] && args+=( keyboard="$keyboard"                     )
+[[ $group                   ]] && args+=( group="$group"                           )
+[[ $hypervisor              ]] && args+=( hypervisor="$hypervisor"                 )
+[[ $hostname                ]] && args+=( name="$hostname"                         )
+[[ $network_id              ]] && args+=( networkids="$network_id"                 )
+[[ $service_offering_id     ]] && args+=( serviceofferingid="$service_offering_id" )
+[[ $template_id             ]] && args+=( templateid="$template_id"                )
+[[ $zone_id                 ]] && args+=( zoneid="$zone_id"                        )
+[[ $start_vm                ]] && args+=( startvm="$start_vm"                      )
+
+ret=$( cloudmonkey deploy virtualmachine "${args[@]}" )
+
+if grep -iq '^Error' <<<"$ret"; then
+  args="$@"
+  printf -v errstr "%s\n  %s\n  %s" "${CMDLINE%%-*}" "$ret" "$args"
+  die "$errstr"
+else
+  # TODO. CM seems to add progress bar info on STDOUT
+  sed -r '1 s/.*\{/{/' <<<"$ret" | jq -S -e '.'
+fi
+

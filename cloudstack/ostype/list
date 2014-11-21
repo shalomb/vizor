@@ -1,0 +1,19 @@
+#!/bin/bash
+
+declare query=
+
+while getopts "q:" opt; do
+  case $opt in
+    q) query="$OPTARG"
+      ;;
+  esac
+done
+
+
+{
+  echo 'id,description,oscategory'
+  cloudmonkey list ostypes |
+    jq -c -r 'del(.count) | .[][] | [.id,.description,.oscategoryid]' |
+    grep -i "${query:-.}" |
+    sed -r 's/^\[|\]$//g' 
+} | csv_to_table

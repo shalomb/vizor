@@ -1,0 +1,26 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+id=()
+
+while getopts "i:" opt; do
+  case $opt in
+    i) id+=( "$OPTARG" )
+      ;;
+    *) die "Unrecognized/Unimplemented option '$opt'"
+      ;;
+  esac
+done
+shift "$((OPTIND - 1))"
+
+[[ -z ${id[@]-} ]] && die "No VM ID (-i) specified."
+
+ret=$( cloudmonkey start virtualmachine id="$id" | sed -r '1 s/\..*\{/{/' )
+
+if grep -iq 'Error' <<<"$ret"; then
+  die "Error starting VM '$id' : $ret"
+else
+  jq -S -e '.' <<<"$ret"
+fi
