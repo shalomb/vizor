@@ -1,0 +1,91 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare image_id= type= metadata= name= metadata_file= force=
+
+while getopts "fi:M:m:n:t:" opt; do
+  case $opt in
+    f) force=1
+      ;;
+    i) image_id="$OPTARG"
+      ;;
+    m) metadata="$OPTARG"
+      ;;
+    M) metadata_file="$OPTARG"
+      ;;
+    n) name="$OPTARG"
+      ;;
+    t) type="$OPTARG"
+      ;;
+  esac
+done
+
+[[ -z $image_id ]] && die "No image ID (-i) specified."
+
+image_url='http://localhost:5984/image/'"$image_id"
+if ! image_meta=$( curl -sS -f "$image_url" ); then
+  die "Unable to retrieve image metadata (-i) for image '$image_id'"
+fi
+
+if [[ -z $type ]]; then
+  if jq -r '.product_type == "WinNT"' <<<"$image_meta" >/dev/null; then
+    type='windows'
+  fi
+fi
+
+vstring=$( jq -r '.vstring' <<<"$image_meta" )
+vstring_long=$( jq -r '.vstring_long' <<<"$image_meta" )
+
+[[ -z $name ]] && name="$vstring"
+[[ -z $name ]] && die "Unable to determine name for box (-b)"
+
+if curl -sS -f -I "http://localhost:5984/box/$name" &>/dev/null; then
+  if [[ ! $force ]]; then
+    die "Box '$name' already exists, will not update unless forced."
+  fi
+fi
+
+metadata_doc='{}'
+
+if [[ -n $metadata ]]; then
+  metadata_doc="$metadata"
+fi
+
+if [[ -n $metadata_file ]]; then
+  if [[ -e $metadata_file ]]; then
+    metadata_doc=$( jq '.[0] * .[1]' <(cat "$metadata_file") <(cat <<<"$metadata_doc") )
+  else
+    die "Metadata file (-M) does not exist"
+  fi
+fi
+
+json_doc=$( jq -r '.|{metadata:.}' <<<"$metadata_doc" )
+
+_rev=$( curl -sS -f 'http://localhost:5984/box/'"$name?revs_info=true" 2>/dev/null |
+          jq -r '._revs_info[0].rev' )
+ctime=$(date +%FT%T)
+mtime=$(date +%FT%T)
+
+for i in        \
+  name          \
+  image_id      \
+  image_url     \
+  vstring       \
+  vstring_long  \
+  type          \
+  ctime         \
+  mtime         \
+  ; do 
+    json_doc=$( jq -r '.'"$i"' = "'"${!i-}"'"' <<<"$json_doc" )
+done
+
+[[ -n $_rev ]] && json_doc=$( jq -r '.'"_rev"' = "'"${_rev}"'"' <<<"$json_doc" )
+
+if status=$( curl -sS -f -X PUT 'http://localhost:5984/box/'"$name" -d "$json_doc" ); then
+  jq -s '.[0] * .[1]' <(cat <<<"$status") <(cat <<<"$json_doc") 
+else
+  die "Error creating definition for box '$name' : $?"
+fi
+

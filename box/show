@@ -1,0 +1,18 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+source "$DIR/conf"
+
+declare key=
+
+while getopts "k:" opt; do
+  case $opt in
+    k) key="$OPTARG"
+      ;;
+  esac
+done
+
+[[ -z $key ]] && key="$1"
+
+curl -sS 'http://localhost:5984/'"$db"'/'"$key" | jq -e -r .

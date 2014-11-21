@@ -1,0 +1,14 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+id="$1"
+
+_rev=( $(curl -sS -f 'http://localhost:5984/container/'"$id?revs_info=true" | jq -r -e '._revs_info[0].rev') )
+
+[[ -z ${_rev-} ]] && exit
+
+for rev in "${_rev[@]}"; do
+  curl -sS -f -X DELETE "http://localhost:5984/container/$id?rev=$rev"
+done

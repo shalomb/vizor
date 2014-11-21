@@ -1,0 +1,112 @@
+#!/bin/bash
+
+FORCE="$FORCE"
+DEBUG="$DEBUG"
+
+set -e
+# set -u
+
+[[ $DEBUG ]] && set -xv
+
+iso_sr_name="$1"
+iso_dir="${2:-/opt/ipxe}"
+iso_is_attached=0
+
+if [[ ! -d $iso_dir ]]; then
+  mkdir -p "$iso_dir"
+fi
+
+function destroy_local_iso_sr {
+set -xv
+  local sr_uuid="$1"
+  local pbd_uuid=$( xe pbd-list sr-uuid="$sr_uuid" params=uuid --minimal )
+  xe pbd-unplug  uuid="$pbd_uuid" force='true' || true
+  xe pbd-destroy uuid="$pbd_uuid" force='true' || true
+  xe sr-forget   uuid="$sr_uuid"  force='true' || true
+  xe sr-destroy  uuid="$sr_uuid"  force='true' &>/dev/null || true
+  set +xv
+}
+
+sr_uuid=( $(xe sr-list name-label="$iso_sr_name" params=uuid --minimal | sed -r 's/,/\n/g') )
+
+if (( ${#sr_uuid[@]} > 1 )); then
+  echo "" >&2
+  echo "Multiple SRs by name '$iso_sr_name' exist." >&2
+
+  for uuid in "${sr_uuid[@]}"; do
+    desc=$(xe sr-list uuid="$uuid" params=name-description --minimal)
+    echo "  * $uuid $iso_sr_name $desc"
+    [[ $FORCE ]] && destroy_local_iso_sr "$uuid"
+  done
+
+  if [[ ! $FORCE ]]; then
+    echo "" >&2
+    echo "Aborting.." >&2
+    exit 3
+  fi
+fi
+
+sr_uuid=( $(xe sr-list name-label="$iso_sr_name" params=uuid --minimal | sed -r 's/,/\n/g') )
+[[ $sr_uuid ]] && vdi_uuids=( $(xe sr-list uuid="$sr_uuid" params=VDIs --minimal | sed 's/,//g') )
+
+for vdi_uuid in "${vdi_uuids[@]}"; do
+  vbd_uuids=( $(xe vdi-list uuid="$vdi_uuid" params=vbd-uuids --minimal | sed -r 's/;\ */\n/g') )
+  for vbd_uuid in "${vbd_uuids[@]}"; do
+
+    vm_uuid=$(xe vbd-list uuid="$vbd_uuid" params=vm-uuid --minimal)
+    vm_name=$(xe vm-list uuid="$vm_uuid" params=name-label --minimal)
+
+    echo "iso '$iso_sr_name' is current plugged into VM $vm_uuid ($vm_name)." >&2
+
+    if [[ $vm_uuid ]]; then
+      iso_vms+=( "$vm_uuid" )
+    fi
+
+  done
+done
+
+if (( ${#iso_vms[@]} > 0 )); then
+  if [[ $FORCE ]]; then
+    for vm_uuid in "${iso_vms[@]}"; do
+      xe vm-cd-eject uuid="$vm_uuid" force=true
+    done
+  else
+    echo "iso '$iso_sr_name' is currently in use .. aborting." >&2
+    exit 3
+  fi
+fi
+
+pbd_uuid=$( xe pbd-list sr-uuid="$sr_uuid" --minimal )
+iso_dir_actual=$( xe pbd-list uuid="$pbd_uuid" params=device-config --minimal | sed -r 's/;\ */\n/g' | awk -F'[: ]' '/location/{print $3}' )
+
+
+echo "   iso_sr_name : $iso_sr_name"
+echo "       iso_dir : $iso_dir"
+echo "iso_dir_actual : $iso_dir_actual"
+echo "       sr_uuid : $sr_uuid"
+echo "      pbd_uuid : $pbd_uuid"
+
+if [[ $sr_uuid ]]; then
+  echo 'cleaning up SR'
+  destroy_local_iso_sr "$sr_uuid"
+fi
+
+if [[ ! -d $iso_dir ]]; then
+  mkdir -p "$iso_dir"
+fi
+
+new_sr_uuid=$( xe sr-create \
+  type=iso \
+  content-type=iso \
+  device-config:legacy_mode=true \
+  device-config:location="$iso_dir" \
+  name-label="$iso_sr_name"  )
+
+if [[ ! $new_sr_uuid ]]; then
+  echo "SR creation failed." >&2
+  exit 3;
+fi
+
+xe sr-param-set uuid="$new_sr_uuid" name-description="ISO SR $iso_dir. Created $(date) by $0 ($$)" || true
+xe sr-param-set other-config:auto-scan=true uuid="$new_sr_uuid"
+exit 0

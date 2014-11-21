@@ -1,0 +1,106 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Find install images known to the vizor iso/image catalog
+
+source defaults.sh
+source utils.sh
+
+database='image'
+display_list=0
+display_csv=0
+query_string=
+query_terms=()
+identity_fields=()
+user_query_string=
+image_id=
+
+while getopts "d:f:hi:lQ:q:" opt; do
+  case $opt in
+    d) database="$OPTARG"
+      ;;
+    f)  for substr in ${OPTARG//,/ }; do identity_fields+=( ".$substr" ); done
+      ;;
+    i) image_id="$OPTARG"
+      ;;
+    l) display_list=1
+      ;;
+    Q) user_query_string="$OPTARG"
+      ;;
+    q) query_terms+=( "$OPTARG" )
+      ;;
+    h) show_help; exit 3;
+      ;;
+  esac
+done
+
+case "${0##*/}" in
+  show) image_id="$1"
+    ;;
+  list) display_list=1
+    ;;
+esac
+
+if [[ $image_id ]]; then
+  curl -sSfL -X GET "http://localhost:5984/$database/$image_id" | jq -S -e '.'
+  exit
+fi
+
+query_string=$( join_array ' AND ' "${query_terms[@]:+${query_terms[@]}}" )
+
+query_string="${query_string:-${user_query_string}}"
+
+[[ -z $query_string ]] && query_string='*'
+[[ -z $query_string ]] && die "query_string : $query_string"
+
+echo -n "Querying '$database' for '$query_string' .. " >&2
+
+results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_search?search_type=scan&scroll=1s' -d '{
+  "query" : {
+    "query_string": {
+      "query": "('"$query_string"')"
+    }
+  }
+}' ) 
+
+total_hits=$(jq -e -r -S '.hits.total' <<<"$results")
+
+echo "found '$total_hits' documents." >&2
+
+results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_search?from=0&size='"$total_hits"'' -d '{
+  "query" : {
+    "query_string": {
+      "query": "('"$query_string"')"
+    }
+  },
+  "sort" : [
+    { "creation_time" : {"order" : "desc"}},
+    { "ctime" : {"order" : "desc"}},
+    { "mtime" : {"order" : "desc"}}
+  ]
+}' | jq -S -r -c -e ' .hits.hits[]._source ' )
+
+
+if   (( display_list )); then
+  { echo 'image,create time,vstring,vstring_long,mount_point'
+    jq -S -r -c -e ' . | [.id,.creation_time,.vstring,.vstring_long,.mount_point] ' <<<"$results" |
+      sed -r 's/^\[|\]$//g'
+  } | csv_to_table
+
+elif (( ${#identity_fields[@]} == 1 )); then
+  jq -r -c -S '. | '"${identity_fields[0]}"'' <<<"$results"
+
+elif (( ${#identity_fields[@]} > 1 )); then
+  identity_string=$( join_array ',' "${identity_fields[@]}")
+  results=$( jq -r -c -S '. | ['"$identity_string"']' <<<"$results" |
+        sed -r 's/^\[|\]$//g' )
+  if (( display_csv == 1 )); then
+    { echo "$identity_string"; echo "$results"; } 
+  else
+    { echo "$identity_string"; echo "$results"; } | csv_to_table
+  fi
+
+else
+  jq -r -S '.' <<<"$results" #| python -m json.tool
+fi
+

@@ -1,0 +1,45 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare iso_file= repo= task=
+
+while getopts "i:r:t:" opt; do
+  case $opt in
+    i) iso_file="$OPTARG"
+      ;;
+    r) repo="$OPTARG"
+      ;;
+    t) task="$OPTARG"
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+[[ -z $iso_file ]] && die "No ISO file (-i) specified."
+[[ -z $task ]] && die "No task name (-t) specified."
+[[ -z $repo ]] && {
+  repo="${iso_file##*/}"
+}
+
+# FIXME : Workaround until razor supports UDF ISOs
+# Creating an empty ISO
+empty_iso="/mnt/iso-src/${iso_file//[\/\ ]/_}.empty.iso"
+empty_iso_d="${empty_iso%/*}"; mkdir -p "$empty_iso_d"
+empty_iso_d="$(mktemp -d)"
+genisoimage -o "$empty_iso" "$empty_iso_d" &>/dev/null
+rmdir "$empty_iso_d"
+
+# Create our repo
+# razor delete-repo --name "$repo" || true
+razor create-repo --name    "$repo"             \
+                  --iso-url "file://$empty_iso" \
+                  --task    "$task"
+
+# Mount the ISO for the repo
+mkdir -p /var/lib/razor/repo-store/"$repo"
+mount -o loop,ro "$iso_file" /var/lib/razor/repo-store/"$repo" || true
+

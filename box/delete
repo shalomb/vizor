@@ -1,0 +1,11 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+id="$1"
+
+curl -sS -f 'http://localhost:5984/box/'"$id?revs_info=true" 2>/dev/null |
+  jq -r '._revs_info[0].rev' | while read rev; do
+    curl -sS -f -X DELETE "http://localhost:5984/box/$id?rev=$rev"
+  done

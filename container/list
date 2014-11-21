@@ -1,0 +1,73 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+database='container'
+query_string=
+query_terms=()
+identity_fields=()
+user_query_string=
+
+while getopts "d:f:l:Q:q:" opt; do
+  case $opt in
+    d) database="$OPTARG"
+      ;;
+    f) raw="$OPTARG"
+      while read -r f; do
+        identity_fields+=( ".$f" )
+      done < <(sed -r 's/,/\n/g' <<<"$raw")
+      ;;
+    Q) user_query_string="$OPTARG"
+      ;;
+    q) query_terms+=( "$OPTARG" )
+      ;;
+  esac
+done
+
+if (( ${#identity_fields[@]} == 0 )) || (( $# == 0 )) && [[ $0 = *list ]]; then
+  identity_fields=( '.id' '.type' )
+fi
+
+query_string=$( join_array ' AND ' "${query_terms[@]:+${query_terms[@]}}" )
+
+query_string="${query_string:-${user_query_string}}"
+
+[[ -z $query_string ]] && query_string='*'
+echo -n "Querying '$database' for '$query_string' .. " >&2
+
+results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_search?search_type=scan&scroll=1s' -d '{
+  "query" : {
+    "query_string": {
+      "query": "('"$query_string"')"
+    }
+  }
+}' ) 
+
+total_hits=$(jq -r -S '.hits.total // empty' <<<"$results")
+
+if [[ $total_hits ]]; then
+  echo "found '$total_hits' documents." >&2
+else
+  die "No containers found for query_string '$query_string'"
+fi
+
+results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_search?from=0&size='"$total_hits"'' -d '{
+  "query" : {
+    "query_string": {
+      "query": "('"$query_string"')"
+    }
+  }
+}' ) 
+
+if (( ${#identity_fields[@]} == 1 )); then
+  jq -r -c -S '.hits.hits[] | .["_source"] | '"${identity_fields[0]}"'' <<<"$results"
+elif (( ${#identity_fields[@]} > 1 )); then
+  identity_string=$( join_array ',' "${identity_fields[@]}")
+  results=$( jq -r -c -S '.hits.hits[] | .["_source"] | ['"$identity_string"']' <<<"$results" |
+        sed -r 's/^\[|\]$//g' )
+  { echo "$identity_string"; echo "$results"; } | csv_to_table
+else
+  jq -r -S '.hits.hits[] | .["_source"]' <<<"$results" #| python -m json.tool
+fi
+
