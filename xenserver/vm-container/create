@@ -1,0 +1,93 @@
+#!/bin/bash 
+# SYNOPSIS
+#   Create xenserver container definitions
+
+declare                                    \
+  container_name=                          \
+  host=                                    \
+  install_template=                        \
+  iso_name=                                \
+  memory_dynamic_max="$memory_dynamic_max" \
+  memory_dynamic_min="$memory_dynamic_min" \
+  memory_static_max=                       \
+  memory_static_min=                       \
+  sr_name=                                 \
+  VCPUs_at_startup=                        \
+  vdisk_size=                              \
+  vm_description=                          \
+  vm_name=                                 \
+  vm_network=
+
+source defaults.sh
+source utils.sh
+
+while getopts ":c:d:h:I:i:m:M:n:N:s:t:" opt; do
+  case "$opt" in
+    c) VCPUs_at_startup="$OPTARG"
+      ;;
+    d) vdisk_size="$OPTARG"
+      ;;
+    h) host="$OPTARG"
+      ;;
+    I) install_template="$OPTARG"
+      ;;
+    i) iso_name="$OPTARG"
+      ;;
+    m) memory_static_max="$OPTARG"
+      ;;
+    M) memory_static_max="$OPTARG"
+      ;;
+    N) vm_network="$OPTARG"
+      ;;
+    n) container_name="$OPTARG"
+      ;;
+    s) sr_name="$OPTARG"
+      ;;
+    t) type='xenserver'
+      ;;
+    *) die "Unrecognized/unimplemented option '$opt'"
+      ;;
+  esac
+done
+
+if [[ -n $install_template ]]; then
+  container_def=$( curl -fsSL "http://localhost:5984/install-template/$install_template" )
+else
+  container_def='{}'
+fi
+
+if [[ -z $container_name ]]; then
+  container_name=$( jq -c -e -r -S '.id // empty' <<<"$container_def" )
+  [[ -z $container_name ]] && die "No container name (-n) specified."
+fi
+
+# jq -S '.' <<<"$container_def"
+for k in               \
+  host                 \
+  iso_name             \
+  memory_static_max    \
+  memory_static_min    \
+  VCPUs_at_startup     \
+  vdisk_size           \
+  sr_name              \
+  vm_description       \
+  vm_network           \
+  ; do
+     v="${!k}"
+     [[ $v ]] && container_def=$( jq -e -r '.'"$k"' = "'"$v"'"' <<<"$container_def" )
+done
+
+container_def=$( jq -e -r '.name = "'"$container_name"'"' <<<"$container_def" )
+container_def=$( jq -e -r '.id = "'"$container_name"'"' <<<"$container_def" )
+
+if container_def=$( jq -S -e '.' <<<"$container_def" ) ec=$?; then
+  _rev=$( curl -sS -f 'http://localhost:5984/container/'"$container_name?revs_info=true" 2>/dev/null |
+               jq -r '._revs_info[0].rev' )
+  [[ -n $_rev ]] && container_def=$( jq -r '._rev = "'"${_rev}"'"' <<< "$container_def" )
+  result=$( curl -fsSL "http://localhost:5984/container/$container_name" -X PUT -d "$container_def" )
+  result=$( jq -s '.[0] * .[1]'  <(echo "$result") <( jq '. | {container:.}' <<<"$container_def" ) )
+  jq -S '.' <<<"$result"
+else
+  die "Error validating container_def : $ec"
+fi
+

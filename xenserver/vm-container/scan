@@ -1,0 +1,119 @@
+#!/bin/bash
+
+declare host="$1"
+
+source defaults.sh
+source utils.sh
+
+while getopts ":h:" opt; do
+  case $opt in
+    h) host="$OPTARG"
+      ;;
+  esac
+done
+
+[[ -z $host ]] && die "XenServer host address (-h) not specified"
+
+tmpdir=$(mktemp -d)
+pushd "$tmpdir" &>/dev/null || die "Unable to chdir to '$tmpdir'"
+
+tmpfile=$(mktemp)
+
+# default_sr_name=$( "$host" '
+#   uuid=$(xe pool-list params=default-SR --minimal)
+#   xe sr-list uuid="$uuid" params=name-label --minimal
+# ')
+
+"$host" -T <<'EOF' > "$tmpfile"
+  xe template-list is-a-template=true is-a-snapshot=false params= |\
+    xe_grep '
+      BEGIN {
+        @main::keys = qw[
+          name_label
+          uuid
+          VCPUs_at_startup
+          VCPUs_max
+          memory_static_min
+          memory_static_max
+          memory_dynamic_min
+          memory_dynamic_max
+        ];
+
+        $main::format = join "\n", map {
+          my $k=$_;
+          $k=~s/-/_/g;
+          qq[$k : %s];
+        } @main::keys;
+      };
+
+      if (name_label =~ /Other install media|\)$/) {
+        my $filename=name_label;
+
+        $filename =~ s/\s+/_/g;
+        $filename =~ s/[()]//g;
+        $filename =~ s/_32-bit/-x86/g;
+        $filename =~ s/_64-bit/-x86_64/g;
+
+        my ($disk_size) = (other_config =~ /disk.*?size="(\d+)"/);
+
+        printf qq[id : %s-%s_VCPUs-%05.2f_GiB_RAM-%05.2f_GiB_HDD\n],
+          $filename,
+          VCPUs_at_startup,
+          (memory_static_min/2**30),
+          ($disk_size/2**30);
+
+        printf "$main::format\n", map {
+          eval "$_";
+        } @main::keys;
+
+        printf qq[disk_size : %s], $disk_size;
+
+        print "\n";
+      }
+    '
+EOF
+
+perl -00 -lne '
+  use strict;
+  use warnings;
+  use autodie;
+
+  my @lines = split /\n+/, $_;
+  my ($filename) = (map { /id : (\S+)/; $1; } grep /^id : /,@lines);
+
+  open my $fh, ">", "$filename.conf";
+  print $fh join "\n", @lines;
+  # print $fh join "\n", map { s/^(?>id : )/# /; $_; } @lines;
+
+' "$tmpfile"
+
+
+db='install-template'
+if ! curl -sS -f -I "http://localhost:5984/$db" &> /dev/null; then
+  vizor setup elasticsearch-river-couchdb -d "$db"
+fi
+
+for i in *.conf; do
+  template_def=$( vizor bin kvf_to_json < "$i" )
+  rm "$i"
+
+  template_def=$( jq -r '.type = "xenserver"' <<<"$template_def" )
+  template_def=$( jq -r '.host = "'"$host"'"' <<<"$template_def" )
+  # template_def=$( jq -r '.sr_name = "'"$default_sr_name"'"' <<<"$template_def" )
+  id=$( jq -c -e -r '.id' <<<"$template_def" )
+
+  _rev=$( curl -sS -f "http://localhost:5984/$db/$id?revs_info=true" 2>/dev/null | jq -r '._revs_info[0].rev' )
+
+  [[ -n $_rev ]] && template_def=$( jq -r '._rev = "'"${_rev}"'"' <<<"$template_def" )
+
+  if status=$( curl -sS -f -X PUT "http://localhost:5984/$db/$id" -d "$template_def" ); then
+    jq -e -S -s '.[0] * .[1]' <(cat <<<"$status") <(jq '. | {template:.}' <<<"$template_def") 
+  else
+    die "Error creating definition for $db '$id' : $?"
+  fi
+done
+
+popd &>/dev/null
+rm -f "$tmpfile"
+rm -fr "$tmpdir"
+
