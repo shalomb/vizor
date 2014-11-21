@@ -1,0 +1,9 @@
+/var/log/torquebox/razor-server.log
+{
+  rotate 30
+  size 5M
+  daily
+  missingok
+  notifempty
+  compress
+}
