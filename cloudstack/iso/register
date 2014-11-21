@@ -1,0 +1,118 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare architecture= bootable=false display_text= featured=false public=false \
+        name= keyword= os_type= os_type_id= url= use_best_match= zone_id=
+
+while getopts "bBa:d:fk:n:o:pO:u:z:" opt; do
+  case $opt in
+    a) architecture="$OPTARG"
+      ;;
+    b) bootable=true
+      ;;
+    B) use_best_match=1
+      ;;
+    d) display_text="$OPTARG"
+      ;;
+    f) featured=true
+      ;;
+    k) keyword="$OPTARG"
+      ;;
+    p) public=true
+      ;;
+    n) name="$OPTARG"
+      ;;
+    o) os_type_id="$OPTARG"
+      ;;
+    O) os_type="$OPTARG"
+      ;;
+    u) url="$OPTARG"
+      ;;
+    z) zone_id="$OPTARG"
+      ;;
+  esac
+done
+
+[[ -z $url            ]] && die "No ISO URL (-u) specified."
+[[ -z $display_text   ]] && die "No ISO display_text (-d) specified."
+[[ -z $zone_id        ]] && die "No zone_id (-z) specified."
+[[ $bootable = 'true' ]] && [[ -z $os_type ]] && [[ -z $os_type_id ]] &&
+  die "No os_type (-O) or os_type_id (-o) specified."
+
+if [[ -z $os_type_id ]] && [[ $os_type ]]; then
+
+  primer="${os_type%% *}"
+  os_tupules=$( cloudmonkey list ostypes listall=true |
+      jq -r -c 'del(.count) | .[][] | [.id,.description]' |
+      grep -i "$primer" |
+      sed -r -e 's/^\["|"\]$//g' -e 's/","/\t/g' )
+
+  os_type_ids=() os_id_found=0 os_type_substr="$os_type" try=0 max_tries=16384
+  arch_string=
+
+  if [[ $architecture ]]; then
+    case "$architecture" in
+      x86|*32*) arch_string=' (32-bit)'
+        ;;
+      x86_64|amd64|x64|*64*)
+        arch_string=' (64-bit)'
+        ;;
+      *)
+        die "Unknown/unsupported architecture : $architecture"
+    esac
+  fi
+
+  while (( os_id_found == 0 && try < max_tries )); do
+
+    while IFS=$'\t' read -r uuid os_name; do 
+      if grep -iq "^$os_type_substr$arch_string" <<<"$os_name"; then
+        os_type_ids+=( "$uuid" )
+        log "Matched os_type '$os_name' for '$os_type'/'$architecture'" >&2
+        os_id_found=1
+      fi
+    done < <( echo "$os_tupules" )
+
+    if ! grep -iq '[[:blank:]._]' <<<"$os_type_substr"; then
+      break
+    fi
+
+    (( try++ )) || true
+    os_type_substr="${os_type_substr%[ ._]*}";
+  done
+
+  if (( ${#os_type_ids[@]} <= 0 )); then
+    die "No candidate for OS type (-O) found for '$os_type'"
+  elif (( ${#os_type_ids[@]} > 1 )); then
+    die "More than one candidate OS type found for -O '$os_type'."
+  fi
+
+  os_type_id="${os_type_ids[0]}"
+fi
+
+if [[ -n $use_best_match ]]; then
+  candidate_iso_ids=( $( cloudmonkey list isos listall=true keyword="$keyword" |
+      jq -r 'del(.count) | .[][] | select(.ostypeid=="'"$os_type_id"'") | .id' ) )
+
+  if [[ -n ${candidate_iso_ids-} ]]; then
+    cloudmonkey list isos id="${candidate_iso_ids[@]}"
+    exit 0
+  fi
+fi
+
+[[ -z $name ]] && name="${url##*/}"
+
+args=()
+
+[[ $bootable      ]] && args+=( bootable="$bootable"        )
+[[ $display_text  ]] && args+=( displaytext="$display_text" )
+[[ $featured      ]] && args+=( isfeatured="$featured"      )
+[[ $name          ]] && args+=( name="$name"                )
+[[ $os_type_id    ]] && args+=( ostypeid="$os_type_id"      )
+[[ $public        ]] && args+=( ispublic="$public"          )
+[[ $url           ]] && args+=( url="$url"                  )
+[[ $zone_id       ]] && args+=( zoneid="$zone_id"           )
+
+cloudmonkey register iso "${args[@]}" 
+

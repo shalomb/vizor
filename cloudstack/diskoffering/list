@@ -1,0 +1,8 @@
+#!/bin/bash
+
+{
+  echo 'id,name,display text'
+  cloudmonkey list diskofferings |
+    jq -c -r '.[][] | [.id,.name,.displaytext]' 2>/dev/null |
+    sed -r 's/^\[|\]$//g'; 
+} | csv_to_table

@@ -1,0 +1,8 @@
+#!/bin/bash
+
+{
+  echo 'id,name,display text,hypervisor'
+  cloudmonkey list templates templatefilter=executable |
+    jq -c -r '.[][] | [.id,.name,.displaytext,.hypervisor]' 2>/dev/null |
+    sed -r 's/^\[|\]$//g'; 
+} | csv_to_table

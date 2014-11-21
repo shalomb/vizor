@@ -1,0 +1,17 @@
+#!/bin/bash
+
+declare keyword=
+
+while getopts "k:" opt; do
+  case $opt in
+    k) keyword="$OPTARG"
+    ;;
+  esac
+done
+
+{
+  echo 'id,name,display text,domain,account,cidr,networkofferingname'
+  cloudmonkey list networks listall=true keyword="$keyword" |
+    jq -c -r '.[][] | [.id,.name,.displaytext,.domain,.account,.cidr,.networkofferingname]' 2>/dev/null |
+    sed -r 's/^\[|\]$//g'; 
+} | csv_to_table

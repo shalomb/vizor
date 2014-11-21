@@ -1,0 +1,55 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+api_host=
+api_key=
+secret_key=
+
+while getopts "a:s:h:" opt; do
+  case $opt in
+    a) api_key="$OPTARG"
+    ;;
+    s) secret_key="$OPTARG"
+    ;;
+    h) api_host="$OPTARG"
+    ;;
+  esac
+done
+
+
+[[ -z $api_key ]]     && die "No api key supplied.";
+[[ -z $secret_key ]]  && die "No secret key supplied.";
+[[ -z $api_host ]]    && die "No api host supplied.";
+
+cm_config_file="$DIR/$api_key.conf"
+
+function cloudmonkey {
+  command cloudmonkey -c "$cm_config_file" "$@"
+}
+
+set -x
+
+# cloudmonkey set protocol          'http'
+# cloudmonkey set port              8080
+# cloudmonkey set asyncblock        true
+# cloudmonkey set cache_file        "${cache_time:-3600}"
+# cloudmonkey set color             false
+# cloudmonkey set display           default
+# cloudmonkey set expires           120
+# cloudmonkey set history_file      /tmp/"$api_key.cache"
+# cloudmonkey set log_file          /tmp/"$api_key.log"
+# cloudmonkey set paramcompletion   false
+# cloudmonkey set path              /client/api
+# cloudmonkey set prompt            '>'
+# cloudmonkey set timeout           3600
+# cloudmonkey set username
+# cloudmonkey set password
+
+cloudmonkey set color     false
+cloudmonkey set host      "$api_host"
+cloudmonkey set apikey    "$api_key"
+cloudmonkey set secretkey "$secret_key"
+
+cloudmonkey list zones

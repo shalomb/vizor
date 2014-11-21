@@ -1,0 +1,261 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare                 \
+  disk_offering=        \
+  disk_offering_id=     \
+  display_name=         \
+  group=                \
+  hypervisor=           \
+  iso=                  \
+  keyboard=             \
+  name=                 \
+  network=              \
+  network_id=           \
+  os_type=              \
+  os_type_id=           \
+  service_offering=     \
+  service_offering_id=  \
+  template=             \
+  template_id=          \
+  type=                 \
+  zone=                 \
+  zone_id=
+
+while getopts "d:D:g:h:i:k:N:n:o:s:T:t:z:" opt; do
+  case $opt in
+    d) disk_offering="$OPTARG"
+      ;;
+    D) disk_size="$OPTARG"
+      ;;
+    g) group="$OPTARG"
+      ;;
+    h) hypervisor="$OPTARG"
+      ;;
+    i) iso="$OPTARG"
+      ;;
+    k) keyboard_type="$OPTARG"
+      ;;
+    N) network="$OPTARG"
+      ;;
+    n) name="$OPTARG"
+      ;;
+    o) os_type="$OPTARG"
+      ;;
+    s) service_offering="$OPTARG"
+      ;;
+    t) type="$OPTARG"
+      ;;
+    T) template="$OPTARG"
+      ;;
+    z) zone="$OPTARG"
+      ;;
+  esac
+done
+
+printf -v log_str "[%s]" "$@"
+log "args $log_str"
+
+if [[ -z $zone ]]; then
+  zone_names=()
+  while read -r zone_name; do
+    zone_names+=( "$zone_name" )
+  done < <(cloudmonkey list zones listall=true | jq -r 'del(.count) | .zone[].name') 
+  if   (( ${#zone_names[@]} == 1 )); then
+    zone="$zone_names"
+  else
+    die "No zone (-z) specified. Unable to disambiguate '${zone_names[@]}'"
+  fi
+fi
+
+[[ -z $name ]]              && die "No name (-n) specified."
+[[ -z $service_offering ]]  && die "No service offering (-s) specified."
+[[ -z $disk_offering ]]     && die "No disk offering (-d) specified."
+
+# [[ -z $template ]]          && die "No template (-t) specified."
+[[ -z $type ]]              && die "No type (-T) specified."
+
+[[ -n $template ]] && [[ -n $iso ]] && die "Mutually exclusive options ISO (-i) and template (-T) specified."
+# [[ -z $template ]] && [[ -z $iso ]] && die "One of ISO (-i) or template (-T) must be specified."
+id="$name"
+
+function cloudmonkey {
+  command cloudmonkey "$@" |
+    jq -S -r -e 'if .count > 0 then del(.count) | .[] else null end' 
+}
+
+function is_uuid {
+  local str="$1"
+  local re='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+  [[ $str =~ $re ]]
+}
+
+function jq_get_attrib {
+  local maxlen="$1"
+  local expr="$2"
+  jq -c -e -r '. as $in | length as $len | if $len == '$maxlen' then $in[] | '"$expr"' else null end'
+}
+
+if [[ -z $zone_id ]]; then
+  if zones=$( cloudmonkey list zones keyword="$zone" ); then
+    [[ -z $zones ]] && die "No zones for '$zone' found."
+    if ! zone_id=$( jq_get_attrib 1 '.id' <<<"$zones"); then
+      count=$(jq -c -e -r '. | length' <<<"$zones")
+      names=$(jq -c -e -r '.[] | [.name]' <<<"$zones" | tr -d $'\n')
+      die "Unable to disambiguate zone '$zone' (-z), '$count' candidates found [$names]."
+    fi
+  else
+    die "Unable to locate zone '$zone'"
+  fi
+fi
+
+if [[ -z $network_id ]]; then
+  if networks=$( cloudmonkey list networks listall=true keyword="$network" ); then
+    [[ -z $networks ]] && die "No networks for '$network' found."
+    if ! network_id=$( jq_get_attrib 1 '.id' <<<"$networks"); then
+      count=$(jq -c -e -r '. | length' <<<"$networks")
+      names=$(jq -c -e -r '.[] | [.name]' <<<"$networks" | tr -d $'\n')
+      die "Unable to disambiguate network (-N) '$network', '$count' candidates found $names."
+    fi
+  else
+    die "Unable to locate network '$network'"
+  fi
+fi
+# echo "network_id : $network_id"
+
+if [[ -z $disk_offering_id ]]; then
+  disk_offering_esc="${disk_offering// /\ }" # TODO, CS-7459
+  if disk_offerings=$( cloudmonkey list diskofferings listall=true keyword="$disk_offering_esc" ); then
+    [[ -z $disk_offerings ]] && die "No disk_offerings for '$disk_offering' found."
+    if ! disk_offering_id=$( jq_get_attrib 1 '.id' <<<"$disk_offerings"); then
+      count=$(jq -c -e -r '. | length' <<<"$disk_offerings")
+      names=$(jq -c -e -r '.[] | [.name]' <<<"$disk_offerings" | tr -d $'\n')
+      die "Unable to disambiguate disk_offering '$disk_offering', '$count' candidates found [$names]."
+    fi
+  else
+    die "Unable to locate disk_offering '$disk_offering'"
+  fi
+fi
+# echo "disk_offering_id : $disk_offering_id"
+
+if [[ -z $service_offering_id ]]; then
+  # Workaround for [CLOUDSTACK-7459] CloudMonkey does not honour quoted/escaped (keyword) arguments containing whitespace - ASF JIRA
+  service_offering_escaped="${service_offering// /\ }" 
+  if service_offerings=$( cloudmonkey list serviceofferings listall=true keyword="$service_offering_escaped" ); then
+    [[ -z $service_offerings ]] && die "No service_offerings for '$service_offering' found."
+    if ! service_offering_id=$( jq_get_attrib 1 '.id' <<<"$service_offerings"); then
+      count=$(jq -c -e -r '. | length' <<<"$service_offerings")
+      names=$(jq -c -e -r '.[] | [.name]' <<<"$service_offerings" | tr -d $'\n')
+      die "Unable to disambiguate service_offering '$service_offering', '$count' candidates found [$names]."
+    fi
+  else
+    die "Unable to locate service_offering '$service_offering'"
+  fi
+fi
+# echo "service_offering_id : $service_offering_id"
+
+if [[ -n $os_type ]]; then
+  os_type_esc="${os_type// /\ }" # TODO, CS-7459
+  if os_types=$( cloudmonkey list ostypes listall=true keyword="$os_type_esc" ); then
+    [[ -z $os_types ]] && die "No os_types for '$os_type' found."
+    if ! os_type_id=$( jq_get_attrib 1 '.id' <<<"$os_types"); then
+      count=$(jq -c -e -r '. | length' <<<"$os_types")
+      names=$(jq -c -e -r '.[] | [.name]' <<<"$os_types" | tr -d $'\n')
+      die "Unable to disambiguate os_type '$os_type', '$count' candidates found [$names]."
+    fi
+  else
+    die "Unable to locate os_type '$os_type'"
+  fi
+fi
+# echo "os_type_id : $os_type_id"
+
+if [[ -n $iso ]]; then
+  if isos=$( cloudmonkey list isos listall=true keyword="$iso" ); then
+    [[ -z $isos ]] && die "No isos for '$iso' found."
+    if ! template_id=$( jq_get_attrib 1 '.id' <<<"$isos"); then
+      count=$(jq -c -e -r '. | length' <<<"$isos")
+      names=$(jq -c -e -r '.[] | [.name]' <<<"$isos" | tr -d $'\n')
+      die "Unable to disambiguate iso '$iso', '$count' candidates found [$names]."
+    fi
+  else
+    die "Unable to locate iso '$iso'"
+  fi
+fi
+
+if [[ -n $template ]]; then
+  if templates=$( cloudmonkey list templates listall=true keyword="$template" ); then
+    [[ -z $templates ]] && die "No templates for '$template' found."
+    if ! template_id=$( jq_get_attrib 1 '.id' <<<"$templates"); then
+      count=$(jq -c -e -r '. | length' <<<"$templates")
+      names=$(jq -c -e -r '.[] | [.name]' <<<"$templates" | tr -d $'\n')
+      die "Unable to disambiguate template '$template', '$count' candidates found [$names]."
+    fi
+  else
+    die "Unable to locate template '$template'"
+  fi
+fi
+
+if [[ -n $hypervisor ]]; then
+  if ! command cloudmonkey list hypervisors zoneid="$zone_id" |
+      jq -e 'del(.count) | .[][] | select(.name | contains("'"$hypervisor"'"))' &>/dev/null; then
+    die "Lookup of hypervisor type (-h) '$hypervisor' failed. Does zone support this hypervisor type?"
+  fi
+else
+  hypervisor_types=( $( command cloudmonkey list hypervisors zoneid="$zone_id" |
+    jq -r -e 'del(.count) | .hypervisor[].name' ) )
+
+  if (( ${#hypervisor_types[@]-} == 0 )); then
+    die "Zone '$zone_id' has no usable hypervisor types (${hypervisor_types[@]})."
+  elif (( ${#hypervisor_types[@]-} > 1 )); then
+    die "Zone '$zone_id' has multiple hypervisor types (${hypervisor_types[@]}). Please specify the hypervisor type (-h) for this container."
+  else
+    hypervisor="$hypervisor_types"
+  fi
+fi
+
+json_doc='{}'
+
+ctime=$(date +%FT%T)
+mtime=$(date +%FT%T)
+
+for i in              \
+  id                  \
+  type                \
+  ctime               \
+  mtime               \
+  disk_offering       \
+  disk_offering_id    \
+  disk_size           \
+  group               \
+  hypervisor          \
+  iso                 \
+  keyboard_type       \
+  name                \
+  network             \
+  network_id          \
+  os_type             \
+  os_type_id          \
+  service_offering    \
+  service_offering_id \
+  template            \
+  template_id         \
+  zone                \
+  zone_id             \
+  ; do 
+    key="$i"
+    value="${!i-}"
+    json_doc=$( jq -r '.'"$key"' = "'"$value"'"' <<<"$json_doc" )
+done
+
+_rev=$( curl -sS -f 'http://localhost:5984/container/'"$name?revs_info=true" 2>/dev/null | jq -r '._revs_info[0].rev' )
+
+[[ -n $_rev ]] && json_doc=$( jq -r '._rev = "'"${_rev}"'"' <<<"$json_doc" )
+
+if status=$( curl -sS -f -X PUT 'http://localhost:5984/container/'"$name" -d "$json_doc" ); then
+  jq -e -S -s '.[0] * .[1]' <(cat <<<"$status") <(cat <<<"$json_doc") 
+else
+  die "Error creating definition for container '$name' : $?"
+fi
+

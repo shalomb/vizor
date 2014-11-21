@@ -1,0 +1,22 @@
+#!/bin/bash
+
+declare keyword= query=
+
+while getopts "k:q:" opt; do
+  case $opt in
+    k) keyword="$OPTARG"
+      ;;
+    q) query="$OPTARG"
+      ;;
+  esac
+done
+
+
+{
+  echo '.id,.name,.displaytext,.ostypename,.bootable,.isready,.status' |
+    sed -r -e 's/^\.//' -e 's/,\./,/g'
+  cloudmonkey list isos isofilter=executable listall=true keyword="$keyword" |
+    jq -c -r 'del(.count) | .[][] | [.id,.name,.displaytext,.ostypename,.bootable,.isready,.status]' |
+    grep -i "${query:-.}" |
+    sed -r 's/^\[|\]$//g' 
+} | csv_to_table

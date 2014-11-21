@@ -1,0 +1,32 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+identity_fields=()
+
+while getopts "f:q:" opt; do
+  case $opt in
+    f) identity_fields+=( ".$OPTARG" )
+      ;;
+  esac
+done
+shift "$((OPTIND - 1))"
+
+
+if [[ ! -e "$DIR/cloudmonkey.conf" ]]; then
+  cp ~/.cloudmonkey/config "$DIR"/cloudmonkey.conf 
+  sed -i -r 's/^display.*/display = json/' "$DIR"/cloudmonkey.conf
+fi
+
+results=$( cloudmonkey -c "$DIR"/cloudmonkey.conf "$@" )
+
+if (( ${#identity_fields[@]} == 1 )); then
+  jq -r -c -S 'del(.count)[][] | '"${identity_fields[0]}"'' <<<"$results"
+elif (( ${#identity_fields[@]} > 1 )); then
+  identity_string=$( join_array ',' "${identity_fields[@]}")
+  jq -r -c -S 'del(.count)[][] | ['"$identity_string"']' <<<"$results"
+else
+  jq -S 'del(.count)[][]' <<<"$results" 
+fi
+

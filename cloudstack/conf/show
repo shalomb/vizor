@@ -1,0 +1,13 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+cloudmonkey_config="$DIR/../cloudmonkey.config"
+
+if [[ -e $cloudmonkey_config ]]; then
+  less $cloudmonkey_config
+else
+  less ~/.cloudmonkey/config
+fi
+
