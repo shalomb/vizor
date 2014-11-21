@@ -32,6 +32,7 @@ jq -S '.' <<EOF
   "timezone"                : "${TZ:-$(</etc/timezone)}",
   "windows_timezone"        : "GMT Standard Time",
   "timezone_utc_offset"     : "$(TZ=$TZ date +%z)",
+  "timezone_abbrev"         : "$(TZ=$TZ date +%Z)",
 
   "language"                : "$LANGUAGE",
   "lang"                    : "$LANG",
@@ -78,15 +79,19 @@ if ! result=$( curl -fsSL "http://localhost:5984/metadata/site" -X PUT -d "$meta
   die "Failed to set site metadata : $ec"
 fi
 
-if [[ -z ${PUBLIC_IP-} ]]; then
-  PUBLIC_IP=$( curl -fsSL -X GET http://www.telize.com/ip )
+public_ip=$(curl -fsSL -X GET 'http://www.telize.com/ip')
+   ip_api=$(curl -fsSL -X GET 'http://ip-api.com/json' | jq -e '.')
+  free_ip=$(curl -fsSL -X GET "http://freegeoip.net/json/$public_ip" | jq -e '.')
+   ipinfo=$(curl -fsSL -X GET "http://ipinfo.io/$public_ip" | jq -e '.')
+
+printf -v geo_metadata_doc '{"public_ip":"%s"}' "$public_ip"
+[[ $ip_api  ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$ip_api") )
+[[ $free_ip ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$free_ip") )
+[[ $ipinfo  ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$ipinfo") )
+
+if [[ $geo_metadata_doc ]]; then
+  if ! result=$( curl -fsSL "http://localhost:5984/metadata/geo" -X PUT -d "$geo_metadata_doc" ) ec=$?; then
+    die "Failed to set geo metadata : $ec"
+  fi
 fi
 
-geo_metadata_doc=$( curl -fsSL -X GET "http://freegeoip.net/json/$PUBLIC_IP" | jq -S '.' )
-geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(curl -fsSL -X GET "http://ipinfo.io/$PUBLIC_IP") )
-geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(curl -fsSL -X GET "http://www.telize.com/geoip/$PUBLIC_IP") )
-geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(curl -fsSL -X GET 'http://ip-api.com/json') )
-
-if ! result=$( curl -fsSL "http://localhost:5984/metadata/geo" -X PUT -d "$geo_metadata_doc" ) ec=$?; then
-  die "Failed to set geo metadata : $ec"
-fi
