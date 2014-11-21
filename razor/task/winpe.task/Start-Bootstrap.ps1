@@ -17,7 +17,7 @@ param(
 	[string]$ScriptCallbackStr,# script
 	[int]$RetryWait = 1, # seconds
 	[int]$RetryMax = 2,
-	[int]$UserDataTimeout = 10000, # milliseconds
+	[int]$UserDataTimeout = 20000, # milliseconds
 	[int]$Port = 80
 ) 
 
