@@ -1,0 +1,45 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare box_id= iso= repo= task= node= metadata='{}' \
+        no_replace=true clear_metadata=0
+
+while getopts "b:cm:n:r" opt; do
+  case $opt in
+    c) clear_metadata=1
+      ;;
+    m) metadata="$OPTARG"
+      ;;
+    n) node="$OPTARG"
+      ;;
+    r) no_replace=false
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+[[ -z $node ]] && die "No node (-n) specified."
+
+doc='{}'
+
+for i in      \
+  node        \
+  no_replace  \
+  ; do 
+    doc=$( jq -e -r '.'"$i"' = "'"${!i}"'"' <<<"$doc" )
+done
+
+if (( clear_metadata == 1 )); then
+  razor remove-node-metadata --json <( cat <<<'{"node":"'"$node"'","all":true}' )
+fi
+
+json_doc=$( jq -s '.[0] * (.[1]|{update:.})' <(cat <<<"$doc") <(cat <<<"$metadata") )
+
+razor modify-node-metadata --json <( cat <<<"$json_doc" )
+
+curl -fsSL "http://localhost:8080/api/collections/nodes/$node" | jq '.metadata'
+
