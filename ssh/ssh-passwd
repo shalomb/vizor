@@ -1,0 +1,41 @@
+#!/usr/bin/perl -l
+use strict;
+use warnings;
+ 
+use Net::SSH2;
+
+sub help {
+  print <<EOHELP
+
+$0 host username password command
+
+EOHELP
+}
+
+unless (scalar @ARGV) {
+  warn "No args passed.\n";
+  help;
+  exit 1
+}
+
+my ($host, $username, $password, $command) = ( @ARGV ) ;
+
+my $ssh2 = Net::SSH2->new( trace => -1 );
+
+$ssh2->connect($host) or die "Failed connection : $!";
+
+if ($ssh2->auth_password($username, $password) or die "Failed authenticating : $!" ) {
+  my $chan = $ssh2->channel();
+  $chan->exec($command);
+  $chan->send_eof();
+
+  local $\ = undef;
+  my $buf;
+  print $buf while $chan->read($buf, 512) > 0 ;
+
+  $chan->close();
+}
+else {
+  die "Failed authentication : $!\n";
+}
+
