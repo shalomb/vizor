@@ -1,0 +1,341 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   xe_vm_create - Create VMs on XenServer/XCP
+
+# TODO
+#   Fix/Test creating VMs from VHDs/VDIs
+#   Set HA Priorities
+
+DEBUG="$DEBUG"
+
+bootloader_type="$bootloader_type"
+candidate_cd="$candidate_cd"
+convert_to_template="$convert_to_template"
+dry_run="$dry_run"
+ha_restart_priority="$ha_restart_priority"
+iso_name="$iso_name"
+keep_shutdown="$keep_shutdown"
+mac_address="$mac_address"
+master_vdi_sr_uuid="$master_vdi_sr_uuid"
+master_vdi_uuid="$master_vdi_uuid"
+master_vhd_file="$master_vhd_file"
+memory_static_max="$memory_static_max"
+memory_static_min="$memory_static_min"
+memory_dynamic_max="${memory_dynamic_max:-$memory_static_max}"
+memory_dynamic_min="${memory_dynamic_min:-$memory_static_min}"
+sr_name="$sr_name"
+template_name="$template_name"
+vcups_at_startup="$vcups_at_startup"
+vdisk_size="$vdisk_size"
+vm_description="$vm_description"
+vm_name="$vm_name"
+vm_network="$vm_network"
+
+[[ $DEBUG ]] && set -xv
+set -e -u
+
+shopt -s extglob nullglob sourcepath
+
+source utils.sh
+
+function show_help {
+  cat <<EOF
+
+${0##*/} [options]
+
+  -a mac_address
+  -B bootloader_type
+  -c vcups_at_startup
+  -d vm_description
+  -H master_vhd_file
+  -i iso_name
+  -m memory_static_max
+  -n vm_name
+  -p vm_network
+  -r ha_restart_priority
+  -s sr_name
+  -t template_name
+  -V master_vdi_uuid
+  -v vdisk_size
+  -T                      - Convert VM to instant template
+  -S                      - Keep VM Shutdown
+  -N                      - Dry run
+
+EOF
+}
+
+while getopts "a:c:d:i:m:n:p:r:s:t:v:B:D:H:V:TSN" opt; do
+  case $opt in
+    a) mac_address="$OPTARG"
+      ;;
+    c) vcups_at_startup="$OPTARG"
+     ;;
+    d) vm_description="$OPTARG"
+      ;;
+    i) iso_name="$OPTARG"
+      ;;
+    m) memory_static_max="$OPTARG"
+      ;;
+    n) vm_name="$OPTARG"
+      ;;
+    p) vm_network="$OPTARG"
+      ;;
+    r) ha_restart_priority="$OPTARG"
+      ;;
+    s) sr_name="$OPTARG"
+      ;;
+    t) template_name="$OPTARG"
+      ;;
+    v) vdisk_size="$OPTARG"
+      ;;
+    H) master_vhd_file="$OPTARG"
+      ;;
+    V) master_vdi_uuid="$OPTARG"
+      ;;
+    B) bootloader_type="$OPTARG"
+      ;;
+    T) convert_to_template=1
+      ;;
+    D) set -x -v
+      ;;
+    S) keep_shutdown=1
+      ;;
+    N) dry_run=1
+      ;;
+    [\?h]) show_help; exit 1;
+      ;;
+    :) die "Option -$OPTARG requires an argument." >&2
+      ;;
+  esac
+done
+
+
+candidate_network=()
+candidate_network+=( $( xe network-list | \
+  xe_grep 'print uuid if name_label =~ /'"$vm_network"'/' ) )
+
+set -xv
+if (( ${#candidate_network[@]-} != 1 )); then
+  for c in ${candidate_network[@]-}; do
+    xe network-list uuid="$c" | xe_grep 'print "  * network : ",uuid,name_label'
+  done
+  die "${#candidate_network[@]-} networks found for regex '$vm_network' .. cannot proceed."
+fi
+
+
+candidate_cd=()
+if [[ $iso_name ]]; then
+  candidate_cd=( $(xe cd-list params=all | \
+    xe_grep 'print uuid if name_label =~ /'"$iso_name"'/') )
+
+  if (( ${#candidate_cd[@]-} != 1 )); then
+    for c in ${candidate_cd[@]-}; do
+      xe vdi-list uuid="$c" | xe_grep 'printf "  * cdrom : %s  %s\n", uuid, name_label'
+    done
+    die "${#candidate_cd[@]-} cdrom devices found for regex '$iso_name' .. cannot proceed." >&2
+  fi
+fi
+
+
+candidate_sr=()
+if [[ $sr_name ]]; then
+  candidate_sr+=( $(xe sr-list params= | \
+    xe_grep 'print uuid if name_label =~ /'"$sr_name"'/' ) )
+else
+  candidate_sr=( $( xe pool-list params=default-SR --minimal ) )
+fi
+
+if (( ${#candidate_sr[@]-} != 1 )); then
+  for c in ${candidate_sr[@]-}; do
+    xe sr-list uuid="$c" | xe_grep 'print "  * sr : ",uuid,name_label'
+  done
+  die "${#candidate_sr[@]-} srs found for regex '$sr_name' .. cannot proceed."
+fi
+
+
+candidate_template=()
+candidate_template=( $( xe template-list params= | \
+  xe_grep 'print uuid if name_label =~ /'"${template_name//[()]/.}"'/i and other_config !~ /instant/' ))
+
+if (( ${#candidate_template[@]-} != 1 )); then
+  for c in ${candidate_template[@]}; do
+    xe template-list uuid="$c" | xe_grep 'print "  * template : ",uuid,name_label'
+  done
+  die "${#candidate_template[@]-} templates found for regex '$template_name' .. cannot proceed." >&2
+fi
+# candidate_template=${candidate_template}
+
+template_params=$(xe template-list uuid="$candidate_template" params=)
+
+template_name_actual=$(xe_grep 'print name_label' <<<"$template_params")
+if [[ ! $vm_name ]]; then
+  vm_name="${template_name_actual}"
+  vm_name="${vm_name//[!A-Za-z0-9]/_}"
+  vm_name="${vm_name//__/_}"
+  vm_name="${vm_name%_}"
+fi
+
+[[ $vcups_at_startup ]]   || \
+  vcups_at_startup=$(xe_grep 'print VCPUs_at_startup' <<<"$template_params")
+
+[[ $memory_static_min ]]  || \
+  memory_static_min=$(xe_grep 'print memory_static_min' <<<"$template_params")
+
+[[ $memory_static_max ]]  || \
+  memory_static_max=$(xe_grep 'print memory_static_max' <<<"$template_params")
+
+[[ $vdisk_size ]]         || \
+  vdisk_size=$(xe_grep 'print other_config =~ /disk .*size="(\d+)"/i' <<<"$template_params")
+
+if [[ ! $vm_description ]]; then
+  vm_description+="vm_name:$vm_name, template_name:$template_name_actual, "
+  vm_description+="date_created:$(date +'%FT%T'), "
+  vm_description+="created_by:$(whoami)@$(hostname):$$, command:${0##*/} $*"
+fi
+
+if [[ $master_vhd_file ]]; then
+  if [[ -e $master_vhd_file ]]; then
+    master_vdi_sr_uuid="${master_vhd_file%/*}"
+    # TODO, this is fail-prone
+    master_vdi_sr_uuid=$(grep -Eio '[a-f0-9\-]{36}' <<<"$master_vdi_sr_uuid") 
+
+    master_vdi_sr_uuid=$(xe sr-list uuid="$master_vdi_sr_uuid" params=uuid --minimal)
+    if [[ ! $master_vdi_sr_uuid ]]; then
+      die "Could not resolve SR '$master_vdi_sr_uuid' for Master VHD file '$master_vhd_file'" >&2
+    fi
+
+    disk_size=$(vhd-util read -p -n "$master_vhd_file" | awk -F'[( ]+' '/Original disk/{print $7}')
+    master_vdi_uuid=$( xe vdi-create      \
+      type=user virtual-size="$disk_size" \
+      sr-uuid="$master_vdi_sr_uuid"         \
+      name-label="master_vhd_file:$master_vhd_file" )
+
+    master_vdi_uuid=$( xe vdi-clone uuid="$master_vdi_uuid" )
+    ln -f "$master_vhd_file" \
+          "/var/run/sr-mount/$master_vdi_sr_uuid/$master_vdi_uuid.vhd"
+  else
+    die "Master VHD file '$master_vhd_file' not found.">&2
+  fi
+fi
+
+master_vdi_uuid="${master_vdi_uuid%.vhd}"
+if [[ $master_vdi_uuid ]]; then
+  true_vdi_uuid=$(xe vdi-list uuid="$master_vdi_uuid" params=uuid --minimal)
+
+  if [[ ! $true_vdi_uuid ]]; then
+    echo "VDI '$master_vdi_uuid' does not exist or is not registered."
+    echo "  You may need to refresh the SR it is on (xe sr-scan ...)." >&2
+    exit
+  fi
+
+  master_vdi_sr_uuid=$(xe vdi-list uuid="$master_vdi_uuid" params=sr-uuid --minimal)
+
+  vhd-util set -f hidden -v 0 \
+                -n "/var/run/sr-mount/$master_vdi_sr_uuid/$master_vdi_uuid.vhd"
+  candidate_sr="$master_vdi_sr_uuid"
+fi
+
+sr_name_actual=$(xe sr-list uuid="$candidate_sr" params=name-label --minimal)
+
+
+cat <<EOF
+
+                 vm_name : $vm_name
+          vm_description : $vm_description
+       template_name_req : $template_name
+      candidate_template : $candidate_template
+           template_name : $template_name_actual
+         master_vdi_uuid : $master_vdi_uuid
+         master_vhd_file : $master_vhd_file
+     ha_restart_priority : $ha_restart_priority
+        vcups_at_startup : $vcups_at_startup
+       memory_static_min : $memory_static_min
+       memory_static_max : $memory_static_max
+              vdisk_size : $vdisk_size
+              vm_network : $vm_network
+       candidate_network : $candidate_network
+         mac_address_req : $mac_address
+                iso_name : $iso_name
+            candidate_cd : $candidate_cd
+             sr_name_req : $sr_name
+            candidate_sr : $candidate_sr
+                 sr_name : $sr_name_actual
+EOF
+
+if (( dry_run == 1 )); then
+  exit 5;
+fi
+
+
+vm_uuid=$(xe vm-install template="$candidate_template" new-name-label="$vm_name" \
+                        sr-uuid="$candidate_sr")
+
+[[ $ha_restart_priority ]] && \
+  xe vm-param-set uuid="$vm_uuid" ha-restart-priority=restart order="$ha_restart_priority"
+xe vm-param-set uuid="$vm_uuid" VCPUs-max="$vcups_at_startup"
+xe vm-param-set uuid="$vm_uuid" VCPUs-at-startup="$vcups_at_startup"
+xe vm-param-set uuid="$vm_uuid" memory-static-max="$memory_static_max" \
+                memory-dynamic-max="$memory_static_max" \
+                memory-dynamic-min="$memory_static_max"
+xe vm-param-set uuid="$vm_uuid" HVM-boot-params:order=dcn # dcn = disk,cdrom,network
+
+echo "                 vm_uuid : $vm_uuid"
+
+vif_uuid=$(xe vif-create  network-uuid="$candidate_network" vm-uuid="$vm_uuid" \
+                          device=0 mac="$mac_address")
+echo "                vif_uuid : $vif_uuid"
+
+vdi_uuid=$(xe vbd-list vm-uuid="$vm_uuid" type=Disk params=vdi-uuid --minimal)
+echo "                vdi_uuid : $vdi_uuid"
+
+# TODO
+if [[ $master_vdi_uuid ]]; then
+  # new_vdi_uuid=$(xe vdi-clone uuid="$master_vdi_uuid")
+  new_vdi_uuid="$master_vdi_uuid"
+  ln -f "/var/run/sr-mount/$master_vdi_sr_uuid/$new_vdi_uuid.vhd" \
+        "/var/run/sr-mount/$master_vdi_sr_uuid/$vdi_uuid.vhd"
+  echo "          new_vdi_uuid : $new_vdi_uuid"
+fi
+
+if [[ $bootloader_type ]]; then
+  xe vm-param-set uuid="$vm_uuid" PV-bootloader="$bootloader_type"
+fi
+
+vdi_size=$(xe vdi-list uuid="$vdi_uuid" params=virtual-size --minimal)
+if (( vdi_size != vdisk_size )); then
+  xe vdi-resize uuid="$vdi_uuid" disk-size="$vdisk_size"
+  echo "                vdi_size : $vdisk_size"
+else
+  echo "                vdi_size : $vdi_size"
+fi
+
+vm_vbd_device_index=$(xe vbd-list vm-uuid="$vm_uuid" params=userdevice --minimal | \
+                      sed 's/,/\n/' | sort -n | tail -n 1)
+
+(( vm_vbd_device_index++ ))
+xe vdi-param-set  uuid="$vdi_uuid" name-label="$vm_name-$vm_vbd_device_index" \
+                  name-description="type:boot, vm:$vm_name, template:$template_name" 
+
+mac_address=$(xe vif-list uuid="$vif_uuid" params=MAC --minimal)
+echo "             mac_address : $mac_address"
+
+if [[ $iso_name && $candidate_cd ]]; then
+  cd_name=$( xe vdi-list uuid="$candidate_cd" params=name-label --minimal )
+
+  (( vm_vbd_device_index++ ))
+  xe vm-cd-add vm="$vm_uuid" cd-name="$cd_name" device="$vm_vbd_device_index"
+fi
+
+xe vm-param-set uuid="$vm_uuid" name-description="$vm_description"
+
+if [[ $master_vdi_sr_uuid ]]; then
+  xe vm-param-set uuid="$vm_uuid" is-a-template=true
+  xe template-param-set uuid="$vm_uuid" other-config:instant=true
+elif (( keep_shutdown != 1 )); then
+  xe vm-start uuid="$vm_uuid"
+fi
+
+echo ''
+exit $?
+
