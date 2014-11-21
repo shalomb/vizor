@@ -58,7 +58,7 @@ set -xv
      fi
 
      # TODO, Cloudmonkey's progress output taints record
-     template_def=$( sed -r '1 s/.*\{/{/' <<<"$template_def" | jq -S -e '.' )  
+     template_def=$( sed -r -e '1d' <<<"$ret" | jq -S -e '.' )
     fi
     ;;
   *) die "Unsupported/unimplemented type $container_type"

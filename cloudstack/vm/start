@@ -22,5 +22,5 @@ ret=$( cloudmonkey start virtualmachine id="$id" | sed -r '1 s/\..*\{/{/' )
 if grep -iq 'Error' <<<"$ret"; then
   die "Error starting VM '$id' : $ret"
 else
-  jq -S -e '.' <<<"$ret"
+  sed -r -e '1d' <<<"$ret" | jq -S -e '.'
 fi

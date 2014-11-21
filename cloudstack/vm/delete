@@ -51,6 +51,6 @@ if grep -iq '^Error' <<<"$ret"; then
   die "$errstr"
 else
   # TODO. CM seems to add progress bar info on STDOUT
-  sed -r '1 s/.*\{/{/' <<<"$ret" | jq -S -e '.'
+  sed -r -e '1d' <<<"$ret" | jq -S -e '.'
 fi
 
