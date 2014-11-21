@@ -1,0 +1,17 @@
+#!/bin/bash
+
+host=
+
+set -e -u
+
+[[ -z $host ]] && { echo "Host (-h) not supplied." >&2; exit 3; };
+
+if ! type -P "$host" &>/dev/null; then
+  echo "Host '$host' not registered/prepared." >&2
+  exit 3;
+fi
+
+
+echo "host : $host"
+"$host" 'xe_vm_create '"$@"'; exit $?'
+
