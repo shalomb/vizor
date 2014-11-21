@@ -1,0 +1,11 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+{
+  echo 'id,name,host,mem_max,mem_min,disk_size,host'
+  curl -sS 'http://localhost:9200/install-template/install-template/_search?sort=_id&from=0&size=99999&sort=name_label' |
+    jq -S -r -c '.hits.hits[]._source | [._id,.name_label,.host,.memory_dynamic_max,.memory_dynamic_min,.disk_size,.host]' |
+    sed -r 's/^\[|\]$//g' 
+} | csv_to_table
