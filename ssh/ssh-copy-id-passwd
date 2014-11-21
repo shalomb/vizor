@@ -1,0 +1,132 @@
+#!/usr/bin/expect
+
+# SYNOPSIS
+#  ssh-copy-id-passwd - expect wrapper around ssh-copy-id(1)
+
+# DESCRIPTION
+#   ssh-copy-id-passwd uses Expect to automate the operation of 
+#   ssh-copy-id(1) and therefore requres both Expect and the 
+#   ssh-copy-id programs to be installed.
+#
+#   Use the --help option for usage.
+
+# EXIT CODES
+#   3 - An error was encountered.
+#   5 - A permission denied error was sent back from remote host.
+
+proc getopt {_argv name {_var ""} {default ""}} {
+  upvar 1 $_argv argv $_var var
+  set pos [lsearch -regexp $argv ^$name]
+  if {$pos>=0} {
+    set to $pos
+    if {$_var ne ""} {
+      set var [lindex $argv [incr to]]
+    }
+    set argv [lreplace $argv $pos $to]
+    return 1
+  } else {
+    if {[llength [info level 0]] == 5} {set var $default}
+    return 0
+  }
+}
+
+set env_password ""
+set env_username ""
+if { [array names env PASSWD]   != "" } { set env_password $::env(PASSWD) }
+if { [array names env USERNAME] != "" } { set env_username $::env(USERNAME) }
+
+getopt argv --hostname hostname "" ;
+getopt argv --username username $env_username;
+getopt argv --password password $env_password;
+set show_help [getopt argv --help]    ;
+set verbose   [getopt argv --verbose] ;
+
+if { $show_help == 1 } {
+puts {
+ssh-copy-id-passwd --hostname host --password string [ --username user ]
+    
+  --hostname  - Host to connect to, can be a hostname, DNS FQDN, 
+                  IP Address or even a $user@$hostname construct.
+  --password  - Password of the user on the remote host. 
+                WARNING: 
+                  The password may be supplied via the PASSWD environment
+                  variable and is the recommended way to supply the
+                  password to avoid process table sniffing attacks.
+  --username  - Optional: Defaults to the USERNAME env. var.
+  --verbose   - Turn on expect's exp_internal to 1.
+}
+exit
+}
+
+if {![string length $hostname]} { puts stderr "--hostname not set."; exit 3; }
+if {![string length $password]} { puts stderr "--password not set."; exit 3; }
+
+if { $verbose == 1 } { exp_internal 1 }
+set timeout  5
+
+# Exec ssh-copy-id
+spawn ssh-copy-id $username@$hostname 
+
+# Case : EOF Encountered
+expect_after {
+  eof {
+    puts "EOF encountered .. cleaning up."
+    catch { close -i $spawn_id }
+    wait -nowait -i $spawn_id
+    exit 0
+  }
+} 
+
+# Case : 
+expect_before {
+  -re {Now try logging in.*} {
+    puts "Succeeded. OK."
+    catch { close -i $spawn_id }
+    wait -nowait -i $spawn_id
+    exit 0
+  }
+}
+
+expect {
+  -re {yes.*no} {
+    send "yes\n"
+    expect { 
+      -re {(P|p)assword: } { 
+        puts ""
+        send "$password\n" 
+        expect {
+          -re {denied} { 
+            puts ""
+            puts ""
+            send ""
+            puts stderr "Permission denied, bad credentials or user not authorized?"
+            puts stderr "Aborting .."
+            exit 5
+          }
+        }
+      }
+    }
+  }
+}
+
+expect { 
+  -re {(P|p)assword: } { 
+    puts ""
+    send "$password\n" 
+    expect {
+      -re {denied} { 
+        puts ""
+        puts ""
+        send ""
+        puts stderr "Permission denied, bad credentials or user not authorized?"
+        puts stderr "Aborting .."
+        exit 5
+      }
+    }
+  }
+}
+
+expect eof
+
+exit 0
+
