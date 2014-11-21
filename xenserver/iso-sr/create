@@ -1,0 +1,40 @@
+#!/bin/bash
+
+hostname=
+
+DEBUG="${DEBUG}"
+
+[[ $DEBUG ]] && set -xv
+set -e -u
+
+source utils.sh
+
+sr_dir=
+sr_name=
+hostname=
+
+while getopts "s:d::h:" opt; do
+  case $opt in
+    s) sr_name="$OPTARG"
+    ;;
+    d) sr_dir="$OPTARG"
+    ;;
+    h) hostname="$OPTARG"
+    ;;
+  esac
+done
+
+[[ $hostname ]] || die "hostname (-h) not supplied."
+
+if ! type -P "$hostname" &>/dev/null; then
+  echo "hostname '$hostname' not registered/prepared." >&2
+  exit 3;
+fi
+
+[[ $sr_dir ]] || die "No directory (-d) specified."
+sr_name="${sr_name:-${sr_dir##*/}}"
+
+"$hostname" xe_iso-sr_create \
+  -s "$sr_name" \
+  -d "$sr_dir"  \
+
