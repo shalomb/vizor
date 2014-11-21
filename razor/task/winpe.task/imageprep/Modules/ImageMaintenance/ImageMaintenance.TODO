@@ -1,0 +1,103 @@
+# TODO
+# ----
+
+# Image Preparation Tasks
+#   Hostname
+#   Locale
+#   Keyboard Layout
+#   Set FIPS Compliance
+
+# Notes
+# http://www.vadapt.com/2011/01/review-win7-view-optimization-guide/
+
+# TODO
+#   newsid
+#   parameters for mode
+#     minimal
+#     reset
+#     full
+#     default?
+#   Handle CD-ROM insertion for
+#     .Net3.5 on windows 8
+#     Guest Tools
+#   SuperFetch ?
+#   NTP Sync against Citrite.net
+#   Languages
+# Consider a bin/ directory
+#
+# Enable IPv6 - done
+# DNS/IPv6 DNS 
+# DHCPv6 and DNS
+# Routing and Route Advertisement
+# XML RPC / REST Service - Pending Change/Inclusion from PaulD
+# HostNames Names
+# Preparation on AMD/Intel Platforms
+# Screen Resolution
+# Hostnames and UI Name Consistency
+# 2vCPUs for the Server Platforms
+# Remove .Net3.5 where not needed >= Win8, WS2012
+# Ensure Locale
+# FIPS Compliancy
+#   Windows Registry Editor Version 5.00
+#   [HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa]
+#   "fipsalgorithmpolicy"=dword:00000001
+
+# Disable strict host checking
+# Eject ISOs from VMs
+# Locales and TimeZones
+#
+# driverquery
+#
+# sfc /scannow
+#
+# winmgmt /verifyrepository
+# winmgmt /resetrepository  
+# winmgmt /salvagerepository
+# winmgmt /resyncperf
+# Restart-Service winmgmt -Force  
+#
+# Driver Query
+#  driverquery /v
+#  driverquery /si
+#
+# bcdedit.exe
+# bcdedit /hypervisorsettings
+#
+# bcdedit /Set LoadOptions DDISABLE_INTEGRITY_CHECKS # Disable driver integ checks
+# bcdedit /set nointegritychecks ON
+#
+# http://vb.mvps.org/tips/shellcpl.txt
+#
+#  Basic Detection for 2 CPUs on server platforms
+
+# Set and Verify Driver Signing
+
+# Disable StrictNameCheckign for SMB shares
+# LanManWorkStation EnableSecuritySignature 0x0
+
+# Set HostName and Computer Description
+# Machine Attributes and UUIDs
+
+# Administrator password no expire
+# Unset User cannot change password - for sysprep
+# Sysprep
+
+# Timezones
+# Locales
+
+# User and Groups PS Module
+# Trace and Assert Module
+
+# Set and Get Hostname
+
+# Allow/Disallow Remote Registry
+
+# Done Set password expiry to not expire for administrative users
+
+# Done .Net 4 - client profile ??
+
+# Disabling the Search Indexing Feature in Windows 7
+# http://windows.microsoft.com/en-GB/windows7/Optimize-Windows-7-for-better-performance
+
+# Set MachineName according to a defined scheme
+

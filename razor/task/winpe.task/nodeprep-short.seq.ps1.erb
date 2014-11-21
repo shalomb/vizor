@@ -1,0 +1,136 @@
+# Powershell
+
+# This file is not to be meant to run directly.
+
+[CmdletBinding()]
+Param()
+
+Set-StrictMode -Version 2.0
+Set-PSDebug -Trace 0
+
+$ErrorActionPreference          = 'STOP'
+$PSModuleAutoLoadingPreference  = 'None'
+
+# Import all modules required by tasks defined below
+Import-Module Microsoft.PowerShell.Host -ea 0 # Seems to fail import on PSv2
+Import-Module CDROM
+Import-Module GroupPolicy
+Import-Module Locale
+Import-Module MSRT
+Import-Module OSRegion
+Import-Module RegistryUtils
+Import-Module RDP
+Import-Module Robocopy
+Import-Module SystemUtils
+Import-Module TaskUtils
+Import-Module VDIOptimizations
+Import-Module WindowsActivation
+Import-Module WindowsDefender
+Import-Module WindowsUpdate
+Import-Module WinMgmt
+Import-Module ZipUtils
+
+# Tasks Outstanding
+#  Enable Pagefile on first startup
+#  Language Packs
+#  Source Parameters from config file
+#  Windows8and2012VDIBaseline.vbs
+#  Review
+
+# Define the environment for the run
+$Env:OLBASE       = "$Env:SystemDrive\ProgramData\OneLab"
+$Env:OLCONF       = Join-Path $Env:OLBASE "conf"
+$Env:OLBIN        = Join-Path $Env:OLBASE "bin"
+$Env:OLLOG        = Join-Path $Env:OLBASE "log"
+$Env:OLIP         = Join-Path $Env:OLLOG  "ImagePrep"
+
+$Env:RAZOR_STATUS_URL ='<%= stage_done_url('') %>'
+$Env:WSUS_URL     = '<%= node.metadata["wsus_url"]        ||= "http://10.108.80.42:8530" %>'
+$Env:KMS_SERVER   = '<%= node.metadata["kms_server"]      ||= 'camesvwkms01.eng.citrite.net' %>'
+$Env:KMS_PORT     = '<%= node.metadata["kms_server_port"] ||= 1688 %>'
+$Env:NTP_SERVERS  = '<%= node.metadata["ntp_server_list"] ||= "eng.citrite.net,citrite.net,pool.ntp.org,time.windows.com,time.nis.gov" %>'
+$Env:TIMEZONE     = '<%= node.metadata["windows_timezone"] ||= "GMT Standard Time" %>'
+$Env:L18NXML_URL      = '<%= file_url('l18n.xml') %>'
+
+if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\SysInternals;" }
+$Env:PATH += "$Env:OLBIN;$Env:IPBaseDir\bin\SysInternals"
+
+# Stage 0
+@(
+  @{ name    =   'stage_1_begins';
+      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_begins') %>') };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'stage_1_create_onelab_support_directory_hierarchy';
+      script = {
+        $Env:OLBASE,$Env:OLCONF,$Env:OLBIN,$Env:OLLOG,$Env:OLIP | %{
+          mkdir -Force -Verbose:$VerbosePreference $_ | Out-Null
+        }
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'mark_stage_1';
+      script = { "" | Out-File "$Env:USERPROFILE\Desktop\S1" };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_timezone_est';
+      pre    = { (Gwmi Win32_TimeZone) -imatch "^$($Env:TIMEZONE)$" };
+      script = { Get-TimeZone -TimeZoneName "$($Env:TIMEZONE)" | Set-TimeZone -Verbose:$VerbosePreference };
+      post   = { (Gwmi Win32_TimeZone) -imatch "$($Env:TIMEZONE)" }; }
+  @{ name    =   'set_ntp_servers';
+      script = { Set-NTPServers $Env:NTP_SERVERS -Verbose };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'sync_ntp_time_stage_0';
+      script = { Sync-W32Time };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_globalization_preferences';
+      script = {
+        (New-Object Net.WebClient).DownloadFile($Env:L18NXML_URL, ($f = Join-Path $Env:TEMP 'l18n.xml'))
+        control.exe 'intl.cpl,,' $f
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'eject_cdrom_devices_1';
+      script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   "reboot_for_stage_1-$(date -uformat %s)";
+      script = { shutdown -r -t 20 };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'stage_1_ends';
+      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_ends') %>') };
+      pre    = { 1 }; post   = { 1 }; }
+),
+
+@(
+  @{ name    =   'stage_2_begins';
+      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_2_begins') %>') };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'mark_stage_2';
+      script = { "" | Out-File "$Env:USERPROFILE\Desktop\S2" };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =  "Delete ImagePrep boot script";
+      script = {
+        rm -Force $Env:IPBootScript -ea 0 -Verbose
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'eject_cdrom_devices_2';
+      script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =  "set_bginfo_desktop_backdrop-$(date -uformat %s)";
+      script = {
+        cp (Join-Path $Env:IPBaseDir "bin\SysInternals\bginfo.exe") "$Env:OLBIN" -Verbose -Force
+        $bgifile = (Resolve-Path (Join-Path $Env:IPBaseDir "conf\*.bgi")).ProviderPath 
+        cp $bgifile $Env:OLCONF -verbose -force
+        $bgifile = (Resolve-Path (Join-Path "$Env:OLCONF" "*.bgi")).ProviderPath 
+        $bginfocmd = Join-Path $Env:OLBIN "bginfo.cmd"
+        "set PATH=%PATH%;%~dp0\"                          | Out-File -Encoding ASCII $bginfocmd
+        "reg.exe add HKCU\SOFTWARE\Sysinternals\BGInfo /v EulaAccepted  /t REG_DWORD /d 1 /f" | Out-File -Encoding ASCII $bginfocmd -Append
+        "bginfo.exe /nolicprompt /timer:0 $bgifile"       | Out-File -Encoding ASCII $bginfocmd -Append
+        Install-GlobalLogonScript $bginfocmd
+      };
+      pre    = { 1 };
+      post   = { 1 }; }
+  @{ name    =   "shutdown_for_templating-$(date -uformat %s)";
+      script = { Write-Host -Fore Cyan "& shutdown.exe -s -t 7200" };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'stage_2_ends';
+      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_2_ends') %>') };
+      pre    = { 1 }; post   = { 1 }; }
+)
+

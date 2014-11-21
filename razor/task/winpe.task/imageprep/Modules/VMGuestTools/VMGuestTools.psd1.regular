@@ -1,0 +1,49 @@
+@{
+  ModuleToProcess          = 'VMGuestTools'
+    ModuleVersion          = '1.0'
+    GUID                   = '5ee0c1bc-f1fc-463d-b417-6d3e6f23d4b8'
+    Author                 = 'Citrix Systems'
+    CompanyName            = 'Citrix Systems Inc.'
+    Copyright              = '(c) 2013, Citrix Systems Inc.'
+    Description            = 'Generic Cross-Hypervisor Virtual Machine Tools.'
+    PowerShellVersion      = '2.0'
+    PowerShellHostName     = ''
+    PowerShellHostVersion  = ''
+    DotNetFrameworkVersion = ''
+    CLRVersion             = ''
+    ProcessorArchitecture  = ''
+    RequiredModules        = @()
+    RequiredAssemblies     = @()
+    ScriptsToProcess       = @("Register-Dependencies.ps1")
+    TypesToProcess         = @()
+    FormatsToProcess       = @()
+    NestedModules          = @()
+    FunctionsToExport      = '*'
+    CmdletsToExport        = '*'
+    VariablesToExport      = '*'
+    AliasesToExport        = '*'
+    ModuleList             = @('CDRom','Xentools')
+    FileList = @()
+    PrivateData = ''
+}
+
+
+
+#   ModuleList = @(
+#     @{  ModuleName="CDRom";
+#         ModuleVersion="1.0.0.0";
+#         GUID='71df0f2f-2cef-4f55-a246-c8b8f89046a6'
+#     },
+#     @{  ModuleName="XenTools";
+#         ModuleVersion="1.0.0.0";
+#         GUID='1917e320-ddd9-4cfd-a8ee-495a00d13076'
+#     },
+#     @{  ModuleName="VMWareTools";
+#         ModuleVersion="1.0.0.0";
+#         GUID='e89dc752-bf0f-401f-97c2-45bcbfd0a78e'
+#     },
+#     @{  ModuleName="HyperVIC";
+#         ModuleVersion="1.0.0.0";
+#         GUID='72f64538-e21d-4e12-98a7-0bc3d5dd6f88'
+#     }
+#   )

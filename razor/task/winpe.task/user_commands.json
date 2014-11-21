@@ -1,0 +1,38 @@
+{
+  "commands" : [
+    { "command" : "echo foo1 > c:\\foo1",
+      "description" : "test adding foo" }
+
+    // { "command" : "echo foo2 > c:\\foo2",
+    //   "description" : "test adding foo" },  
+
+    // { "command" : "echo foo3 > c:\\foo3",
+    //   "description" : "test adding foo" },  
+
+    // { "command" : "echo foo4 > c:\\foo4",
+    //   "description" : "test adding foo",
+    //   "requires_input" : true },
+
+    // { "command" : "winrm quickconfig -q" },
+    // { "command" : "winrm quickconfig -transport:http" },
+    // { "command" : "winrm set winrm/config @{MaxTimeoutms=\"1800000\"}" },
+    // { "command" : "winrm set winrm/config/winrs @{MaxMemoryPerShellMB=\"300\"}" },
+    // { "command" : "winrm set winrm/config/service @{AllowUnencrypted=\"true\"}" },
+    // { "command" : "winrm set winrm/config/service @{AllowUnencrypted=\"true\"}" },
+    // { "command" : "winrm set winrm/config/service/auth @{Basic=\"true\"}" },
+    // { "command" : "winrm set winrm/config/client/auth @{Basic=\"true\"}" },
+    // { "command" : "winrm set winrm/config/listener?Address=*+Transport=HTTP @{Port=\"5985\"}" },
+    // { "command" : "netsh advfirewall firewall set rule group=\"remote administration\" new enable=yes" },
+    // { "command" : "netsh firewall add portopening TCP 5985 \"Port 5985\"" },
+    // { "command" : "net stop winrm" },
+    // { "command" : "sc config winrm start= auto" },
+    // { "command" : "net start winrm" },
+    // { "command" : "powershell -Command \"Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force\"" },
+
+    // { "command" : "cscript.exe /h:cscript",
+    //   "description" : "Making cscript the default script host" },
+
+    // { "command" : "cscript.exe //b %windir%\\system32\\slmgr.vbs /ato",
+    //   "description" : "Activating Windows" }
+  ]
+}

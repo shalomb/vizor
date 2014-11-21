@@ -1,0 +1,49 @@
+#!ipxe
+
+echo
+echo razor_server ... : <%= URI.parse(repo_url).host %>
+echo razor_share .... : razor
+echo task ........... : <%= @task_label      = task.label %>
+echo description .... : <%= task.description %>
+echo os_architecture. : <%= @os_architecture = node.facts['architecture'] %>
+echo repo ........... : <%= repo_url.split('/').last %>
+echo repo_url ....... : <%= repo_url %>
+echo node_url ....... : <%= node_url %>
+echo node ........... : <%= node_url.split('/').last %>
+echo installer ...... : \\<%= URI.parse(repo_url).host %>\razor\<%= repo_url.split('/').last %>\setup.exe
+echo answerfile_src . : <%= file_url('unattended.xml') %>
+echo
+
+set base <%= repo_url.sub(%r{/$}, '') %>
+
+imgfree
+kernel <%= file_url('wimboot', true) %>                             || goto error
+initrd ${base}/bootmgr                            bootmgr           || goto error
+initrd ${base}/boot/bcd                           BCD               || goto error
+initrd ${base}/boot/fonts/segmono_boot.ttf        segmono_boot.ttf  ||
+initrd ${base}/boot/fonts/segoe_slboot.ttf        segoe_slboot.ttf  ||
+initrd ${base}/boot/fonts/segoen_slboot.ttf       segoen_slboot.ttf ||
+initrd ${base}/boot/fonts/wgl4_boot.ttf           wgl4_boot.ttf     ||
+initrd ${base}/boot/boot.sdi                      boot.sdi          ||
+# initrd <%= file_url(@task_label + '.wim', true) %> boot.wim         || goto error
+initrd <%= 
+   file_url('%s-%s.wim' % [@task_label, @os_architecture], true) 
+  %> boot.wim || goto error
+
+echo
+imgstat
+echo
+
+echo Booting <%= task.label %>
+boot || goto error
+
+goto eof
+
+:error
+echo
+set timeout <%= timeout = config["checkin_interval"] * 4 %>
+prompt --key s --timeout ${timeout} ERROR, hit 's' for the iPXE shell; reboot in <%= timeout %> seconds && shell || reboot
+sleep 
+
+:eof
+reboot

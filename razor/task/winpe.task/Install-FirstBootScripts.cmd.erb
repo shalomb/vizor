@@ -1,0 +1,83 @@
+@echo off
+
+:: Install-FirstBootScripts.cmd
+:: 
+:: Download a series of files to the node and 
+:: then run a series of commands afterwards
+
+setlocal enabledelayedexpansion
+
+pushd %~dp0
+
+:: Language Packs
+:: Globalization
+
+<%=
+# Templates/Files hosted on razor
+  files_to_download = {
+    'gpt.ini'        => %q{!windir!\System32\GroupPolicy},
+    'scripts.ini'    => %q{!windir!\System32\GroupPolicy\Machine\Scripts},
+    'firstboot.reg'  => %q{!programdata!\imageprep},
+    'firstboot.cmd'  => %q{!programdata!\imageprep},
+    'firstboot.ps1'  => %q{!programdata!\imageprep},
+    'l18n.xml'       => %q{!programdata!\imageprep},
+    'metadata.ps1'   => %q{!programdata!\imageprep},
+    'ps_modules.zip' => %q{!programdata!\imageprep}
+  }
+
+  download_cmds = (files_to_download.each.collect { |file, dest|
+    file_url = file.match(/(exe|zip)$/) ? file_url(file, true) : file_url(file)
+    basename = file_url.split('/').last
+
+    <<-eos
+@echo.Download #{file_url} to #{dest}\\#{basename}
+mkdir #{dest} >NUL 2>&1
+curl.exe -s #{file_url} -o #{dest}\\#{basename}
+
+eos
+
+  }).join("\n")
+%>
+
+<%=
+# Derive from node.metadata - PowerShell, Language Packs
+  packages_to_download = {
+    'http://nyx.eng.citrite.net/software/microsoft/PowerShell/Vista/Windows6.0-KB968930-x86.msu'
+        => %q{!programdata!\imageprep\pkg}
+  }
+
+  download_cmds = (packages_to_download.each.collect { |url, dest|
+    file_url = url
+    basename = file_url.split('/').last
+
+    <<-eos
+@echo.Download #{file_url} to #{dest}\\#{basename}
+mkdir #{dest} >NUL 2>&1
+curl.exe -s #{file_url} -o #{dest}\\#{basename}
+
+eos
+
+  }).join("\n")
+%>
+
+
+
+<%=
+  commands_to_run = {
+    'Register firstboot.reg'  => %q{regedit /s !programdata!\imageprep\firstboot.reg},
+    'Hello World'             => %q{echo "Hello World" > c:\hello_world.log}
+  }
+
+  run_cmds = (commands_to_run.each.collect { |desc, cmd|
+
+    <<-eos
+@echo.Run #{desc}
+#{cmd}
+
+eos
+
+  }).join("\n")
+
+%>
+
+popd

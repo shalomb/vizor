@@ -1,0 +1,6 @@
+# PowerShell
+
+<%=
+  node.metadata['default_bootstrap_command'] ||= 'echo "Bootstrapping defaulted - no default_bootstrap_command was specified."'
+  node.metadata['default_bootstrap_command']
+%>

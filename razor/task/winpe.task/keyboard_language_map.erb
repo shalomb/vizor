@@ -1,0 +1,1653 @@
+<%=
+require 'json'
+
+def get_keyboard_language_map
+  # 'Windows Language Pack Default Values - Default Keyboards'
+  #   http://technet.microsoft.com/en-gb/library/hh825682.aspx
+  <<-eos
+    {
+      "0401:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-SA",
+        "fallback_locales": ["en-US"],
+        "region": "Saudi Arabia"
+      },
+      "0402:00030402": {
+        "keyboard_language": "Bulgarian",
+        "language": "Bulgarian",
+        "locale": "bg-BG",
+        "fallback_locales": ["en-US"],
+        "region": "Bulgaria"
+      },
+      "0403:0000040a": {
+        "keyboard_language": "Spanish",
+        "language": "Catalan",
+        "locale": "ca-ES",
+        "region": "Catalan"
+      },
+      "0404:{531FDEBF-9B4C-4A43-A2AA-960E8FCDC732}{6024B45F-5C54-11D4-B921-0080C882687E}": {
+        "keyboard_language": "Chinese - Quick",
+        "language": "Chinese",
+        "locale": "zh-TW",
+        "region": "Macao",
+        "script": "Traditional"
+      },
+      "0404:{531FDEBF-9B4C-4A43-A2AA-960E8FCDC732}{B2F9C502-1742-11D4-9790-0080C882687E}": {
+        "keyboard_language": "Chinese",
+        "language": "Chinese",
+        "locale": "zh-TW",
+        "region": "Taiwan",
+        "script": "Traditional, New Phonetic, for Windows 8"
+      },
+      "0404:{B115690A-EA02-48D5-A231-E3578D2FDF80}{B2F9C502-1742-11D4-9790-0080C882687E}": {
+        "keyboard_language": "Chinese",
+        "language": "Chinese",
+        "locale": "zh-TW",
+        "region": "Taiwan",
+        "script": "Traditional, New Phonetic, for Windows 8.1"
+      },
+      "0405:00000405": {
+        "keyboard_language": "Czech",
+        "language": "Czech",
+        "locale": "cs-CZ",
+        "region": "Czech Republic"
+      },
+      "0406:00000406": {
+        "keyboard_language": "Danish",
+        "language": "Danish",
+        "locale": "da-DK",
+        "fallback_locales": ["en-US"],
+        "region": "Denmark"
+      },
+      "0407:00000407": {
+        "keyboard_language": "German",
+        "language": "German",
+        "locale": "de-DE",
+        "fallback_locales": ["de-DE"],
+        "region": "Germany"
+      },
+      "0408:00000408": {
+        "keyboard_language": "Greek",
+        "language": "Greek",
+        "locale": "el-GR",
+        "fallback_locales": ["en-US"],
+        "region": "Greece"
+      },
+      "0409:00000406": {
+        "keyboard_language": "English",
+        "language": "Danish",
+        "locale": "en-DK",
+        "fallback_locales": ["en-US"],
+        "region": "Denmark"
+      },
+      "0409:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-US",
+        "region": "United States",
+        "script": "English"
+      },
+      "0409:00020409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-US",
+        "region": "International",
+        "script": "International"
+      },
+      "040a:0000040a": {
+        "keyboard_language": "Spanish",
+        "language": "Spanish",
+        "locale": "es-ES_tradnl",
+        "region": "Spain",
+        "script": "Traditional Sort"
+      },
+      "040b:0000040b": {
+        "keyboard_language": "Finnish",
+        "language": "Finnish",
+        "locale": "fi-FI",
+        "region": "Finland"
+      },
+      "040c:0000040c": {
+        "keyboard_language": "French",
+        "language": "French",
+        "locale": "fr-FR",
+        "region": "France"
+      },
+      "040d:0002040d": {
+        "language": "Hebrew",
+        "locale": "he-IL",
+        "fallback_locales": ["en-US"],
+        "region": "Israel"
+      },
+      "040e:0000040e": {
+        "keyboard_language": "Hungarian",
+        "language": "Hungarian",
+        "locale": "hu-HU",
+        "region": "Hungary"
+      },
+      "040f:0000040f": {
+        "keyboard_language": "Icelandic",
+        "language": "Icelandic",
+        "locale": "is-IS",
+        "region": "Iceland"
+      },
+      "0410:00000410": {
+        "keyboard_language": "Italian",
+        "language": "Italian",
+        "locale": "it-IT",
+        "region": "Italy"
+      },
+      "0411:{03B5835F-F03C-411B-9CE2-AA23E1171E36}{A76C93D9-5523-4E90-AAFA-4DB112F9AC76}": {
+        "keyboard_language": "Microsoft IME",
+        "language": "Japanese",
+        "locale": "ja-JP",
+        "region": "Japan"
+      },
+      "0412:{A028AE76-01B1-46C2-99C4-ACD9858AE02F}{B5FE1F02-D5F2-4445-9C03-C568F23C99A1}": {
+        "keyboard_language": "Microsoft IME",
+        "language": "Korean",
+        "locale": "ko-KR",
+        "region": "Korea",
+        "script": "Extended Wansung"
+      },
+      "0413:00020409": {
+        "keyboard_language": "United States",
+        "language": "Dutch",
+        "locale": "nl-NL",
+        "region": "Netherlands",
+        "script": "International"
+      },
+      "0414:00000414": {
+        "keyboard_language": "Norwegian",
+        "language": "Norwegian",
+        "locale": "nb-NO",
+        "region": "Norway",
+        "script": "BokmÃ¥l"
+      },
+      "0415:00000415": {
+        "keyboard_language": "Polish",
+        "language": "Polish",
+        "locale": "pl-PL",
+        "region": "Poland",
+        "script": "Programmers"
+      },
+      "0416:00000416": {
+        "keyboard_language": "Portuguese",
+        "language": "Portuguese",
+        "locale": "pt-BR",
+        "region": "Brazil",
+        "script": "Brazilian ABNT"
+      },
+      "0417:00000807": {
+        "keyboard_language": "Swiss German",
+        "language": "Romansh",
+        "locale": "rm-CH",
+        "region": "Switzerland"
+      },
+      "0418:00010418": {
+        "keyboard_language": "Romanian",
+        "language": "Romanian",
+        "locale": "ro-RO",
+        "region": "Romania",
+        "script": "Standard"
+      },
+      "0419:00000419": {
+        "keyboard_language": "Russian",
+        "language": "Russian",
+        "locale": "ru-RU",
+        "fallback_locales": ["en-US"],
+        "region": "Russia"
+      },
+      "041a:0000041a": {
+        "keyboard_language": "Croatian",
+        "language": "Croatian",
+        "locale": "hr-HR",
+        "region": "Croatia"
+      },
+      "041b:0000041b": {
+        "keyboard_language": "Slovak",
+        "language": "Slovak",
+        "locale": "sk-SK",
+        "region": "Slovakia"
+      },
+      "041c:0000041c": {
+        "keyboard_language": "Albanian",
+        "language": "Albanian",
+        "locale": "sq-AL",
+        "region": "Albania"
+      },
+      "041d:0000041d": {
+        "keyboard_language": "Swedish",
+        "language": "Swedish",
+        "locale": "sv-SE",
+        "region": "Sweden"
+      },
+      "041e:0000041e": {
+        "keyboard_language": "Thai Kedmanee",
+        "language": "Thai",
+        "locale": "th-TH",
+        "fallback_locales": ["en-US"],
+        "region": "Thailand"
+      },
+      "041f:0000041f": {
+        "keyboard_language": "Turkish Q",
+        "language": "Turkish",
+        "locale": "tr-TR",
+        "region": "Turkey"
+      },
+      "0420:00000420": {
+        "keyboard_language": "Urdu",
+        "language": "Urdu",
+        "locale": "ur-PK",
+        "fallback_locales": ["en-US"],
+        "region": "Islamic Republic of Pakistan"
+      },
+      "0421:00000409": {
+        "keyboard_language": "United States",
+        "language": "Indonesian",
+        "locale": "id-ID",
+        "region": "Indonesia",
+        "script": "English"
+      },
+      "0422:00020422": {
+        "keyboard_language": "Ukrainian",
+        "language": "Ukrainian",
+        "locale": "uk-UA",
+        "fallback_locales": ["en-US"],
+        "region": "Ukraine",
+        "script": "Enhanced"
+      },
+      "0423:00000423": {
+        "keyboard_language": "Belarusian",
+        "language": "Belarusian",
+        "locale": "be-BY",
+        "fallback_locales": ["ru-RU", "en-US"],
+        "region": "Belarus"
+      },
+      "0424:00000424": {
+        "keyboard_language": "Slovenian",
+        "language": "Slovenian",
+        "locale": "sl-SI",
+        "region": "Slovenia"
+      },
+      "0425:00000425": {
+        "keyboard_language": "Estonian",
+        "language": "Estonian",
+        "locale": "et-EE",
+        "region": "Estonia"
+      },
+      "0426:00010426": {
+        "keyboard_language": "Latvian",
+        "language": "Latvian",
+        "locale": "lv-LV",
+        "region": "Legacy",
+        "script": "QWERTY"
+      },
+      "0426:00020426": {
+        "keyboard_language": "Latvian",
+        "language": "Latvian",
+        "locale": "lv-LV",
+        "region": "Standard",
+        "script": "Standard"
+      },
+      "0427:00010427": {
+        "keyboard_language": "Lithuanian",
+        "language": "Lithuanian",
+        "locale": "lt-LT",
+        "region": "Lithuania"
+      },
+      "0428:00000428": {
+        "keyboard_language": "Tajik",
+        "language": "Tajik",
+        "locale": "tg-Cyrl-TJ",
+        "fallback_locales": ["en-US"],
+        "region": "Tajikistan"
+      },
+      "0429:00000429": {
+        "keyboard_language": "Central Kurdish",
+        "language": "Persian",
+        "locale": "fa-IR",
+        "fallback_locales": ["Fa-IR", "en-US"],
+        "region": "Iran"
+      },
+      "0429:00050429": {
+        "keyboard_language": "Persian",
+        "language": "Persian",
+        "locale": "fa-IR",
+        "fallback_locales": ["Fa-IR", "en-US"],
+        "region": "Iran",
+        "script": "Standard"
+      },
+      "042a:0000042a": {
+        "keyboard_language": "Vietnamese",
+        "language": "Vietnamese",
+        "locale": "vi-VN",
+        "fallback_locales": ["en-US"],
+        "region": "Vietnam"
+      },
+      "042b:0002042b": {
+        "keyboard_language": "Armenian Phonetic",
+        "language": "Armenian",
+        "locale": "hy-AM",
+        "fallback_locales": ["hy-AM", "ru-RU"],
+        "region": "Armenia"
+      },
+      "042b:0003042b": {
+        "keyboard_language": "Armenian Typewriter",
+        "language": "Armenian",
+        "locale": "hy-AM",
+        "fallback_locales": ["hy-AM", "ru-RU"],
+        "region": "Armenia",
+        "script": "Typewriter"
+      },
+      "042c:0000042c": {
+        "keyboard_language": "Azeri Latin",
+        "language": "Azerbaijani",
+        "locale": "az-Latn-AZ",
+        "fallback_locales": ["en-US", "az-Cyrl-AZ"],
+        "region": "Azerbaijan",
+        "script": "Latin"
+      },
+      "042d:0000040a": {
+        "keyboard_language": "Spanish",
+        "language": "Basque",
+        "locale": "eu-ES",
+        "region": "Basque"
+      },
+      "042e:0002042e": {
+        "keyboard_language": "Sorbian Standard",
+        "language": "Upper Sorbian",
+        "locale": "hsb-DE",
+        "region": "Germany"
+      },
+      "042f:0001042f": {
+        "keyboard_language": "Macedonia",
+        "language": "Macedonian",
+        "locale": "mk-MK",
+        "fallback_locales": ["en-US"],
+        "region": "F.Y.R.O.M",
+        "script": "Standard"
+      },
+      "0432:00000432": {
+        "keyboard_language": "Setswana",
+        "language": "Setswana / Tswana",
+        "locale": "tn-ZA",
+        "region": "South Africa"
+      },
+      "0434:00000409": {
+        "keyboard_language": "United States",
+        "language": "isiXhosa / Xhosa",
+        "locale": "xh-ZA",
+        "region": "South Africa",
+        "script": "English"
+      },
+      "0435:00000409": {
+        "keyboard_language": "United States",
+        "language": "isiZulu / Zulu",
+        "locale": "zu-ZA",
+        "region": "South Africa",
+        "script": "English"
+      },
+      "0436:00000409": {
+        "keyboard_language": "United States",
+        "language": "Afrikaans",
+        "locale": "af-ZA",
+        "region": "South Africa",
+        "script": "English"
+      },
+      "0437:00010437": {
+        "keyboard_language": "Georgian",
+        "language": "Georgian",
+        "locale": "ka-GE",
+        "fallback_locales": ["en-US"],
+        "region": "Georgia",
+        "script": "QWERTY"
+      },
+      "0438:00000406": {
+        "keyboard_language": "Danish",
+        "language": "Faroese",
+        "locale": "fo-FO",
+        "region": "Faroe Islands"
+      },
+      "0439:00010439": {
+        "keyboard_language": "Hindi Traditional",
+        "language": "Hindi",
+        "locale": "hi-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India"
+      },
+      "043a:0000043a": {
+        "keyboard_language": "Maltese 47-Key",
+        "language": "Maltese",
+        "locale": "mt-MT",
+        "region": "Malta"
+      },
+      "043b:0000043b": {
+        "keyboard_language": "Norwegian with Sami",
+        "language": "Northern Sami",
+        "locale": "se-NO",
+        "region": "Norway"
+      },
+      "043e:00000409": {
+        "keyboard_language": "United States",
+        "language": "Malay",
+        "locale": "ms-MY",
+        "region": "Malaysia",
+        "script": "English"
+      },
+      "043f:0000043f": {
+        "keyboard_language": "Kazakh",
+        "language": "Kazakh",
+        "locale": "kk-KZ",
+        "fallback_locales": ["en-US"],
+        "region": "Kazakhstan"
+      },
+      "0440:00000440": {
+        "keyboard_language": "Kyrgyz Cyrillic",
+        "language": "Kyrgyz",
+        "locale": "ky-KG",
+        "fallback_locales": ["en-US"],
+        "region": "Kyrgyzstan"
+      },
+      "0441:00000409": {
+        "keyboard_language": "United States",
+        "language": "Swahili",
+        "locale": "sw-KE",
+        "region": "Kenya",
+        "script": "English"
+      },
+      "0442:00000442": {
+        "keyboard_language": "Turkmen",
+        "language": "Turkmen",
+        "locale": "tk-TM",
+        "fallback_locales": ["en-US"],
+        "region": "Turkmenistan"
+      },
+      "0443:00000409": {
+        "keyboard_language": "United States",
+        "language": "Uzbek",
+        "locale": "uz-Latn-UZ",
+        "region": "Uzbekistan",
+        "script": "Latin/English"
+      },
+      "0444:00000444": {
+        "keyboard_language": "Tatar",
+        "language": "Tatar",
+        "locale": "tt-RU",
+        "fallback_locales": ["ru-RU", "en-US"],
+        "region": "Russia",
+        "script": "Legacy"
+      },
+      "0444:00010444": {
+        "keyboard_language": "Tatar",
+        "language": "Tatar",
+        "locale": "tt-RU",
+        "fallback_locales": ["ru-RU", "en-US"],
+        "region": "Russia",
+        "script": "Standard"
+      },
+      "0445:00020445": {
+        "keyboard_language": "Bengali",
+        "language": "Bangla",
+        "locale": "bn-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India",
+        "script": "Bengali/INSCRIPT"
+      },
+      "0446:00000446": {
+        "keyboard_language": "Punjabi",
+        "language": "Punjabi",
+        "locale": "pa-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India",
+        "script": "Gurumukhi"
+      },
+      "0447:00000447": {
+        "keyboard_language": "Gujarati",
+        "language": "Gujarati",
+        "locale": "gu-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India"
+      },
+      "0448:00000448": {
+        "keyboard_language": "Oriya",
+        "language": "Odia",
+        "locale": "or-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India",
+        "script": "Odia"
+      },
+      "0449:00000449": {
+        "keyboard_language": "Tamil",
+        "language": "Tamil",
+        "locale": "ta-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India"
+      },
+      "044a:0000044a": {
+        "keyboard_language": "Telugu",
+        "language": "Telugu",
+        "locale": "te-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India",
+        "script": "Telegu"
+      },
+      "044b:0000044b": {
+        "keyboard_language": "Kannada",
+        "language": "Kannada",
+        "locale": "kn-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India",
+        "script": "Kannada"
+      },
+      "044c:0000044c": {
+        "keyboard_language": "Malayalam",
+        "language": "Malayalam",
+        "locale": "ml-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India",
+        "script": "Malayalam"
+      },
+      "044d:0000044d": {
+        "keyboard_language": "Assamese",
+        "language": "Assamese",
+        "locale": "as-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India",
+        "script": "Inscript"
+      },
+      "044e:0000044e": {
+        "keyboard_language": "Marathi",
+        "language": "Marathi",
+        "locale": "mr-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India"
+      },
+      "044f:00000439": {
+        "keyboard_language": "Devanagari-INSCRIPT",
+        "language": "Sanskrit",
+        "locale": "sa-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India"
+      },
+      "0450:00000450": {
+        "keyboard_language": "Mongolian Cyrillic",
+        "language": "Mongolian",
+        "locale": "mn-MN",
+        "fallback_locales": ["en-US"],
+        "region": "Mongolia",
+        "script": "Cyrillic"
+      },
+      "0451:00010451": {
+        "keyboard_language": "Tibetan",
+        "language": "Tibetan",
+        "locale": "bo-CN",
+        "fallback_locales": ["en-US"],
+        "region": "PRC"
+      },
+      "0452:00000452": {
+        "keyboard_language": "United Kingdom Extended",
+        "language": "Welsh",
+        "locale": "cy-GB",
+        "fallback_locales": ["en-GB"],
+        "region": "United Kingdom"
+      },
+      "0453:00000453": {
+        "keyboard_language": "Khmer",
+        "language": "Khmer",
+        "locale": "km-KH",
+        "fallback_locales": ["en-US"],
+        "region": "Cambodia"
+      },
+      "0454:00000454": {
+        "keyboard_language": "Lao",
+        "language": "Lao",
+        "locale": "lo-LA",
+        "fallback_locales": ["en-US"],
+        "region": "Lao PDR"
+      },
+      "0455:00010c00": {
+        "keyboard_language": "Myanmar",
+        "language": "Burmese",
+        "locale": "my-MM",
+        "fallback_locales": ["en-US"],
+        "region": "Myanmar"
+      },
+      "0456:0000040a": {
+        "keyboard_language": "Spanish",
+        "language": "Galician",
+        "locale": "gl-ES",
+        "region": "Galician"
+      },
+      "0457:00000439": {
+        "keyboard_language": "Devanagari-INSCRIPT",
+        "language": "Konkani",
+        "locale": "kok-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India"
+      },
+      "045a:0000045a": {
+        "keyboard_language": "Syriac",
+        "language": "Syriac",
+        "locale": "syr-SY",
+        "fallback_locales": ["en-US"],
+        "region": "Syria"
+      },
+      "045b:0000045b": {
+        "keyboard_language": "Sinhala",
+        "language": "Sinhala",
+        "locale": "si-LK",
+        "fallback_locales": ["en-US"],
+        "region": "Sri Lanka"
+      },
+      "045c:0000045c": {
+        "keyboard_language": "Cherokee Nation",
+        "language": "Cherokee",
+        "locale": "chr-Cher-US",
+        "fallback_locales": ["en-US"],
+        "region": "United States"
+      },
+      "045c:0001045c": {
+        "keyboard_language": "Cherokee Nation Phonetic",
+        "language": "Cherokee",
+        "locale": "chr-Cher-US",
+        "fallback_locales": ["en-US"],
+        "region": "United States"
+      },
+      "045d:0001045d": {
+        "keyboard_language": "Inuktitut",
+        "language": "Inuktitut",
+        "locale": "iu-Cans-CA",
+        "fallback_locales": ["en-CA"],
+        "region": "Canada",
+        "script": "Syllabics/Naqittaut"
+      },
+      "045e:{E429B25A-E5D3-4D1F-9BE3-0C608477E3A1}{8F96574E-C86C-4bd6-9666-3F7327D4CBE8}": {
+        "keyboard_language": "Amharic Input Method",
+        "language": "Amharic",
+        "locale": "am-ET",
+        "fallback_locales": ["en-US"],
+        "region": "Ethiopia"
+      },
+      "0461:00000461": {
+        "keyboard_language": "Nepali",
+        "language": "Nepali",
+        "locale": "ne-NP",
+        "fallback_locales": ["en-US"],
+        "region": "Nepal"
+      },
+      "0462:00020409": {
+        "keyboard_language": "United States",
+        "language": "Frisian",
+        "locale": "fy-NL",
+        "region": "Netherlands",
+        "script": "International"
+      },
+      "0463:00000463": {
+        "keyboard_language": "Pashto",
+        "language": "Pashto",
+        "locale": "ps-AF",
+        "fallback_locales": ["en-US"],
+        "region": "Afghanistan"
+      },
+      "0464:00000409": {
+        "keyboard_language": "United States",
+        "language": "Filipino",
+        "locale": "fil-PH",
+        "region": "Philippines",
+        "script": "English"
+      },
+      "0465:00000465": {
+        "keyboard_language": "Divehi Phonetic",
+        "language": "Divehi",
+        "locale": "dv-MV",
+        "fallback_locales": ["en-US"],
+        "region": "Maldives"
+      },
+      "0468:00000468": {
+        "keyboard_language": "Hausa",
+        "language": "Hausa",
+        "locale": "ha-Latn-NG",
+        "region": "Nigeria"
+      },
+      "046a:0000046a": {
+        "keyboard_language": "Yoruba",
+        "language": "Yoruba",
+        "locale": "yo-NG",
+        "region": "Nigeria"
+      },
+      "046b:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Quechua",
+        "locale": "quz-BO",
+        "region": "Bolivia"
+      },
+      "046c:0000046c": {
+        "keyboard_language": "Sesotho sa Leboa",
+        "language": "Sesotho sa Leboa / Northern Sotho",
+        "locale": "nso-ZA",
+        "region": "South Africa"
+      },
+      "046d:0000046d": {
+        "keyboard_language": "Bashkir",
+        "language": "Bashkir",
+        "locale": "ba-RU",
+        "fallback_locales": ["ru-RU", "en-US"],
+        "region": "Russia"
+      },
+      "046e:0000046e": {
+        "keyboard_language": "Luxembourgish",
+        "language": "Luxembourgish",
+        "locale": "lb-LU",
+        "region": "Luxembourg"
+      },
+      "046f:00000406": {
+        "keyboard_language": "Danish",
+        "language": "Greenlandic",
+        "locale": "kl-GL",
+        "region": "Greenland"
+      },
+      "0470:00000470": {
+        "keyboard_language": "Igbo",
+        "language": "Igbo",
+        "locale": "ig-NG",
+        "region": "Nigeria"
+      },
+      "0473:{E429B25A-E5D3-4D1F-9BE3-0C608477E3A1}{3CAB88B7-CC3E-46A6-9765-B772AD7761FF}": {
+        "keyboard_language": "Tigrinya Input Method",
+        "language": "Tigrinya",
+        "locale": "ti-ET",
+        "fallback_locales": ["en-US"],
+        "region": "Ethiopia"
+      },
+      "0474:00000474": {
+        "keyboard_language": "Guarani",
+        "language": "Guarani",
+        "locale": "gn-PY",
+        "region": "Paraguay"
+      },
+      "0475:00000475": {
+        "language": "Hawaiian",
+        "locale": "haw-US",
+        "fallback_locales": ["en-US"],
+        "region": "United States"
+      },
+      "0478:{E429B25A-E5D3-4D1F-9BE3-0C608477E3A1}{409C8376-007B-4357-AE8E-26316EE3FB0D}": {
+        "keyboard_language": "Yi Input Method",
+        "language": "Yi",
+        "locale": "ii-CN",
+        "fallback_locales": ["zh-CN"],
+        "region": "PRC"
+      },
+      "047a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Mapudungun",
+        "locale": "arn-CL",
+        "region": "Chile"
+      },
+      "047c:00000409": {
+        "keyboard_language": "United States",
+        "language": "Mohawk",
+        "locale": "moh-CA",
+        "region": "Mohawk",
+        "script": "English"
+      },
+      "047e:0000040c": {
+        "keyboard_language": "French",
+        "language": "Breton",
+        "locale": "br-FR",
+        "region": "France"
+      },
+      "0480:00010480": {
+        "keyboard_language": "Uyghur",
+        "language": "Uyghur",
+        "locale": "ug-CN",
+        "fallback_locales": ["en-US"],
+        "region": "PRC"
+      },
+      "0481:00000481": {
+        "keyboard_language": "Maori",
+        "language": "Maori",
+        "locale": "mi-NZ",
+        "fallback_locales": ["en-NZ"],
+        "region": "New Zealand"
+      },
+      "0482:0000040c": {
+        "keyboard_language": "French",
+        "language": "Occitan",
+        "locale": "oc-FR",
+        "region": "France"
+      },
+      "0483:0000040c": {
+        "keyboard_language": "French",
+        "language": "Corsican",
+        "locale": "co-FR",
+        "region": "France"
+      },
+      "0484:0000040c": {
+        "keyboard_language": "French",
+        "language": "Alsatian",
+        "locale": "gsw-FR",
+        "region": "France"
+      },
+      "0485:00000485": {
+        "keyboard_language": "Sakha",
+        "language": "Sakha",
+        "locale": "sah-RU",
+        "fallback_locales": ["ru-RU", "en-US"],
+        "region": "Russia"
+      },
+      "0486:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "K'iche",
+        "locale": "qut-GT",
+        "region": "Guatemala"
+      },
+      "0487:00000409": {
+        "keyboard_language": "United States",
+        "language": "Kinyarwanda",
+        "locale": "rw-RW",
+        "region": "Rwanda",
+        "script": "English"
+      },
+      "0488:00000488": {
+        "keyboard_language": "Wolof",
+        "language": "Wolof",
+        "locale": "wo-SN",
+        "region": "Senegal"
+      },
+      "048c:00050429": {
+        "keyboard_language": "Persian (Standard",
+        "language": "Dari",
+        "locale": "prs-AF",
+        "fallback_locales": ["en-US"],
+        "region": "Afghanistan"
+      },
+      "0491:00011809": {
+        "keyboard_language": "Gaelic",
+        "language": "Scottish Gaelic",
+        "locale": "gd-GB",
+        "region": "United Kingdom"
+      },
+      "0492:00000492": {
+        "language": "Central Kurdish",
+        "locale": "ku-Arab-IQ",
+        "fallback_locales": ["en-US"],
+        "region": "Iraq",
+        "script": "Central"
+      },
+      "0801:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-IQ",
+        "fallback_locales": ["en-US"],
+        "region": "Iraq"
+      },
+      "0803:0000040a": {
+        "keyboard_language": "Spanish",
+        "language": "Valencian",
+        "locale": "ca-ES-valencia",
+        "region": "Valencia"
+      },
+      "0804:{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}{FA550B04-5AD7-411f-A5AC-CA038EC515D7}": {
+        "keyboard_language": "Microsoft Pinyin â€“ Simple Fast",
+        "language": "Chinese",
+        "locale": "zh-CN",
+        "region": "Singapore"
+      },
+      "0807:00000807": {
+        "keyboard_language": "Swiss German",
+        "language": "German",
+        "locale": "de-CH",
+        "fallback_locales": ["fr-CH"],
+        "region": "Switzerland"
+      },
+      "0809:00000809": {
+        "keyboard_language": "United Kingdom",
+        "language": "English",
+        "locale": "en-GB",
+        "region": "United Kingdom"
+      },
+      "080a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-MX",
+        "region": "Mexico"
+      },
+      "080c:0000080c": {
+        "keyboard_language": "Belgian French",
+        "language": "French",
+        "locale": "fr-BE",
+        "region": "Belgium"
+      },
+      "0810:0000100c": {
+        "keyboard_language": "Swiss French",
+        "language": "Italian",
+        "locale": "fr-CH",
+        "fallback_locales": ["it-CH"],
+        "region": "Switzerland"
+      },
+      "0810:00000410": {
+        "keyboard_language": "Swiss Italian",
+        "language": "Italian",
+        "locale": "it-CH",
+        "fallback_locales": ["it-CH"],
+        "region": "Switzerland"
+      },
+      "0813:00000813": {
+        "keyboard_language": "Belgian (Period",
+        "language": "Dutch",
+        "locale": "nl-BE",
+        "region": "Belgium"
+      },
+      "0814:00000414": {
+        "keyboard_language": "Norwegian",
+        "language": "Norwegian",
+        "locale": "nn-NO",
+        "region": "Norway",
+        "script": "Nynorsk"
+      },
+      "0816:00000816": {
+        "keyboard_language": "Portuguese",
+        "language": "Portuguese",
+        "locale": "pt-PT",
+        "region": "Portugal"
+      },
+      "081a:0000081a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Latn-CS",
+        "region": "Serbia and Montenegro",
+        "script": "Latin"
+      },
+      "081d:0000041d": {
+        "keyboard_language": "Swedish",
+        "language": "Swedish",
+        "locale": "sv-FI",
+        "region": "Finland"
+      },
+      "0820:00000420": {
+        "keyboard_language": "Urdu",
+        "language": "Urdu",
+        "locale": "ur-IN",
+        "fallback_locales": ["en-US"],
+        "region": "India"
+      },
+      "082c:0000082c": {
+        "keyboard_language": "Azeri Cyrillic",
+        "language": "Azerbaijani",
+        "locale": "az-Cyrl-AZ",
+        "fallback_locales": ["en-US", "az-Latn-AZ"],
+        "region": "Azerbaijan",
+        "script": "Cyrillic"
+      },
+      "082e:0002042e": {
+        "keyboard_language": "Sorbian Standard",
+        "language": "Lower Sorbian",
+        "locale": "dsb-DE",
+        "region": "Germany"
+      },
+      "0832:00000432": {
+        "keyboard_language": "Setswana",
+        "language": "Setswana / Tswana",
+        "locale": "tn-BW",
+        "region": "Botswana"
+      },
+      "083b:0000083b": {
+        "keyboard_language": "Swedish with Sami",
+        "language": "Northern Sami",
+        "locale": "se-SE",
+        "region": "Sweden"
+      },
+      "083c:00001809": {
+        "keyboard_language": "Irish",
+        "language": "Irish",
+        "locale": "ga-IE",
+        "region": "Ireland"
+      },
+      "083e:00000409": {
+        "keyboard_language": "United States",
+        "language": "Malay",
+        "locale": "ms-BN",
+        "region": "Brunei",
+        "script": "English"
+      },
+      "0843:00000843": {
+        "keyboard_language": "Uzbek Cyrillic",
+        "language": "Uzbek",
+        "locale": "uz-Cyrl-UZ",
+        "fallback_locales": ["uz-Latn-UZ"],
+        "region": "Uzbekistan",
+        "script": "Cyrillic"
+      },
+      "0845:00000445": {
+        "keyboard_language": "Bengali",
+        "language": "Bangla",
+        "locale": "bn-BD",
+        "fallback_locales": ["en-US"],
+        "region": "Bangladesh"
+      },
+      "0846:00000420": {
+        "keyboard_language": "Urdu",
+        "language": "Punjabi",
+        "locale": "pa-Arab-PK",
+        "fallback_locales": ["en-US"],
+        "region": "Islamic Republic of Pakistan"
+      },
+      "0849:00000449": {
+        "keyboard_language": "Tamil",
+        "language": "Tamil",
+        "locale": "ta-LK",
+        "fallback_locales": ["en-US"],
+        "region": "Sri Lanka"
+      },
+      "0850:00000850": {
+        "keyboard_language": "Mongolian",
+        "language": "Mongolian",
+        "locale": "mn-Mong-CN",
+        "fallback_locales": ["en-US"],
+        "region": "Mongolia",
+        "script": "PRC â€“ Legacy"
+      },
+      "0850:00010850": {
+        "keyboard_language": "Mongolian",
+        "language": "Mongolian",
+        "locale": "mn-Mong-CN",
+        "fallback_locales": ["en-US"],
+        "region": "Mongolia",
+        "script": "PRC â€“ Standard"
+      },
+      "0859:00000420": {
+        "keyboard_language": "Urdu",
+        "language": "Sindhi",
+        "locale": "sd-Arab-PK",
+        "fallback_locales": ["en-US"],
+        "region": "Islamic Republic of Pakistan"
+      },
+      "085d:0000085d": {
+        "keyboard_language": "Inuktitut",
+        "language": "Inuktitut",
+        "locale": "iu-Latn-CA",
+        "fallback_locales": ["en-CA"],
+        "region": "Canada",
+        "script": "Latin"
+      },
+      "085f:0000085f": {
+        "keyboard_language": "Central Atlas Tamazight",
+        "language": "Central Atlas Tamazight",
+        "locale": "tzm-Latn-DZ",
+        "region": "Algeria",
+        "script": "Latin"
+      },
+      "0867:00000488": {
+        "keyboard_language": "Wolof",
+        "language": "Fulah",
+        "locale": "ff-Latn-SN",
+        "region": "Senegal"
+      },
+      "086b:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Quechua",
+        "locale": "quz-EC",
+        "region": "Ecuador"
+      },
+      "0c00:00000409": {
+        "keyboard_language": "US",
+        "language": "Shona",
+        "locale": "sn-Latn-ZW",
+        "region": "Zimbabwe"
+      },
+      "0c00:0000105F": {
+        "keyboard_language": "Tifinagh",
+        "language": "Standard Moroccan Tamazight",
+        "locale": "zgh-Tfng-MA",
+        "fallback_locales": ["en-US"],
+        "region": "Morocco",
+        "script": "Standard"
+      },
+      "0c00:00090C00": {
+        "keyboard_language": "Nâ€™Ko",
+        "language": "N'ko",
+        "locale": "nqo-GN",
+        "fallback_locales": ["en-US"],
+        "region": "Guinea"
+      },
+      "0c01:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-EG",
+        "fallback_locales": ["en-US"],
+        "region": "Egypt"
+      },
+      "0c07:00000407": {
+        "keyboard_language": "German",
+        "language": "German",
+        "locale": "de-AT",
+        "fallback_locales": ["de-AT"],
+        "region": "Austria"
+      },
+      "0c09:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-AU",
+        "region": "Australia",
+        "script": "English"
+      },
+      "0c0a:0000040a": {
+        "keyboard_language": "Spanish",
+        "language": "Spanish",
+        "locale": "es-ES",
+        "fallback_locales": ["en-US"],
+        "region": "Spain",
+        "script": "International Sort"
+      },
+      "0c0c:00011009": {
+        "keyboard_language": "Canadian Multilingual Standard",
+        "language": "French",
+        "locale": "fr-CA",
+        "fallback_locales": ["en-CA"],
+        "region": "Canada"
+      },
+      "0c1a:00000c1a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Cyrl-CS",
+        "fallback_locales": ["en-US"],
+        "region": "Serbia and Montenegro",
+        "script": "Cyrillic"
+      },
+      "0c3b:0001083b": {
+        "keyboard_language": "Finnish with Sami",
+        "language": "Northern Sami",
+        "locale": "se-FI",
+        "region": "Finland"
+      },
+      "0c50:00010850": {
+        "keyboard_language": "Traditional Mongolian",
+        "language": "Mongolian",
+        "locale": "mn-Mong-MN",
+        "fallback_locales": ["en-US"],
+        "region": "Mongolia",
+        "script": "Mongolian"
+      },
+      "0c6b:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Quechua",
+        "locale": "quz-PE",
+        "region": "Peru"
+      },
+      "1001:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-LY",
+        "fallback_locales": ["en-US"],
+        "region": "Libya"
+      },
+      "1007:00000407": {
+        "keyboard_language": "German",
+        "language": "German",
+        "locale": "de-LU",
+        "region": "Luxembourg"
+      },
+      "1009:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-CA",
+        "fallback_locales": ["en-CA"],
+        "region": "Canada",
+        "script": "English"
+      },
+      "1009:00011009": {
+        "keyboard_language": "Canadian Multilingual Standard",
+        "language": "English",
+        "locale": "en-CA",
+        "fallback_locales": ["fr-CA"],
+        "region": "Canada"
+      },
+      "100a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-GT",
+        "region": "Guatemala"
+      },
+      "100c:0000100c": {
+        "keyboard_language": "Swiss French",
+        "language": "French",
+        "locale": "fr-CH",
+        "fallback_locales": ["de-CH"],
+        "region": "Switzerland"
+      },
+      "101a:0000041a": {
+        "keyboard_language": "Croatian",
+        "language": "Croatian",
+        "locale": "hr-BA",
+        "region": "Bosnia and Herzegovina"
+      },
+      "103b:0000043b": {
+        "keyboard_language": "Norwegian with Sami",
+        "language": "Lule Sami",
+        "locale": "smj-NO",
+        "region": "Norway"
+      },
+      "105f:0000105f": {
+        "language": "Central Atlas Tamazight",
+        "locale": "tzm-Tfng-MA",
+        "fallback_locales": ["fr-FR"],
+        "region": "Morocco",
+        "script": "Tifinagh"
+      },
+      "1401:00020401": {
+        "keyboard_language": "Arabic (102) AZERTY",
+        "language": "Arabic",
+        "locale": "ar-DZ",
+        "fallback_locales": ["fr-FR"],
+        "region": "Algeria"
+      },
+      "1407:00000807": {
+        "keyboard_language": "Swiss German",
+        "language": "German",
+        "locale": "de-LI",
+        "region": "Liechtenstein"
+      },
+      "1409:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-NZ",
+        "region": "New Zealand",
+        "script": "English"
+      },
+      "140a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-CR",
+        "region": "Costa Rica"
+      },
+      "140c:0000040c": {
+        "keyboard_language": "Luxembourg French",
+        "language": "French",
+        "locale": "fr-LU",
+        "fallback_locales": ["fr-LU"],
+        "region": "Luxembourg"
+      },
+      "140c:0000100c": {
+        "keyboard_language": "Swiss French",
+        "language": "French",
+        "locale": "fr-LU",
+        "fallback_locales": ["fr-LU"],
+        "region": "Luxembourg"
+      },
+      "141a:0000041a": {
+        "keyboard_language": "Croatian",
+        "language": "Bosnian",
+        "locale": "bs-Latn-BA",
+        "region": "Bosnia and Herzegovina",
+        "script": "Latin"
+      },
+      "143b:0000083b": {
+        "keyboard_language": "Swedish with Sami",
+        "language": "Lule Sami",
+        "locale": "smj-SE",
+        "region": "Sweden"
+      },
+      "1801:00020401": {
+        "keyboard_language": "Arabic (102) AZERTY",
+        "language": "Arabic",
+        "locale": "ar-MA",
+        "fallback_locales": ["fr-FR"],
+        "region": "Morocco"
+      },
+      "1809:00001809": {
+        "keyboard_language": "Irish",
+        "language": "English",
+        "locale": "en-IE",
+        "region": "Ireland"
+      },
+      "180a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-PA",
+        "region": "Panama"
+      },
+      "180c:0000040c": {
+        "keyboard_language": "French",
+        "language": "French",
+        "locale": "fr-MC",
+        "region": "Monaco"
+      },
+      "181a:0000081a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Latn-BA",
+        "region": "Bosnia and Herzegovina",
+        "script": "Latin"
+      },
+      "183b:0000043b": {
+        "keyboard_language": "Norwegian with Sami",
+        "language": "Southern Sami",
+        "locale": "sma-NO",
+        "region": "Norway"
+      },
+      "1c01:00020401": {
+        "keyboard_language": "Arabic (102) AZERTY",
+        "language": "Arabic",
+        "locale": "ar-TN",
+        "fallback_locales": ["fr-FR"],
+        "region": "Tunisia"
+      },
+      "1c09:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-ZA",
+        "region": "South Africa",
+        "script": "English"
+      },
+      "1c0a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-DO",
+        "region": "Dominican Republic"
+      },
+      "1c1a:00000c1a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Cyrl-BA",
+        "fallback_locales": ["en-US"],
+        "region": "Bosnia and Herzegovina",
+        "script": "Cyrillic"
+      },
+      "1c3b:0000083b": {
+        "keyboard_language": "Swedish with Sami",
+        "language": "Southern Sami",
+        "locale": "sma-SE",
+        "region": "Sweden"
+      },
+      "2001:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-OM",
+        "fallback_locales": ["en-US"],
+        "region": "Oman"
+      },
+      "2009:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-JM",
+        "region": "Jamaica",
+        "script": "English"
+      },
+      "200a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-VE",
+        "region": "Bolivarian Republic of Venezuela"
+      },
+      "201a:0000201a": {
+        "keyboard_language": "Bosnian",
+        "language": "Bosnian",
+        "locale": "bs-Cyrl-BA",
+        "fallback_locales": ["bs-Latn-BA"],
+        "region": "Bosnia and Herzegovina",
+        "script": "Cyrillic"
+      },
+      "203b:0001083b": {
+        "keyboard_language": "Finnish with Sami",
+        "language": "Skolt Sami",
+        "locale": "sms-FI",
+        "region": "Finland"
+      },
+      "2401:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-YE",
+        "fallback_locales": ["en-US"],
+        "region": "Yemen"
+      },
+      "2409:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-029",
+        "region": "Caribbean",
+        "script": "English"
+      },
+      "240a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-CO",
+        "region": "Colombia"
+      },
+      "241a:0000081a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Latn-RS",
+        "region": "Serbia",
+        "script": "Latin"
+      },
+      "243b:0001083b": {
+        "keyboard_language": "Finnish with Sami",
+        "language": "Inari Sami",
+        "locale": "smn-FI",
+        "region": "Finland"
+      },
+      "2801:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-SY",
+        "fallback_locales": ["en-US"],
+        "region": "Syria"
+      },
+      "2809:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-BZ",
+        "region": "Belize",
+        "script": "English"
+      },
+      "280a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-PE",
+        "region": "Peru"
+      },
+      "281a:00000c1a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Cyrl-RS",
+        "fallback_locales": ["en-US"],
+        "region": "Serbia",
+        "script": "Cyrillic"
+      },
+      "2c01:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-JO",
+        "fallback_locales": ["en-US"],
+        "region": "Jordan"
+      },
+      "2c09:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-TT",
+        "region": "Trinidad",
+        "script": "English"
+      },
+      "2c0a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-AR",
+        "region": "Argentina"
+      },
+      "2c1a:0000081a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Latn-ME",
+        "region": "Montenegro",
+        "script": "Latin"
+      },
+      "3001:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-LB",
+        "fallback_locales": ["en-US"],
+        "region": "Lebanon"
+      },
+      "3009:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-ZW",
+        "region": "Zimbabwe",
+        "script": "English"
+      },
+      "300a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-EC",
+        "region": "Ecuador"
+      },
+      "301a:00000c1a": {
+        "keyboard_language": "Serbian",
+        "language": "Serbian",
+        "locale": "sr-Cyrl-ME",
+        "fallback_locales": ["en-US"],
+        "region": "Montenegro",
+        "script": "Cyrillic"
+      },
+      "3401:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-KW",
+        "fallback_locales": ["en-US"],
+        "region": "Kuwait"
+      },
+      "3409:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-PH",
+        "region": "Philippines",
+        "script": "English"
+      },
+      "340a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-CL",
+        "region": "Chile"
+      },
+      "3801:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-AE",
+        "fallback_locales": ["en-US"],
+        "region": "U.A.E."
+      },
+      "380a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-UY",
+        "region": "Uruguay"
+      },
+      "3c01:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-BH",
+        "fallback_locales": ["en-US"],
+        "region": "Bahrain"
+      },
+      "3c0a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-PY",
+        "region": "Paraguay"
+      },
+      "4001:00000401": {
+        "keyboard_language": "Arabic (101)",
+        "language": "Arabic",
+        "locale": "ar-QA",
+        "fallback_locales": ["en-US"],
+        "region": "Qatar"
+      },
+      "4009:00004009": {
+        "keyboard_language": "India",
+        "language": "English",
+        "locale": "en-IN",
+        "region": "India"
+      },
+      "400a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-BO",
+        "region": "Bolivia"
+      },
+      "4409:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-MY",
+        "region": "Malaysia",
+        "script": "English"
+      },
+      "440a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-SV",
+        "region": "El Salvador"
+      },
+      "4809:00000409": {
+        "keyboard_language": "United States",
+        "language": "English",
+        "locale": "en-SG",
+        "region": "Singapore",
+        "script": "English"
+      },
+      "480a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-HN",
+        "region": "Honduras"
+      },
+      "4c0a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-NI",
+        "region": "Nicaragua"
+      },
+      "500a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-PR",
+        "region": "Puerto Rico"
+      },
+      "540a:0000080a": {
+        "keyboard_language": "Latin American",
+        "language": "Spanish",
+        "locale": "es-US",
+        "fallback_locales": ["en-US"],
+        "region": "United States"
+      }
+    }
+eos
+end
+
+def get_keyboard_language_pair(key, val)
+  locales = JSON.parse( get_keyboard_language_map )
+  if (values=(res = locales.select { |k| !(locales[k][key] =~ /#{val}/i).nil? }).values).length >= 1
+    [ res.keys ]
+  else
+    raise "Found '#{values.length}' candidates found for key '#{key}', val '#{val}' [%s]" % res.collect{ |k,v| v }.join(",")
+  end
+end
+
+# c = get_keyboard_language_pair( ARGV[0], ARGV[1] )
+# c.each{ |l| puts l }
+# exit
+# 
+# locales = JSON.parse( get_keyboard_language_map )
+# 
+# locales.each{ |k,v|
+#    if ! v["fallback_locales"].nil?
+#         v["fallback_locales"].each { |locale|
+#           puts get_keyboard_language_pair( 'locale', locale )
+#         }
+#    end
+# }
+
+%>
+

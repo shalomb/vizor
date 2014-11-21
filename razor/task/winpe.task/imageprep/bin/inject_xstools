@@ -1,0 +1,13 @@
+#!/bin/bash
+
+xs_tools_uuid=$(xe vdi-list name-label=xs-tools.iso params=uuid --minimal)
+
+xe vm-list params=all | \
+  xe_grep 'print uuid,name_label if name_label =~ /P1$/' | \
+  while read uuid name; do
+    echo "$uuid $name"
+    set -xv
+    xe vbd-create vdi-uuid=59619776-c4f2-41e3-96eb-86f983f82ab9 type=CD vm-uuid="$uuid" device="1"
+    set +xv
+  done
+

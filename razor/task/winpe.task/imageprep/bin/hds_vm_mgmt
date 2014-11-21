@@ -1,0 +1,163 @@
+#!/bin/bash
+
+function show_help {
+  cat <<EOF
+
+$0 operation vm_label_regex
+
+clone_templates       - clone vms from templates
+start_vms             - start vms matching regex
+eject_cd              - eject cds from vms matching regex
+convert_to_templates  - convert VMs to templates
+export_vhds          - export VHDs from templates matching regex
+
+EOF
+}
+
+subcommand="$1"; shift;
+args="$@"
+
+vm_prefix=
+clone_templates=
+regex=
+start_vms=
+eject_cd=
+convert_to_templates=
+export_vhds=
+stop_vms=
+sr_uuid=
+
+case "$subcommand" in
+  clone_templates) 
+    clone_templates=1
+    regex="$1"
+    vm_prefix="$2"
+    ;;
+  start_vms)
+    start_vms=1
+    ;;
+  eject_cd)
+    eject_cd=1
+    regex="$1"
+    ;;
+  convert_to_templates)   
+    convert_to_templates=1
+    regex="$1"
+    ;;
+  export_vhds)   
+    export_vhds=1
+    regex="$1"
+    sr_uuid="$2"
+    ;;
+  *)
+    echo "Unsupported operation : $1" >&2
+    show_help
+    exit 3
+    ;;
+esac
+
+set -eu
+
+if [[ -n $clone_templates ]]; then
+xe template-list params=all | \
+  xe_grep 'print uuid,name_label if name_label =~ /'"$regex"'/' | \
+  while read uuid name; do 
+    [[ -n $vm_prefix ]] && vm_prefix="${vm_prefix}_"
+    new_name="${name%.P1}"
+    new_name="${new_name%.}"
+    new_name="${new_name//.SP/SP}"
+    new_uuid=$(xe vm-clone uuid="$uuid" new-name-label="$new_name"); 
+    image_id="${new_uuid:0:8}"
+    vdi_uuid=$(xe vbd-list vm-uuid="$new_uuid" type=Disk params='vdi-uuid' --minimal)
+    vdi_size=$(xe vdi-list uuid="$vdi_uuid" params=virtual-size --minimal)
+    vdi_size_g="$((vdi_size/1024/1024/1024))"
+    name_label="${vm_prefix}${new_name}.${vdi_size_g}G.$image_id"; 
+    echo "Starting $new_uuid ($name_label) from $uuid ($name) "
+    xe template-param-set uuid="$new_uuid" is-a-template=false && \
+      xe vm-start uuid="$new_uuid"
+    desc=$(xe vm-list uuid="$new_uuid" params=name-description --minimal)
+    desc="$desc, disk_size:${vdi_size_g}GiB, image_id:$image_id, preptime:$(date +%s)"
+    xe vm-param-set uuid="$new_uuid" name-label="$name_label" name-description="$desc" other-config:instant=true
+  done
+  exit
+fi
+
+if [[ -n $start_vms ]]; then
+  xe vm-list params=all | \
+    xe_grep 'print uuid,name_label if name_label =~ /P1$/' | \
+    while read uuid name; do
+      echo "$uuid starting $name_label"
+      xe vm-start uuid="$uuid" &
+    done
+  exit
+fi
+
+if [[ -n $stop_vms ]]; then
+  xe vm-list params=all | \
+    xe_grep 'print uuid,name_label if name_label =~ /P1$/' | \
+    while read uuid name; do
+      echo "$uuid shutdown $name_label [force=$force]"
+      if [[ $force ]]; then
+        xe vm-shutdown uuid="$uuid" force=true &
+      else
+        xe vm-shutdown uuid="$uuid" &
+      fi
+    done
+  exit
+fi
+
+if [[ -n $eject_cd ]]; then
+  echo "eject_cd"
+  xe vm-list is-control-domain=false | \
+    xe_grep 'print uuid,name_label if name_label =~ /'$regex'/' | \
+    while read uuid vm_name; do
+      echo "VM $vm_name"
+      vbd_uuids=( $(xe vbd-list vm-uuid="$uuid" type=CD currently-attached=true unpluggable=true --minimal | sed 's/,/\n/g') )
+      for vbd in "${vbd_uuids[@]}"; do
+        vdi_name=$(xe vdi-list vbd-uuids:contains="$vbd" params=name-label --minimal)
+        echo "  Ejecting $vbd $vdi_name (vm=$uuid $vm_name)"
+        xe vbd-eject uuid="$vbd" 2> >( grep -iv -e 'drive is empty' -e '^vbd:' ) || true
+      done
+    done
+  exit
+fi
+
+if [[ -n $convert_to_templates ]]; then
+  echo "convert_to_templates"
+  xe vm-list is-control-domain=false | \
+    xe_grep 'print uuid,name_label if name_label =~ /'$regex'/' | \
+    while read uuid name; do
+      echo "$uuid convert-to-template $name_label"
+      xe template-param-set uuid="$uuid" is-a-template=true
+    done
+  exit
+fi
+
+if [[ -n $export_vhds ]]; then
+  echo "export_vhds"
+  if [[ -z $sr_uuid ]]; then
+    echo "No export SR ($sr_uuid) specified .. aborting." >&2
+    exit 3
+  fi
+  sr_mp="/var/run/sr-mount/$sr_uuid"
+  mkdir -pv "$sr_mp/"by-{name,uuid} "$sr_mp/xen/"by-{name,uuid}
+  xe template-list other-config:instant=true | \
+    xe_grep 'print uuid,name_label if name_label =~ /'$regex'/' | \
+    while read uuid template_name; do
+      xe vbd-list vm-uuid="$uuid" type=Disk params= | \
+        xe_grep 'print uuid,vdi_uuid,userdevice,vm_name_label' | \
+        while read vbd_uuid vdi_uuid userdevice vm_name; do
+          echo "Copying $vdi_uuid ($template_name)"
+          new_vdi_uuid=$(xe vdi-copy uuid="$vdi_uuid" sr-uuid="$sr_uuid")
+          echo "  Creating links"
+          ln -vf "$sr_mp/$new_vdi_uuid.vhd" "$sr_mp/by-uuid/$vdi_uuid.vhd"
+          ln -vf "$sr_mp/$new_vdi_uuid.vhd" "$sr_mp/by-name/$template_name.${userdevice}.vhd"
+          echo "  Exporting Xen Metadata"
+          xe template-export uuid="$uuid" metadata=true filename="$sr_mp/xen/by-uuid/$vdi_uuid.metadata.xml"
+          xe template-export uuid="$uuid" metadata=true filename="$sr_mp/xen/by-name/$template_name.${userdevice}.metadata.xml"
+        done
+    done
+  exit
+fi
+
+exit "$?"

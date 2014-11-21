@@ -1,0 +1,50 @@
+// 
+// NAME
+//    system_commands.json
+//
+// SYNOPSIS
+//    Commands to feed in to the auditUser/specialize phases
+//
+// DESCRPTION
+//  RunSynchronous
+//    http://technet.microsoft.com/en-us/library/cc709639(v=ws.10).aspx
+//  RunSynchronousCommand 
+//    http://technet.microsoft.com/en-us/library/cc722359(v=ws.10).aspx
+//  WillReboot 
+//    http://technet.microsoft.com/en-us/library/cc722061(v=ws.10).aspx
+//
+
+{
+  "commands" : [
+
+    { "command"         : "'echo requires_reboot > c:\\system_command.log'",
+      "description"     : "test adding foo",
+      "requires_reboot" : true },
+
+    { "description" : "Make cscript the default script host",
+      "pre"         : "1",
+      "command"     : "cscript.exe /h:cscript",
+      "post"        : "1" },
+
+    { "command"     : "cscript.exe //b %windir%\\system32\\slmgr.vbs /ato",
+      "description" : "Activating Windows" }
+
+    // { "description" : "Setup WinRM quickconfig",
+    //   "command"     : "winrm quickconfig -q" },
+
+    // { "command" : "winrm quickconfig -transport:http" },
+    // { "command" : "winrm set winrm/config               @{MaxTimeoutms=\"1800000\"}" },
+    // { "command" : "winrm set winrm/config/winrs         @{MaxMemoryPerShellMB=\"300\"}" },
+    // { "command" : "winrm set winrm/config/service       @{AllowUnencrypted=\"true\"}" },
+    // { "command" : "winrm set winrm/config/service       @{AllowUnencrypted=\"true\"}" },
+    // { "command" : "winrm set winrm/config/service/auth  @{Basic=\"true\"}" },
+    // { "command" : "winrm set winrm/config/client/auth   @{Basic=\"true\"}" },
+    // { "command" : "winrm set winrm/config/listener?Address=*+Transport=HTTP @{Port=\"5985\"}" },
+    // { "command" : "netsh advfirewall firewall set rule group=\"remote administration\" new enable=yes" },
+    // { "command" : "netsh firewall add portopening TCP 5985 \"Port 5985\"" },
+    // { "command" : "net stop winrm" },
+    // { "command" : "sc config winrm start= auto" },
+    // { "command" : "net start winrm" },
+    // { "command" : "powershell -Command \"Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force\"" }
+  ]
+}
