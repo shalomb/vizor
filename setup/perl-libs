@@ -1,4 +1,4 @@
 #!/bin/bash
 
 cpanm MIME::Base32 MIME::Base64 JSON Text::CSV Text::TabularDisplay \
-  ExtUtils::Manifest
+  ExtUtils::Manifest Locales
