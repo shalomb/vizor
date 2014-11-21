@@ -1,0 +1,62 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+source apache.sh
+
+function usage {
+  cat <<EOF
+
+${0##*/} -h host [-u user -p password]
+
+EOF
+}
+
+
+hostname=
+username="${USER}"
+password=
+
+while getopts ":h:u:p:" opt; do
+  case $opt in
+    h) hostname="$OPTARG"
+    ;;
+    u) username="$OPTARG"
+    ;;
+    p) password="$OPTARG"
+    ;;
+  esac
+done
+
+hostdir="$DIR/../"
+
+if [[ -z $hostname ]]; then
+  usage;
+  exit 3;
+fi
+
+if [[ $username && $password ]]; then
+  if ! alarm 10 ssh "$username"@"$hostname" ':'; then
+    if ! alarm 10 ssh-copy-id-passwd --hostname "$hostname" --username "$username" --password "$password"; then
+      die "Error connecting to $hostname"
+    fi
+  fi
+fi
+
+if [[ ! -e "$hostdir/$hostname" ]]; then
+  mkdir -p "$hostdir/$hostname"
+  ln -svf "$(type -P ssh-argv0)" "$hostdir/$hostname/$hostname"
+  ln -svf "$(type -P ssh-argv0)" "/usr/local/bin/$hostname"
+fi
+
+"$hostname" -l "$username" 'mkdir -p /opt/ipxe'
+rsync -a "$DOCUMENT_ROOT/ipxe/ipxe.iso" "$username@$hostname:/opt/ipxe/"
+
+rsync -a "$DIR/fs/" "$hostname:/"
+
+if sr_def=$( "$hostname" -l "$username" 'xe_iso-sr_create -s ipxe.iso -d /opt/ipxe' ) ec=$?; then
+  echo "$sr_def" | kvf_to_json | jq .
+else
+  die "Error creating iPXE ISO SR : $ec";
+fi
+
