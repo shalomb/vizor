@@ -1,0 +1,28 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+source windows_iso_sources.conf
+
+if (( $# == 0 )); then
+  less -S "$iso_master_list"
+else
+  grep_kvf 'print '"$1"'' < "$iso_master_list"
+fi
+
+
+# TODO : Rewrite
+# set -xv
+# case "${#}" in
+#   0) less "$iso_master_list"
+#     ;;
+#   1) perl -00 -lne 'print if /'"$1"'/i' < "$iso_master_list"
+#     ;;
+#   2) grep_kvf 'print _record if '"$1"' =~ /'"$2"'/i' < "$iso_master_list" | less
+#     ;;
+#   3) grep_kvf 'print '"$3"' if '"$1"' =~ /'"$2"'/i' < "$iso_master_list" | less
+#     ;;
+#   *) die "Invalid number of arguments ($#)."
+#     ;;
+# esac | (IFS='|'; less -S -i +/"$*")

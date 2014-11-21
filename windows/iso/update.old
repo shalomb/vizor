@@ -1,0 +1,232 @@
+#!/bin/bash
+
+shopt -s expand_aliases extglob nullglob sourcepath
+
+[[ $DEBUG ]] && set -xv
+
+action="$1"
+args="$@"
+
+set -e -u
+
+source utils.sh
+source kvf.sh
+
+DIR=$( cd "${BASH_SOURCE[0]%/*}" && pwd )
+SCRIPT="$DIR/${BASH_SOURCE[0]##*/}"
+
+          iso_list_dir='/var/lib/vizor/lists/windows'
+     image_list_dir='/var/lib/vizor/meta/windows'
+  image_master_list="$image_list_dir/master.list"
+       iso_list_master="$iso_list_dir/master.list"
+          list_iso_dir='/mnt/iso-src/windows'
+          release_dirs='/etc/default/vizor.d/windows_iso_dirs'
+
+mkdir -p "$iso_list_dir" "$image_list_dir"
+
+# ---- Utils ------------------------------------------------------------------
+# ---- Sources ----------------------------------------------------------------
+
+function inputs_show {
+  if (( $# == 0 )); then
+    cat "$release_dirs"
+  fi
+}
+
+# ---- ISOs ----------------------------------------------------------------
+# ---- ISO Images -------------------------------------------------------------
+
+function fmt_wiminfo {
+  perl -lne '
+    BEGIN {
+      our %h;
+    }
+    use Time::Piece;
+    use POSIX;
+    my ($k, $v) = /\s*([^:]+)\s*:\s*(.*?)\s*$/;
+    $k =~ s/\s+/_/g;
+    $k = lc $k;
+    $k = "mtime" if $k eq "last_modification_time";
+    $k = "ctime" if $k eq "creation_time";
+    if ( $k =~ /time/ ) {
+      my $t = Time::Piece->strptime($v, "%a %b %d %H:%M:%S %Y UTC"); 
+      my @t = ($t->sec, $t->min, $t->hour, $t->mday, $t->mon, $t->year-1900, $t->wday, $t->yday, $t->isdst);
+      $v = strftime "%FT%TZ", @t;
+    }
+    printf "%20s : %s\n", $k, $v if ($k and $v);
+    $h{$k} = $v;
+    END{
+      my $new_name = $h{name}; $new_name =~ s/\s+/_/g;
+      printf "%20s : %s-%s-%s-%s.%s.%s-sp%s\n", 
+        "vstring", $new_name,
+        @h{qw[architecture languages major_version minor_version build service_pack_level]};
+      print "";
+    }
+  '
+}
+
+function gen_iso_image_metadata {
+  local file="$1"
+  
+  local metadir="$image_list_dir/$file"
+
+  # if [[ -d $metadir ]]; then
+  #   echo "$image_list_dir/$file"
+  #   find "$metadir" -type f -exec cat {} +
+  #   return
+  # fi
+
+  local filemime=$(file -bi "$file")
+
+  if [[ $filemime = *'application/x-iso9660-image'* ]]; then
+    mount_point=$( mount_iso "$file" )
+
+    install_wim="$mount_point/sources/install.wim"
+
+    if [[ -f "$install_wim" ]]; then
+      max_image_index=$(wimlib-imagex info "$install_wim" 2>/dev/null | awk '/^Index:/{print $2}' | tail -n 1)
+      cur_image_index=1
+
+      while (( cur_image_index <= max_image_index )); do
+        mkdir -p "$metadir"
+        metafile="$metadir/$cur_image_index.meta"
+        { 
+          echo "  ID: $(namesum "$file")"
+          echo " ISO: ${file##*/}"
+
+          wimlib-imagex info "$install_wim" "$cur_image_index" 2>/dev/null 
+
+          echo "File: $file"
+          echo "mount_point: $mount_point"
+          echo "install_image: $install_wim"
+        } | fmt_wiminfo > "$metafile"
+
+        (( cur_image_index++ ))
+      done
+    fi
+    
+    # max_unmount_tries=30; c=0
+    # while ! umount -f "$mount_point" &>/dev/null; do
+    #   (( c >= max_unmount_tries )) && break
+    #   (( c++ ))
+    #   sleep 0.1
+    # done
+
+    # rmdir "$mount_point"
+  else
+    echo "$file is not an iso9660 image .." >&2
+  fi
+}
+
+function image_update { gen_iso_cache_metadata "$@"; }
+
+function gen_iso_cache_metadata {
+  find "$image_list_dir/" -type f -iname "*.meta" -delete || true
+
+  echo
+  echo "Updating ISO metadata .."
+
+  while read list; do 
+    printf "  %s (%s) " "${list}" $(wc -l < "$list") >&2
+    while read namesum mtime size inode isofile; do
+      gen_iso_image_metadata "$isofile"
+      printf '.'
+    done < "$list"
+    echo
+  done < <(find "$iso_list_dir" -type f -iname "list")
+
+  > "$image_master_list" \
+    find "$image_list_dir" -type f -iname "*.meta" -exec cat {} +
+}
+
+function image_show {
+
+  if (( $# == 0 )); then
+    cat "$image_master_list"
+  else
+    select_kvf -i "$image_master_list" "$@"
+    # grep_color "$@" "$image_master_list"
+  fi
+}
+
+# ---- Boxes ------------------------------------------------------------------
+
+function box_show {
+  :;
+}
+
+# ---- Control ----------------------------------------------------------------
+
+function update {
+  gen_iso_list_master       "$iso_list_master"
+  gen_iso_cache_metadata "$image_master_list"
+}
+
+function show_help {
+  cat <<EOF
+
+$0 - Manage windows ISOs.
+
+subcommands
+
+  update          Update the ISO and Image lists.
+
+  iso             Work with the ISO catalogue.
+    show [name]
+    select [-k key] [-v regex] [-f fields]
+    update
+
+  image           Work with the image catalogue.
+    show [name]
+    select [-k key] [-v regex] [-f fields]
+    update
+
+  box             Work with boxes
+    show [name]
+
+  inputs          Work with input/source directories
+
+EOF
+}
+
+# ---- Main -------------------------------------------------------------------
+
+cmd_exists  isoinfo  || warn 'Command "isoinfo" not found.'
+cmd_exists  openssl  || warn 'Command "openssl" not found.'
+cmd_exists  stat     || warn 'Command "stat" not found.'
+cmd_exists  wimlib-imagex   || warn 'Command "wimlib-imagex" not found.'
+
+action=
+cmd=
+
+(( $# >= 1 )) && { action="$1"; shift; }
+(( $# >= 1 )) && { cmd="$1";    shift; }
+
+case "$action" in 
+
+  update)
+    update
+  ;;
+
+  iso)
+    iso_"${cmd:-show}" "$@"
+  ;;
+
+  image)
+    image_"${cmd:-show}" "$@"
+  ;;
+
+  inputs)
+    inputs_"${cmd:-show}" "$@"
+  ;;
+
+  box)
+    box_"${cmd:-show}" "$@"
+  ;;
+
+  *)
+    echo "$0 - Unsupported/unimplemented action '$action'." >&2
+    show_help
+    exit 3
+  ;;
+esac

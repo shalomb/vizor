@@ -1,0 +1,172 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+source mount.utils.sh
+source file.utils.sh
+
+source windows_iso_sources.conf
+
+declare total_isos=
+
+function gen_iso_list {
+  local iso_dir="$1"
+  while read -r file; do
+    stat --printf "%Y %s %i %n\n" "$file"
+  done < <( find "$iso_dir" -iname "*.iso" -type f ) |
+    sort -n | while read -r mtime size inode file; do 
+      echo "$(namesum "$file") $mtime $size $inode $file"
+    done
+}
+
+function gen_iso_cache_list {
+  find "$iso_list_dir/" -type f -delete || true
+
+  # Mount every directory, and update lists
+  while read -r type url pathstr; do
+    [[ $url ]] || continue
+
+    if ! [[ $type = '#'* ]]; then
+      read -a paths <<<"$pathstr"
+      printf "\n  %s .. \n" "${url##*@}" 
+
+      for path in "${paths[@]}"; do
+        mp=$(mount_url "$url/$path")
+
+        if [[ $mp ]]; then
+          printf "    %24s .. " "$path"
+
+          url_t="${url##*@}"
+          list="$iso_list_dir/${url_t}/${path}"
+          list="${list//[!0-9A-Za-z.\-/]/.}"
+          list="${list//\.\./.}/list"
+
+          mkdir -p "${list%/*}"
+          gen_iso_list "$mp" > "$list"
+          c=$(wc -l < "$list")
+
+          (( total_isos += c ))
+
+          printf "has %3s ISOs.\n" "$c"
+        else
+          echo "    Failed to mount '$path'" >&2
+        fi
+      done
+
+    fi
+  done < "$windows_iso_source_list"
+}
+
+function gen_iso_master_list {
+  local iso_master_list="$1"
+
+  [[ -e $iso_master_list ]] && rm -f "$iso_master_list"
+
+  local list_count=0
+  local iso_count=0
+  while read list; do 
+    while read namesum timestamp size inode file; do
+
+      local      file="${file//\/\///}"
+      local        id="$namesum"
+      local  filemime=$(file -bi "$file")
+      local shortname="${file##*/}"
+      local      date=$(stat -c '%y' "$file")
+      local      date="${date/ /T}"
+      local    size_h=$(printf '%2.2f' $( echo 'scale=2;'"$size"'/1024/1024/1024' | bc -l ))
+
+      tmpfile="$(mktemp)"
+      {
+        cat <<EOF
+                  id : $namesum
+                name : $shortname
+                path : $file
+            mimetype : $filemime
+       creation_time : $timestamp
+           timestamp : $timestamp
+               ctime : $(date +%FT%T)
+               mtime : $(date +%FT%T)
+               bytes : $size
+                size : ${size_h}GiB
+               inode : $inode
+EOF
+        pstat "$file"
+
+        isoinfo_tmp="$(mktemp)"
+        if isoinfo -f -d -i  "$file" > "$isoinfo_tmp" 2>/dev/null; then
+          bootid=$( awk -F'[ ]+' '/Bootid/{print $3}' "$isoinfo_tmp" )
+          sed -r 's/ is:/:/' < "$isoinfo_tmp" | \
+            grep_kvf '
+              printf 
+                "         volume_id : %s\n".
+                "     volume_set_id : %s\n".
+                "      publisher_id : %s\n".
+                "  data_preparer_id : %s\n".
+                "       volume_size : %s\n".
+                "logical_block_size : %s\n".
+                "   volume_set_size : %s\n".
+                " volume_set_seq_no : %s\n",
+                volume_id, volume_set_id, publisher_id, data_preparer_id,
+                volume_size, logical_block_size, volume_set_size, 
+                volume_set_sequence_number'
+          cat <<EOF
+             boot_id : $bootid
+
+EOF
+          rm -f -- "$isoinfo_tmp" 
+
+        fi
+
+      } | tee "$tmpfile"
+
+      json_doc=$( vizor bin kvf_to_json < "$tmpfile" | jq -e '.' )
+
+      _rev=$( curl -sS -f 'http://localhost:5984/iso/'"$id?revs_info=true" 2>/dev/null |
+                jq -r '._revs_info[0].rev' )
+      [[ -n $_rev ]] && json_doc=$( jq -r '._rev = "'"${_rev}"'"' <<< "$json_doc" )
+
+      if ! curl -sS -f -X PUT 'http://localhost:5984/iso/'"$id" -d "$json_doc"; then
+        warn "Error updating record for iso '$id'" || true
+      fi
+
+      rm -f -- "$tmpfile"
+
+      (( iso_count++ )) || true
+      printf '.' >&2
+    done < "$list" 
+    (( list_count++ )) || true
+  done < <(find "$iso_list_dir" -type f -iname "list") > "$iso_master_list"
+  echo -e "\nProcessed $iso_count isos from $list_count lists." >&2
+}
+
+function clear_db {
+
+  for db in iso; do
+    if ! curl -sS -f -I "http://localhost:5984/$db" &> /dev/null; then
+      vizor setup elasticsearch-river-couchdb -d "$db"
+    fi
+  done
+
+  curl -sS -f 'http://localhost:5984/iso/_all_docs' |
+    jq -r -c 'del(.total_rows) | del(.offset) | .[][] | .value.rev as $rev | .id as $id | [$id,$rev]' |
+    sed -r -e 's/^\["|"\]$//g' -e 's/","/\t/g' |
+    while read id rev; do 
+      curl -X DELETE "http://localhost:5984/iso/$id?rev=$rev" &>/dev/null && printf '.'
+    done
+}
+
+if (( $# == 0 )); then
+  mkdir -p "$iso_list_dir"
+
+  echo -ne "\nClearing ISO DB ... " >&2
+  clear_db;
+
+  echo -e "\nScanning for ISOs ..." >&2
+  gen_iso_cache_list;
+
+  echo -ne "\nGenerating ISO metadata ($iso_master_list) ">&2
+  gen_iso_master_list "$iso_master_list"
+else
+  "$0" "$@"
+fi
+

@@ -1,0 +1,33 @@
+#!/bin/bash
+
+shopt -s expand_aliases extglob nocaseglob nullglob
+
+DEBUG="${DEBUG}"
+[[ $DEBUG ]] && set -xv
+
+set -eu
+
+DIR=$( cd "${BASH_SOURCE[0]%/*}" && pwd )
+SCRIPT="$DIR/${BASH_SOURCE[0]##*/}"
+
+PATH="$PATH:$DIR"
+
+case "${0##*/}" in
+  list) 
+      ( cd "$DIR"
+        template="${1:-}"
+        ls -1 *"${template%.conf}"*.conf
+      )
+    ;;
+  show) 
+      ( cd "$DIR"
+        file="${1:-}"
+        candidates=( "$DIR"/*"${file%.conf}"*.conf )
+        for file in "${candidates[@]}"; do
+          { echo "# file : ${file##*/}"
+            cat  "$file"
+          } | less -S
+        done
+      )
+    ;;
+esac

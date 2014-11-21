@@ -1,0 +1,4 @@
+     metadata_list_dir='/var/lib/vizor/meta/windows'
+  metadata_list_master="$metadata_list_dir/master.list"
+
+mkdir -p "$metadata_list_dir"

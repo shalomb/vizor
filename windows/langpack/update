@@ -1,0 +1,82 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+source file.utils.sh
+source mount.utils.sh
+source apache.sh
+
+function read_update_mum {
+  local file="$1"
+
+  local tmpdir=$(mktemp -d)
+  pushd "$tmpdir" &> /dev/null
+  cabextract -q -F 'update.mum' "$file" 2>/dev/null || true
+
+  if [[ -e update.mum ]]; then
+    parse_update_mum "update.mum" || true
+  else
+    warn "No 'update.mum' found in '$file' ..." || true
+  fi
+
+  popd &>/dev/null
+  rm -fr "$tmpdir"
+}
+
+# TODO, not specific to windows, move this into setup
+for db in langpack; do
+  if ! curl -sS -f -I "http://localhost:5984/$db" &> /dev/null; then
+    vizor setup elasticsearch-river-couchdb -d "$db"
+  fi
+done
+
+# Mount all directories that match Lang/lang in path name
+dirs=( $(vizor bin mount-point -f directory | awk '/[Ll]ang/') )
+
+candidates=()
+for dir in "${dirs[@]}"; do
+  candidates+=( "$dir"/*.cab "$dir"/lang*/*/*.cab )
+done
+
+for i in "${!candidates[@]}" ; do
+  file="${candidates[i]}"
+
+  lang=$(perl -e 'print $1 if pop =~ /([a-z]{2}-[a-zA-Z]{2})/' "$file")
+  [[ $lang ]] || continue
+
+           id=$( namesum "$file" )
+     file_url=$( file_url "$file" )
+  modify_time=$( date +'%FT%T' -d @$(stat -c '%Y' "$file") )
+   size_bytes=$( stat -c '%s' "$file" )
+     size_mib=$( perl -e 'printf "%5.2f", (+(pop)/2**20)' "$size_bytes" )
+    file_type=$( file -bi "$file" )
+
+  json_doc=$(
+    { cat <<EOF
+           id : $id
+         file : $file
+          url : $file_url
+       locale : $lang
+  modify_time : $modify_time
+         size : $size_bytes
+     size_mib : $size_mib
+    file_type : $file_type
+      os_type : windows
+EOF
+      read_update_mum "${file}"
+    } | vizor bin kvf_to_json | jq .
+  )
+
+  _rev=$( curl -sSfL 'http://localhost:5984/langpack/'"$id?revs_info=true" 2>/dev/null |
+          jq -r '._revs_info[0].rev' )
+  [[ -n $_rev ]] && json_doc=$( jq -r '._rev = "'"${_rev}"'"' <<< "$json_doc" )
+
+  curl -sS -X PUT 'http://localhost:5984/langpack/'"$id" -d "$json_doc" &>/dev/null
+
+  printf -v logmsg "Gathering language pack metadata : [%s/%s;%s] %4.4f%%  " \
+      "$i" "${#candidates[@]}" \
+      "$((${#candidates[@]}-$i))" $(bc <<<"scale=16; $i/${#candidates[@]}*100")
+  log_status "$logmsg"
+
+done
+

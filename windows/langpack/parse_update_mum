@@ -1,0 +1,70 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use autodie;
+
+use XML::Simple;
+my $xml_parser = XML::Simple->new();
+my $data = $xml_parser->XMLin(q[update.mum]);
+
+use Data::Dumper;
+$Data::Dumper::Terse  = 1;  # don't output names where possible
+$Data::Dumper::Indent = 1;  # no pretty printing
+$Data::Dumper::Pair   = ' : ';
+$Data::Dumper::Useqq  = 1;
+$Data::Dumper::Quotekeys = 1;
+$Data::Dumper::Sortkeys = 1;
+
+my $fmt = <<EOF;
+     language : %s
+         name : %s
+ architecture : %s
+      version : %s
+
+EOF
+
+{
+  no strict 'refs';
+
+# my $identifier;
+#   (     $data->{assemblyIdentity}{identifier} 
+#     //  $data->{package}{assemblyIdentity}{identifier} 
+#     //  $data->{package}{parent}{assemblyIdentity}{identifier} );
+
+my $language =
+  (     $data->{assemblyIdentity}{language} 
+    //  $data->{package}{assemblyIdentity}{language} 
+    //  $data->{package}{parent}{assemblyIdentity}{language} );
+
+my $name = 
+  (     $data->{assemblyIdentity}{name} 
+    //  $data->{package}{assemblyIdentity}{name} 
+    //  $data->{package}{parent}{assemblyIdentity}{name} );
+
+my $process_arch =
+  (     $data->{assemblyIdentity}{processorArchitecture} 
+    //  $data->{package}{assemblyIdentity}{processorArchitecture} 
+    //  $data->{package}{parent}{assemblyIdentity}{processorArchitecture} );
+
+my $version = 
+  (     $data->{assemblyIdentity}{version}               
+    //  $data->{package}{assemblyIdentity}{version}               
+    //  $data->{package}{parent}{assemblyIdentity}{version} );
+
+# my $build_type =
+#   (     $data->{assemblyIdentity}{buildType}             
+#     //  $data->{package}{assemblyIdentity}{buildType}             
+#     //  $data->{package}{parent}{assemblyIdentity}{buildType} );
+# 
+# my $release_type =
+#   (     $data->{assemblyIdentity}{releaseType} 
+#     //  $data->{package}{assemblyIdentity}{releaseType} 
+#     //  $data->{package}{parent}{assemblyIdentity}{releaseType} );
+
+printf  $fmt,
+        $language,
+        $name,
+        $process_arch,
+        $version;
+};
