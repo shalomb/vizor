@@ -1,0 +1,24 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+source mount.utils.sh
+
+source "$DIR/conf"
+
+case "$CMD" in
+  show)
+    if (( $# == 0 )); then
+      less -S "$metadata_list_master"
+    else
+      grep_kvf 'print '"$@"'' < "$metadata_list_master"
+    fi
+  ;;
+  list)
+    vizor windows image show 'sprintf "%s  %s  %s", id,mtime,vstring if vstring =~ /'"$@"'/i' | \
+      less -S
+  ;;
+  *)
+    warn "Unimplemented command ${}"
+    ;;
+esac

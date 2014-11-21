@@ -1,0 +1,241 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+source mount.utils.sh
+source file.utils.sh
+
+source windows_iso_sources.conf
+
+declare clear_db=0
+
+while getopts ":ch" opt 2>/dev/null; do
+  case $opt in
+    c) clear_db=1
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented command '$opt'"
+      ;;
+  esac
+done
+
+function fmt_wiminfo {
+  perl -lne '
+    BEGIN {
+      our %wim_tab;
+    }
+
+    use Time::Piece;
+    use POSIX;
+
+    my ($k, $v) = /\s*([^:]+?)\s*:\s*(.*?)\s*$/;
+    $k =~ s/\s+/_/g;
+    $k = lc $k;
+    if ( $k =~ /time/ and $v =~ /UTC$/ ) {
+      my $t = Time::Piece->strptime($v, "%a %b %d %H:%M:%S %Y UTC"); 
+      my @t = ($t->sec, $t->min, $t->hour, $t->mday, $t->mon, $t->year-1900, $t->wday, $t->yday, $t->isdst);
+      $v = strftime "%FT%TZ", @t;
+    }
+
+    printf "%20s : %s\n", $k, $v if ($k and $v);
+    $wim_tab{$k} = $v;
+
+    END{
+      my $new_name = join "_", map { 
+          my $token = $_;
+          $token =~ s/$_/$_/ig for qw[
+                      Basic Bit Business Core DataCenter Edition Enterprise Essentials Foundation Home Hyper Hyper-V
+                      Premium Preview Preview Pro Professional Server Standard Starter Storage Technical Thin Ultimate
+                      Web
+                    ];
+          $token;
+        } grep !/\b(for|with)\b/, split /\s+/, $wim_tab{name};
+
+      my ($new_name_short) = map {
+        s/business/bus/gi;
+        s/core//gi;
+        s/datacenter/dc/gi;
+        s/enterprise/ent/gi;
+        s/longhorn/2008/gi;
+        s/foundation/fdn/gi;
+        s/professional/pro/gi;
+        s/server//gi;
+        s/standard/std/gi;
+        s/storage/str/gi;
+        s/technical_preview/tp/gi;
+        s/windows_server_//gi;
+        s/windows/w/gi;
+        s/workgroup//gi;
+        s/hyper-v/hypv/gi;
+        s/hyper//gi;
+        s/homepremium/hp/gi;
+        s/utlimate/ult/gi;
+        s/single_language/sl/gi;
+        s/^_|_$//g;
+        s/__+/_/g;
+        lc;
+      } ($_=$new_name);
+
+      printf "%20s : %s-%s-%s-%s.%s.%s-sp%s\n", 
+        "vstring_long", $new_name,
+        @wim_tab{qw[architecture default_language major_version minor_version build service_pack_level]};
+
+      my $new_name_short = sprintf "%s-%s-sp%s-%s-%s", 
+        $new_name_short,
+        ($wim_tab{architecture} =~ /x86_64/ ? q[x64] : q[x86]),
+        $wim_tab{service_pack_level},
+        (do{ $wim_tab{default_language} =~ s/.{2}-//g; $wim_tab{default_language} }),
+        $wim_tab{build};
+
+      ($new_name_short) = map {
+        s/w_20+/w2k/i;
+        s/^w_/win/;
+        s/_(r\d+)/$1/;
+        lc;
+      } $new_name_short;
+
+      printf "%20s : %s\n", "vstring", $new_name_short;
+      print "";
+    }
+  '
+}
+
+function gen_iso_image_metadata {
+  local iso_id="$1"
+
+  iso=$(curl -sS -f 'http://localhost:5984/iso/'"$iso_id"  | jq -r '.path')
+
+  local filemime=$(file -bi "$iso")
+
+  if [[ $filemime = *'application/x-iso9660-image'* ]]; then
+
+    local mount_point="$( mount_iso "$iso" )"
+    local install_wim="$mount_point/sources/install.wim"
+    local idwbinfo="$mount_point/sources/idwbinfo.txt"
+    local pid_file="$mount_point/sources/pid.txt"
+
+    if [[ -f "$install_wim" ]]; then
+      header=$( { wimlib-imagex info "$install_wim" --header 2>/dev/null |
+                  perl -lne ' my ($k,$v) = (/^\s*([^=]+\S)\s*(?:=|is)\s*(.*?)\s*$/);
+                      $k=~s/\s+/_/g;
+                      printf "%s : %s\n", lc $k, $v if $k';
+                  echo "wim_file : $install_wim"
+                  echo "iso_file : $mount_point"
+                  echo "iso_id   : $iso_id"
+                } | vizor bin kvf_to_json )
+
+      wim_id=$( jq -e -r '.guid' <<<"$header" )
+      if [[ -z $wim_id || $wim_id = 'null' ]]; then
+        warn "Unable to determine wim_id for '$install_wim'"
+        return
+      fi
+
+      max_image_index=$( jq -r '.image_count' <<<"$header" )
+
+      _rev=$( curl -sS -f 'http://localhost:5984/wim/'"$wim_id?revs_info=true" 2>/dev/null |
+              jq -r '._revs_info[0].rev' )
+      [[ -n $_rev ]] && header=$( jq -r '._rev = "'"${_rev}"'"' <<< "$header" )
+
+      curl -sS -X PUT 'http://localhost:5984/wim/'"$wim_id" -d "$header" &>/dev/null
+
+      local image_index=1
+      while (( image_index <= max_image_index )); do
+        id="${iso_id:0:3}${iso_id: -3:3}$wim_id$image_index"
+        tmpfile="$(mktemp)"
+
+        { 
+          cat <<EOF
+          id            : $id
+          wim_id        : $wim_id
+          iso_id        : $iso_id
+          iso_os_type   : windows
+EOF
+          wimlib-imagex info "$install_wim" "$image_index" 2>/dev/null 
+
+          cat <<EOF
+          mount_point   : $mount_point
+          install_image : $install_wim
+EOF
+
+          if [[ -e "$idwbinfo" ]]; then
+            perl -nle 'do { s/(?<!^)[A-Z]/_$&/; $_=lc; s/=/ : /; print; } if /^[^[]/' "$idwbinfo" 
+          fi
+
+          if [[ -e $pid_file ]]; then
+            perl -lne 'printf "product_key : $1\n" if /\[PID\]/../Value/ and /((?:\w{5}(?:-|\b)){4,5})/' "$pid_file"
+          fi
+
+          pstat "$install_wim"
+
+        } | fmt_wiminfo | tee "$tmpfile"
+
+        json_doc=$( vizor bin kvf_to_json < "$tmpfile" )
+        _rev=$( curl -sS -f "http://localhost:5984/image/$id?revs_info=true" 2>/dev/null |
+                jq -r '._revs_info[0].rev' )
+        [[ -n $_rev ]] && json_doc=$( jq -r '._rev = "'"${_rev}"'"' <<< "$json_doc" )
+
+        if ! curl -sS -f -X PUT "http://localhost:5984/image/$id" -d "$json_doc" &>/dev/null; then
+          warn "Error updating record for image '$id'"
+        fi
+
+        rm -f -- "$tmpfile"
+
+        ((image_index++))
+      done
+    fi
+
+  else
+    warn "$iso is not an iso9660 image .." >&2
+  fi
+}
+
+function clear_db {
+  local records=( $(curl -sS -f -X GET 'http://localhost:5984/image/_all_docs' |
+    jq -r -c 'del(.total_rows) | del(.offset) | .[][] | .value.rev as $rev | .id as $id | [$id,$rev]' |
+    sed -r -e 's/^\["|"\]$//g' -e 's/","/,/') )
+
+  for i in "${!records[@]}"; do
+    IFS=',' read -r id rev <<<"${records[i]}"
+    local url="http://localhost:5984/image/$id?rev=$rev"
+    if ! ret=$( curl -sSfL -X DELETE "$url" ) ec=$?; then
+      warn "Failed to delete record at $url : $ret, $ec" || true
+    fi
+    printf -v logmsg "Clearning ISO install-image metadata : [%s/%s;%s] %4.2f%% " \
+        "$i" "${#records[@]}"  \
+        "$(( ${#records[@]} - $i ))" $(bc <<<"scale=16; $i/${#records[@]}*100")
+    log_status "$logmsg"
+  done
+}
+
+
+# TODO, not specific to windows, move this into setup
+for db in iso wim; do
+  if ! curl -sS -f -I "http://localhost:5984/$db" &> /dev/null; then
+    vizor setup elasticsearch-river-couchdb -d "$db"
+  fi
+done
+
+if (( clear_db == 1 )); then
+  log_status "Clearing image DB .. "
+  clear_db;
+fi
+
+iso_ids=( $( curl -sS -f 'http://localhost:5984/iso/_all_docs' |
+    jq -r -c 'del(.total_rows) | del(.offset) | .[][] | .id as $id | [$id]' |
+    sed -r -e 's/^\["|"\]$//g' -e 's/","/\t/g' ) )
+
+for i in "${!iso_ids[@]}"; do
+  gen_iso_image_metadata "${iso_ids[i]}" || true
+
+  printf -v logmsg "Gathering ISO install-image metadata : [%s/%s;%s] %4.2f%%  " \
+      "$i" "${#iso_ids[@]}" \
+      "$((${#iso_ids[@]}-$i))" $(bc <<<"scale=16; $i/${#iso_ids[@]}*100")
+  log_status "$logmsg"
+done >/dev/null
+
+wim_count=$( curl -f -sS 'http://localhost:5984/wim' | jq -r '.doc_count' )
+image_count=$( curl -f -sS 'http://localhost:5984/image' | jq -r '.doc_count' )
+
+log_status "Processed $image_count install images from $wim_count WIM files in ${#iso_ids[@]} ISO files.\n" 
+

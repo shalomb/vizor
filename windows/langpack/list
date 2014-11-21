@@ -1,0 +1,10 @@
+#!/bin/bash
+
+{
+  echo 'id,locale,architecture,version,name,os_type,modify_time,size'
+  curl -sS 'http://localhost:9200/langpack/langpack/_search?sort=_id&from=0&size=99999' |
+    jq -S -r -c '
+      .hits.hits[]._source | 
+        [.id,.locale,.architecture,.version,.name,.os_type,.modify_time,.size]
+      ' | sed -r 's/^\[|\]$//g' 
+} | csv_to_table

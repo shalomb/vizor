@@ -1,0 +1,13 @@
+#!/bin/bash
+
+DIR=$( cd "${BASH_SOURCE[0]%/*}" && pwd )
+SCRIPT="$DIR/${BASH_SOURCE[0]##*/}"
+
+cd "$DIR" && \
+vizor windows iso update image show | \
+  grep_kvf 'print vstring, name' | \
+  while read v n; do 
+    { echo "vstring='$v'"
+      echo "name='$n'"
+    } > "$v.conf"
+  done

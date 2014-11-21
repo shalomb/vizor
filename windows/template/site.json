@@ -1,0 +1,31 @@
+{
+  "owner"                   : "Owner",
+  "organization"            : "Organization",
+  "ui_language"             : "en-US",
+  "input_locale"            : "en-GB;en-US",
+  "user_locale"             : "en-GB",
+  "system_locale"           : "en-GB",
+  "model"                   : "Model",
+  "manufacturer"            : "Manufacturer",
+  "support_hours"           : "SupportHours",
+  "support_phone"           : "SupportPhone",
+
+  "support_url"             : "http://support/",
+  "timezone"                : "GMT Standard Time",
+  "administrative_user"     : "Admin",
+  "administrative_password" : "P455w0rd",
+  "regular_user"            : "User",
+  "regular_password"        : "P455w0rd",
+  "horizontal_resolution"   : "1024",
+  "vertical_resolution"     : "768",
+  "colour_depth"            : "32",
+  "dpi"                     : "96",
+  "refresh_rate"            : "60",
+  "sysprep"                 : "true",
+  "localize"                : "true",
+
+  "wsus_url"                : "http://wsus.example.com:8530",
+  "kms_server"              : "kms.example.com",
+  "kms_port"                : "1688",
+  "ntp_servers"             : "pool.ntp.org,time.windows.com,time.nis.gov"
+}
