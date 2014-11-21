@@ -98,10 +98,10 @@ function Set-UserPreferences {                  #M:VDIOptimizations
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "CrashDumpEnabled"          /t REG_DWORD    /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "LogEvent"                  /t REG_DWORD    /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "SendAlert"                 /t REG_DWORD    /d 0x0 | Write-Verbose
+        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" )   /f  /v  "ClearPageFileAtShutdown"   /t REG_DWORD    /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" ) /f /v "EnableSuperfetch" /t REG_DWORD /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Services\Disk"                             )   /f  /v  "TimeOutValue"              /t REG_DWORD    /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Services\Disk"                             )   /f  /v  "TimeOutValue"              /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" )   /f  /v  "ClearPageFileAtShutdown"   /t REG_DWORD    /d 0x1 | Write-Verbose
       }
     }
 
