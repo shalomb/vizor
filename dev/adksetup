@@ -1,0 +1,20 @@
+Extract the ADK running on a Windows8.1/2012R2 machine
+
+adksetup.exe /quiet /installpath C:\ProgramData\adk /features OptionId.WindowsPreinstallationEnvironment OptionId.DeploymentTools /norestart /log c:\ProgramData\adksetup.log
+
+'How-to Extract the Windows Recovery Environment from the Windows 7 Installation DVD and Merge it with Windows PE 3.0, and Place it on a USB Flash Drive - TechNet Articles - United States (English) - TechNet Wiki'
+  http://social.technet.microsoft.com/wiki/contents/articles/1079.how-to-extract-the-windows-recovery-environment-from-the-windows-7-installation-dvd-and-merge-it-with-windows-pe-3-0-and-place-it-on-a-usb-flash-drive.aspx
+
+  mkdir c:\win7pe
+  cd c:\win7pe
+  mkdir mount
+  mkdir mountre 
+  copy d:\sources\install.wim c:\win7pe
+  dism /mount-wim /wimfile:c:\win7pe\install.wim /index:1 /mountdir:c:\win7pe\mount
+  copy c:\win7pe\mount\windows\system32\recovery\winre.wim c:\win7pe
+  dism /unmount-wim /mountdir:c:\win7pe\mount /discard
+  dism /mount-wim /wimfile:c:\win7pe\winre.wim /index:1 /mountdir:c:\win7pe\mountre
+  copy “c:\program files\windows aik\tools\amd64\imagex.exe” c:\win7pe\mountre\windows\system32
+  dism /unmount-wim /mountdir:c:\win7pe\mountre /commit
+  copype amd64 c:\peufd
+  copy c:\win7pe\winre.wim c:\peufd\iso\sources\boot.wim
