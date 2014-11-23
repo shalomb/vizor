@@ -1,8 +1,18 @@
 #!/bin/bash
 
+declare keyword="$1"
+
+
+while getopts ":k:" opt; do
+  case $opt in
+    k) keyword="$OPTARG"
+      ;;
+  esac
+done
+
 {
-  echo 'id,name,display text,hypervisor'
-  cloudmonkey list templates templatefilter=executable |
-    jq -c -r '.[][] | [.id,.name,.displaytext,.hypervisor]' 2>/dev/null |
-    sed -r 's/^\[|\]$//g'; 
+  echo 'id,name,display text,hypervisor,created'
+  cloudmonkey list templates templatefilter=executable keyword="${keyword}" |
+    jq -c -r '.[][] | [.id,.name,.displaytext,.hypervisor,.created]' 2>/dev/null |
+    sort -t , -k 5 | sed -r 's/^\[|\]$//g'; 
 } | csv_to_table
