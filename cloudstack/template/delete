@@ -1,0 +1,26 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare template_id="$1"
+
+while getopts ":i:" opt; do
+  case $opt in
+    i) template_id="$OPTARG"
+      ;;
+  esac
+done
+
+[[ -z $template_id ]] && die "No template id (-i) specified."
+
+template_def=$(
+  cloudmonkey delete template id="$template_id"
+)
+
+if grep -iq 'Error' <<<"$template_def"; then
+  die "Error delete template '$template_id' : '$template_def'"
+fi
+
+sed -r -e '1d' <<<"$template_def" | jq -S -e '.'
+
