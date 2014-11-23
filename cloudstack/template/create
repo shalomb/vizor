@@ -40,7 +40,6 @@ case "$container_type" in
         volume_id=$( jq -c -e -r '.volume[0].id' <<<"$volumes_def" )
       fi
 
-set -xv
      template_def=$(
        cloudmonkey create template \
          displaytext="$template_name"      \
@@ -58,7 +57,7 @@ set -xv
      fi
 
      # TODO, Cloudmonkey's progress output taints record
-     template_def=$( sed -r -e '1d' <<<"$ret" | jq -S -e '.' )
+     template_def=$( sed -r -e '1d' <<<"$template_def" | jq -S -e '.' )
     fi
     ;;
   *) die "Unsupported/unimplemented type $container_type"
@@ -77,7 +76,7 @@ _rev=$( curl -sS -f "http://localhost:5984/template/$template_name?revs_info=tru
 template_url="http://localhost:5984/template/$template_name"
 
 if ! curl -sS -f -X PUT "$template_url" -d "$master_doc" &>/dev/null; then
-  warn "Error updating record for template '$template_name'"
+  die "Error updating record for template '$template_name' ($template_url)"
 fi
 
 log "Updated instance data at '$template_url'"
