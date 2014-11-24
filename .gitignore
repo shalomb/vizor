@@ -1,4 +1,3 @@
 # no .a files
 *.swp
 .*.sw*
-dev/TODO
