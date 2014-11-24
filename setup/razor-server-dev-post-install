@@ -79,10 +79,13 @@ set -xv
 jruby -S torquebox deploy --env production
 service razor-server restart
 
-if type -P razor; then
-  while ! razor -f commands 2>/dev/null; do
-    printf '.'
-    sleep 1
-  done
-fi
+declare max_tries=60 try=0
+while ! curl 'http://localhost:8080/api' | jq -c -r -e '.version.server' 2>/dev/null; do
+  printf '.'
+  sleep 1
+  (( try++ )) || true
+  if (( try > max_tries )); then
+    die "Razor API server not responding after $max_tries"
+  fi
+done
 
