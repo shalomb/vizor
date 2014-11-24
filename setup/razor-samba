@@ -11,7 +11,19 @@ source defaults.sh
 source utils.sh
 source apache.sh
 
-set -xv
+distro=$(lsb_release -is | tr 'A-Z' 'a-z')
+case "$distro" in
+  debian|ubuntu)
+    source "${DIR}/${SCRIPT##*/}.$distro"
+  ;;
+  centos|rhel)
+    source "${DIR}/${SCRIPT##*/}.rhel"
+  ;;
+  *)
+    die "Unsupported distribution '$distro'.";
+  ;;
+esac
+
 # Disable kernel oplocks
 if ! grep -Eiq 'kernel oplocks' /etc/samba/smb.conf; then
   tmpfile=$(mktemp)
