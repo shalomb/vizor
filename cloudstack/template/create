@@ -24,6 +24,8 @@ instance_url="http://localhost:5984/instance/$instance_id"
 instance_def=$( curl -fsSLX GET "$instance_url" )
 container_type=$( jq -c -e -r '.container.type' <<<"$instance_def" )
 
+log "Creating $container_type template '$template_name' (instance '$instance_id')"
+
 case "$container_type" in
   cloudstack)
     os_type_id=$( jq -c -e -r '.vm.jobresult.virtualmachine.guestosid' <<<"$instance_def" )
@@ -32,6 +34,7 @@ case "$container_type" in
     template_name="${template_name:-$instance_id}"
     template_name="${template_name:0:32}" # TODO, this truncation is not what the user would prefer
 
+    # TODO, template from snapshot case not implemented.
     if [[ -z $snapshot_id ]]; then
       volumes_def=$( cloudmonkey list volumes virtualmachineid="$vm_id" )
       if (( $(jq -e '.count' <<<"$volumes_def") > 1 )); then
@@ -66,7 +69,7 @@ esac
 # TODO, refactor for multiple hypervisor types
 
 template_doc=$( jq -s '.[] | {template:.jobresult.template}' <<<"$template_def" )
-  master_doc=$( jq '.name = "'"$template_name"'" | .type = "'"$container_type"'"' <<<'{}' )
+  master_doc=$( jq '.name = "'"$template_name"'" | .type = "'"$container_type"'" | .instance = "'"$instance_id"'"' <<<'{}' )
   master_doc=$( jq -s '.[0] * .[1]' <(echo "$master_doc") <(echo "$template_doc") )
 
 _rev=$( curl -sS -f "http://localhost:5984/template/$template_name?revs_info=true" 2>/dev/null |
