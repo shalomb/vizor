@@ -76,7 +76,7 @@ if [[ -e $metadata_file ]]; then
 fi
 
 if [[ -n $metadata ]]; then
-  metadata=$( jq -e '.' <<<"$metadata" )
+  metadata=$( jq -e '.' <<<"$metadata" ) # JSON validity check
   instance_metadata=$( jq -e -S -s '.[0] * .[1]' <(echo "$instance_metadata") <(echo "$metadata") )
 fi
 
@@ -297,6 +297,9 @@ done
 
       box_doc=$( jq '. | {box:.}'    <<<"$box_def" )
    master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$box_doc") )
+
+ metadata_doc=$( jq '. | {metadata:.}'    <<<"$instance_metadata" )
+   master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$metadata_doc") )
 
     image_doc=$( jq '. | {image:.}'  <<<"$image_def" )
    master_doc=$( jq -s '.[0] * .[1]'  <(echo "$master_doc") <(echo "$image_doc") )
