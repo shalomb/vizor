@@ -30,3 +30,6 @@ RFC_3339_DATE=$(date --rfc-3339=ns | tr ' ' 'T')
 DATE=${RFC_3339_DATE%T*}
 TIME=${RFC_3339_DATE#*T}
 TIME=${TIME%.*}
+
+TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
+
