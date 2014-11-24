@@ -82,4 +82,4 @@ cloudmonkey list accounts listall=true |
   jq -e -r '.user[] | {username:.username,account:.account,firstname:.firstname,lastname:.lastname,email:.email}'
 
 log "Syncing APIs"
-cloudmonkey sync apis
+cloudmonkey sync apis || true
