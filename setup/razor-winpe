@@ -45,7 +45,9 @@ esac
 
 for task in "$DIR/../razor/task"/winpe.task/; do
   task_name="${task%/}"
-  rsync -a "$task/" "$RAZOR_ROOT/tasks/${task_name##*/}/"
+  target_dir="$RAZOR_ROOT/tasks/${task_name##*/}/"
+  rsync -a "$task/" "$target_dir/"
+  ( cd "$target_dir/imageprep" && zip -r ../imageprep.zip ./ )
 done
 
 if [[ -e "$razor_client_script" ]]; then
