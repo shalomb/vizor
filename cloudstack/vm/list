@@ -7,8 +7,8 @@ if (( $# >= 1 )); then
 fi
 
 {
-  echo 'id,name,account,service offering,state'
+  echo 'id,name,account,service offering,state,created'
   cloudmonkey list virtualmachines listall=true keyword="$keyword" |
-    jq -c -r '.[][] | [.id,.name,.account,.serviceofferingname,.state]' 2>/dev/null |
-    sed -r 's/^\[|\]$//g'; 
+    jq -c -r '.[][] | [.id,.name,.account,.serviceofferingname,.state,.created]' 2>/dev/null |
+    sort -t , -k 6 | sed -r 's/^\[|\]$//g'
 } | csv_to_table
