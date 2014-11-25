@@ -139,9 +139,9 @@ eos
     </UserAccounts>
 
     <AutoLogon>
-      <Username><%= node.metadata.key('administrative_user')     || 'Administrator' %></Username>
+      <Username><%= node.metadata['administrative_user']     || 'Administrator' %></Username>
       <Password>
-        <Value><%=  node.metadata.key('administrative_password') || node.root_password || 'P455w0rd' %></Value>
+        <Value><%=  node.metadata['administrative_password'] || node.root_password || 'P455w0rd' %></Value>
         <PlainText>true</PlainText>
       </Password>
       <Enabled><%=  node.metadata['enable_autologon'] || true %></Enabled>
