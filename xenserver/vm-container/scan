@@ -1,6 +1,6 @@
 #!/bin/bash
 
-declare host="$1"
+declare host="${HOST:-$XENSERVER_HOST}"
 
 source defaults.sh
 source utils.sh
@@ -54,19 +54,19 @@ tmpfile=$(mktemp)
         $filename =~ s/_32-bit/-x86/g;
         $filename =~ s/_64-bit/-x86_64/g;
 
-        my ($disk_size) = (other_config =~ /disk.*?size="(\d+)"/);
+        my ($vdisk_size) = (other_config =~ /disk.*?size="(\d+)"/);
 
         printf qq[id : %s-%s_VCPUs-%05.2f_GiB_RAM-%05.2f_GiB_HDD\n],
           $filename,
           VCPUs_at_startup,
           (memory_static_min/2**30),
-          ($disk_size/2**30);
+          ($vdisk_size/2**30);
 
         printf "$main::format\n", map {
           eval "$_";
         } @main::keys;
 
-        printf qq[disk_size : %s], $disk_size;
+        printf qq[vdisk_size : %s], $vdisk_size;
 
         print "\n";
       }
