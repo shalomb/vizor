@@ -8,7 +8,7 @@ for pkg in    \
   sudo expect aptitude ack-grep libjson-perl cifs-utils nfs-common \
   genisoimage libmime-base64-urlsafe-perl libjson-xs-perl libxml-simple-perl \
   python-pip zip unzip curl build-essential make autoconf automake git \
-  shared-mime-info libxml2-utils \
+  shared-mime-info libxml2-utils ntp ntpdate \
  ; do
   if ! dpkg -s "$pkg" &> /dev/null; then
     pkgs_to_install+=( "$pkg" )
