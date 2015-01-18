@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Shutdown running VMs on a XenServer host/pool
+
+declare vm_action="${0##*/}"
+declare host="${HOST:-$XENSERVER_HOST}"
+
+source defaults.sh
+source utils.sh
+
+declare name_regex= do_shutdown= force=false
+
+while getopts ":H:fhn:" opt; do
+  case $opt in
+    H) host="$OPTARG"
+      ;;
+    n) name_regex="$OPTARG"
+      ;;
+    f) force=true
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented option $OPTARG"
+      ;;
+  esac
+done
+
+[[ $host ]]       || die "No host (-H) specified."
+[[ $name_regex ]] || die "No name regex (-n) specified"
+
+set -xv
+"$host" vm_action="$vm_action" force="$force" '
+  xe vm-list is-control-domain=false is-a-template=false \
+               is-a-snapshot=false params= |
+      xe_grep "print uuid,name_label if name_label =~ /'"$name_regex"'/" |
+      while read uuid name; do
+        echo "xe vm-$vm_action uuid=$uuid force=$force # name-label=$name" >&2
+        case "$vm_action" in
+          shutdown)
+              echo xe vm-shutdown uuid="$uuid" force="$force"
+            ;;
+          reboot)
+              echo xe vm-reboot uuid="$uuid" force="$force"
+            ;;
+          suspend)
+              echo xe vm-suspend uuid="$uuid" force="$force"
+            ;;
+          template)
+              echo xe vm-param-set uuid="$uuid" is-a-template=true
+            ;;
+          *)
+              echo "Unrecognized/unimplemented option $vm_action" >&2
+              exit 3
+            ;;
+        esac
+      done
+  '
