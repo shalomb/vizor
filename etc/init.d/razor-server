@@ -43,7 +43,7 @@ jruby=$(grep -i jruby $RAZOR_ROOT/Gemfile | \
 eval "$(rbenv init -)"
 rbenv rehash && rbenv global "jruby-$jruby"
 
-export PATH="$(rbenc which jruby)/bin/jruby:$PATH"
+export PATH="$(rbenv which jruby)/bin/jruby:$PATH"
 
 echo "jruby is $jruby" >&2
 
@@ -58,12 +58,12 @@ which_torquebox() {
 start() {
   TORQUEBOX=$(which_torquebox)
 
-  if JAVA_OPTS="$JAVA_OPTS" start-stop-daemon
-      --start                   \
-      --pidfile "$PIDFILE"      \
-      --make-pidfile            \
-      --background --no-close   \
-      --exec "$TORQUEBOX"       \
+  if JAVA_OPTS="$JAVA_OPTS" start-stop-daemon \
+      --start                                 \
+      --pidfile "$PIDFILE"                    \
+      --make-pidfile                          \
+      --background --no-close                 \
+      --exec "$TORQUEBOX"                     \
       -- $TORQUEBOXOPTS >> "$LOGFILE" 2>&1 ; then
     echo "torquebox ($DESC) started successfully" >&2
     return 0
