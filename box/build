@@ -22,7 +22,7 @@ while getopts "b:B:c:C:m:M:n:" opt; do
   esac
 done
 
-[[ -z $box_name ]] && die "Box name (-b) not specified."
+[[ -z $box_name ]]       && die "Box name (-b) not specified."
 [[ -z $container_name ]] && die "Container name (-c) not specified."
 
 box_url='http://localhost:5984/box/'"$box_name"
@@ -39,8 +39,11 @@ if image_def=$( curl -fsS "$image_url" ) ec=$?; then
    vstring=$( jq -e -c -r '.vstring' <<<"$image_def" )
     iso_id=$( jq -e -c -r '.iso_id'  <<<"$image_def" )
   if [[ $iso_id ]]; then
-    iso_def=$( curl -fsS "http://localhost:5984/iso/$iso_id" )
-    iso_file=$( jq -e -c -r '.path' <<<"$iso_def" )
+    if ! iso_def=$( curl -fsS "http://localhost:5984/iso/$iso_id" ) ec=$?; then
+      die "Unable to find iso definition for '$iso_id'"
+    else
+      iso_file=$( jq -e -c -r '.path' <<<"$iso_def" )
+    fi
   fi
 else
   die "Unable to find image definition at '$image_url': $ec"
@@ -67,7 +70,7 @@ os_architecture=$( jq -e -r '.architecture' <<<"$image_def" )
        box_type=$( jq -e -r '.type'         <<<"$box_def" )
 
      metadata_doc='{}'
-   image_metadata=$( jq -e '.'  <<<"$image_def" )
+   image_metadata=$( jq -e '.'          <<<"$image_def" )
      box_metadata=$( jq -e '.metadata'  <<<"$box_def" )
 instance_metadata=$( jq -e -S -s '.[0] * .[1]'  <(echo "$image_metadata") <(echo "$box_metadata") )
 
@@ -88,8 +91,8 @@ fi
 if [[ -z $hostname ]]; then
   hostname="${instance_name##*-}-$(< /proc/sys/kernel/random/uuid)"
   case "$box_type" in
-    windows) 
-      hostname="${hostname:0:15}"
+    windows)
+        hostname="${hostname:0:15}"
       ;;
     *) hostname="${hostname:0:$(getconf HOST_NAME_MAX)}"
       ;;
@@ -101,9 +104,10 @@ razor_task=
 case "$box_type" in
   windows)
     case "$os_architecture" in
-      x86) razor_task='winpe'
+      x86)    razor_task='winpe'
         ;;
       x86_64) razor_task='winpe'
+        ;;
     esac
     ;;
   *) die "Box type '$box_type' unknown or unimplemented."
@@ -116,7 +120,6 @@ ipxe_iso_url=$( file_url "$DOCUMENT_ROOT/ipxe/ipxe.iso" )
 if ! curl -sS -f -I "$ipxe_iso_url" >/dev/null; then
   die "Boot iso not found at '$ipxe_iso_url'"
 fi
-log "  Task task '$razor_task'"
 
 instance_name="${instance_name//[!A-Za-z0-9]/-}"
 [[ $instance_name = *[!A-Za-z0-9\-]* ]] && die "Instance name '$instance_name' has invalid characters [!A-Za-z0-9\-]"
@@ -132,6 +135,60 @@ if [[ ${DEBUG-} ]]; then
   echo "  razor_task     : $razor_task"
   echo "  hostname       : $hostname"
   echo "  root_password  : $root_password"
+fi
+
+# Lookup language packs early
+# NB: metadata is only injected once a razor node is defined later.
+language_packs=()
+langpack_locales=$( jq -c -r '.langpack_locales // empty'   <<<"$instance_metadata" )
+
+if [[ -n $langpack_locales ]]; then
+
+  if [[ $box_type = 'windows' ]]; then
+
+          mount_point=$( jq -c -e -e '.mount_point' <<<"$image_metadata" )
+        major_version=$( jq -c -r -e '.major_version'     <<<"$image_metadata" )
+        minor_version=$( jq -c -r    '.minor_version // empty' <<<"$image_metadata" )
+        build_version=$( jq -c -r    '.build         // empty' <<<"$image_metadata" )
+         architecture=$( jq -c -r -e '.architecture'      <<<"$image_metadata" )
+    installation_type=$( jq -c -r -e '.installation_type' <<<"$image_metadata" )
+
+    minor_version="${minor_version:-0}"
+    build_version="${build_version:-0}"
+    [[ $architecture = 'x86_64' ]] && architecture='amd64'
+
+    IFS=';,' read -a locales <<<"$langpack_locales"
+    for locale in "${locales[@]}"; do
+
+      # Favour language packs from the install media
+      lp_cab="$mount_point/langpacks/${locale,,}/lp.cab"
+      if [[ -e $lp_cab ]]; then
+        url=$( file_url "$lp_cab" )
+        language_packs+=( "$locale=$url" )
+        continue
+      fi
+
+      # Lookup language packs from catalog
+      candidate_langpacks=()
+      while read json; do
+        l=$( jq -c -r -e '.locale' <<<"$json" )
+        u=$( jq -c -r -e '.url'    <<<"$json" )
+        candidate_langpacks+=( "$l=$u" )
+      done < <(vizor windows langpack find -Q                      \
+           'language:'"$locale"' AND version:'"$major_version.$minor_version.$build_version"'* AND architecture:'"$architecture"' AND name:*'"$installation_type"'*'  |
+             jq -c -e 'select(.language=="'"${locale,,}"'") | {modify_time:.modify_time, url:.url, locale:.language}' | sort -nr
+        )
+
+      if (( ${#candidate_langpacks[@]-} == 0 )); then
+        die "No candidate language packs found for locale '$locale'"
+      elif (( ${#candidate_langpacks[@]} > 1 )); then
+        warn "Multiple (${#candidate_langpacks[@]}) candidate langpacks locale '$locale', selecting newest. (${candidate_langpacks[0]})."
+      fi
+
+      language_packs+=( "${candidate_langpacks[0]}" )
+
+    done
+  fi
 fi
 
 # create instance
@@ -200,13 +257,14 @@ case "$container_type" in
 
   xenserver)
                  host=$( jq -c -e -r '.host'                <<< "$container_def" )
-             iso_name=$( jq -c -e -r '.iso_name'            <<< "$container_def" )
+             iso_name=$( jq -c    -r '.iso_name // empty'   <<< "$container_def" )
+             iso_name="${iso_name:-ipxe.iso}"
     memory_static_max=$( jq -c -e -r '.memory_static_max'   <<< "$container_def" )
     memory_static_min=$( jq -c -e -r '.memory_static_min'   <<< "$container_def" )
               sr_name=$( jq -c    -r '.sr_name // empty'    <<< "$container_def" )
         template_name=$( jq -c -e -r '.name_label'          <<< "$container_def" )
      VCPUs_at_startup=$( jq -c -e -r '.VCPUs_at_startup'    <<< "$container_def" )
-           vdisk_size=$( jq -c -e -r '.disk_size'           <<< "$container_def" )
+           vdisk_size=$( jq -c -e -r '.vdisk_size'          <<< "$container_def" )
            vm_network=$( jq -c    -r '.vm_network // empty' <<< "$container_def" )
            vm_network="${vm_network:-eth0}"
 
@@ -214,14 +272,16 @@ case "$container_type" in
       export TERM="$TERM"
       iso_name='$iso_name'                    \
       memory_static_max='$memory_static_max'  \
+      memory_dynamic_max='$memory_static_max' \
       memory_static_min='$memory_static_min'  \
+      memory_dynamic_min='$memory_static_min' \
       sr_name='$sr_name'                      \
-      VCPUs_at_startup='$VCPUs_at_startup'    \
+      vcpus_at_startup='$VCPUs_at_startup'    \
       vdisk_size='$vdisk_size'                \
-      vm_description='$instance_name'         \
+      vm_description='$instance_name ($box_name/$template_name). Created on $(date) on $(hostname -f)'  \
       vm_name='$instance_name'                \
       vm_network='$vm_network'                \
-      template_name='$template_name'          \
+      template_name='^$template_name$'        \
       xe_vm_create -S
     " )
 
@@ -257,10 +317,20 @@ node_id=$( curl -sSL 'http://localhost:8080/api/collections/tags/'"$mac_address"
 
 node_def=$(curl -sSL 'http://localhost:8080/api/collections/nodes/'"$node_id" | jq '.')
 
+# Inject metadata for instance
 log "Setting node metadata for '$node_id' (${#instance_metadata})"
 vizor razor node metadata define  \
   -n "$node_id"                   \
   -m "$instance_metadata" | debug_handler
+
+# Inject language packs metadata
+if (( ${#language_packs[@]} > 0 )); then
+  log "Injecting language pack metadata : ${language_packs[@]}"
+  language_packs_str=$( join_array ',' ${language_packs[@]} )
+  vizor razor node metadata define \
+    -n "$node_id" \
+    -m '{"language_packs": "'"$language_packs_str"'"}' | debug_handler
+fi
 
 # start instance
 log "Starting $container_type instance '$instance_id'"
@@ -272,12 +342,61 @@ case "$container_type" in
       vm_start_def=$( jq -e 'del(.jobresult.virtualmachine)' <<<"$vm_start_def" )
     fi
   ;;
+
   xenserver)
     "$host" "xe vm-start uuid='$instance_id'"
     vm_start_def=$( jq -c -e -r '.start_time = "'"$(date +%s)"'"' <<<"{}" )
   ;;
 esac
 
+
+# Wait for node to register in with razor
+declare max_tries=60 try=0
+while ! curl -ssfL "http://localhost:8080/api/collections/nodes/$node_id/log" |
+  jq -e '.items[] | select(.event=="boot")' >/dev/null; do
+    (( try++ )) || true
+    (( try > max_tries )) && die "VM did not boot after $try tries?"
+    printf '.'
+    sleep 3
+done
+
+# Insert VM GuestTools ISO
+case "$container_type" in
+  cloudstack)
+    case "$hypervisor" in 
+      XenServer|VMWare)
+        case "$hypervisor" in
+          XenServer) tools_iso='xs-tools.iso'
+            ;;
+          VMWare) tools_iso='vmware-tools.iso'
+            ;;
+        esac
+
+        log "Insert VM Guest Tools ISO '$tools_iso'"
+        if ! guest_tools_def=$( cloudmonkey list isos isofilter=featured isready=true listall=true keyword="$tools_iso" |
+          jq -c -r -e 'select(.count==1)' ) ec=$?; then
+          die "Unable to locate id for xs-tools.iso, ec : $ec"
+        else
+          iso_id=$( jq -c -r -e '.iso[0].id' <<<"$guest_tools_def" )
+          guest_tools_detach_def=$( cloudmonkey detach iso virtualmachineid="$instance_id"              | sed -r '1d' )
+          guest_tools_attach_def=$( cloudmonkey attach iso virtualmachineid="$instance_id" id="$iso_id" | sed -r '1d' )
+        fi
+      ;;
+      *)
+        warn "Unrecognized/unimplemented hypervisor type '$hypervisor'. No tools ISO will be inserted"
+      ;;
+    esac
+  ;;
+  xenserver)
+    log "Insert VM Guest Tools ISO 'xs-tools.iso'"
+    "$host" xe vm-cd-eject  uuid="$instance_id"
+    guest_tools_detach_def=$( jq -c -e -r '.start_time = "'"$(date +%s)"'"' <<<"{}" )
+    "$host" xe vm-cd-insert uuid="$instance_id" cd-name=xs-tools.iso
+    guest_tools_attach_def=$( jq -c -e -r '.start_time = "'"$(date +%s)"'"' <<<"{}" )
+  ;;
+esac
+
+# Gather instance metadata
 master_doc='{}'
       name="$instance_name"
         id="$instance_id"
@@ -334,4 +453,6 @@ if ! ret=$(curl -fsSL -X PUT "$instance_url" -d "$master_doc") ec=$?; then
 fi
 
 log "Updated instance data at '$instance_url'"
+
+echo ''
 
