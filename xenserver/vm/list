@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   List VMs on a XenServer host/pool
+
+declare host="${HOST:-$XENSERVER_HOST}"
+
+source defaults.sh
+source utils.sh
+
+declare name_regex= do_shutdown=
+
+while getopts ":H:hn:s" opt; do
+  case $opt in
+    H) host="$OPTARG"
+      ;;
+    n) name_regex="$OPTARG"
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented option $OPTARG"
+      ;;
+  esac
+done
+
+[[ $host ]] || die "No host (-H) specified."
+
+{
+  echo 'uuid,name-label,power-state,install-time,memory-static-max,vcpus-max,pv-drivers-up-to-date'
+  "$host" '
+      xe vm-list is-control-domain=false is-a-template=false is-a-snapshot=false params= |
+        xe_grep "print join q[,], uuid,name_label,power_state,install_time,memory_static_max,VCPUs_max,PV_drivers_up_to_date if name_label =~ /'"$name_regex"'/"
+    '
+} | csv_to_table
