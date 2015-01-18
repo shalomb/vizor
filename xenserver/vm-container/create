@@ -1,4 +1,5 @@
 #!/bin/bash 
+
 # SYNOPSIS
 #   Create xenserver container definitions
 
@@ -21,13 +22,13 @@ declare                                    \
 source defaults.sh
 source utils.sh
 
-while getopts ":c:d:h:I:i:m:M:n:N:s:t:" opt; do
+while getopts ":c:d:H:hI:i:m:M:n:N:s:t:" opt; do
   case "$opt" in
     c) VCPUs_at_startup="$OPTARG"
       ;;
     d) vdisk_size="$OPTARG"
       ;;
-    h) host="$OPTARG"
+    H) host="$OPTARG"
       ;;
     I) install_template="$OPTARG"
       ;;
@@ -45,13 +46,17 @@ while getopts ":c:d:h:I:i:m:M:n:N:s:t:" opt; do
       ;;
     t) type='xenserver'
       ;;
+    h) show_help; exit 3;
+      ;;
     *) die "Unrecognized/unimplemented option '$opt'"
       ;;
   esac
 done
 
+[[ -n $container_name ]] || die "No container name (-n) specified."
+
 if [[ -n $install_template ]]; then
-  container_def=$( curl -fsSL "http://localhost:5984/install-template/$install_template" )
+  container_def=$( curl -fsSL "http://localhost:5984/install-template/$install_template" | jq 'del(._rev) | .' )
 else
   container_def='{}'
 fi
