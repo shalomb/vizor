@@ -1,5 +1,8 @@
 #!/bin/bash
 
+export TERM="${TERM:-rxvt}"
+[[ $TERM = screen* ]] && TERM="rxvt"
+
 source colours.sh
 
 function print_stacktrace() {
