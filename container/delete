@@ -10,5 +10,5 @@ _rev=( $(curl -sS -f 'http://localhost:5984/container/'"$id?revs_info=true" | jq
 [[ -z ${_rev-} ]] && exit
 
 for rev in "${_rev[@]}"; do
-  curl -sS -f -X DELETE "http://localhost:5984/container/$id?rev=$rev"
+  curl -sS -f -X DELETE "http://localhost:5984/container/$id?rev=$rev" | jq -S '.'
 done
