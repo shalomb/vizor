@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Convert VMs to Instant Templates
+
+declare vm_action="${0##*/}"
+declare host="${HOST:-$XENSERVER_HOST}"
+
+source defaults.sh
+source utils.sh
+
+declare name_regex= do_shutdown= force=false
+
+while getopts ":H:fhn:" opt; do
+  case $opt in
+    H) host="$OPTARG"
+      ;;
+    n) name_regex="$OPTARG"
+      ;;
+    f) force=true
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented option $OPTARG"
+      ;;
+  esac
+done
+
+[[ $host ]]       || die "No host (-H) specified."
+[[ $name_regex ]] || die "No name regex (-n) specified"
+
+"$host" '
+  xe vm-list is-control-domain=false is-a-template=false \
+               is-a-snapshot=false params= |
+      xe_grep "print uuid,name_label if name_label =~ /'"$name_regex"'/" |
+      while read uuid name; do
+        echo "xe vm-param-set uuid=$uuid is-a-template=true # name-label=$name" >&2
+        xe vm-param-set uuid="$uuid" is-a-template=true
+        xe template-param-set uuid="$uuid" other-config:instant=true
+      done
+'
+
