@@ -306,7 +306,7 @@ function Get-XenPVInstallStatus {
 
   $OSArchitecture = (Gwmi Win32_OperatingSystem).OSArchitecture
 
-  $InstallStatus = 'Unknown'
+  $InstallStatus = $False
   try {
     if ( $OSArchitecture -imatch '64' ) {
       if (Test-Path ($XTIPath = 'HKLM:\Software\Wow6432Node\Citrix\XenToolsInstaller')) {
@@ -328,6 +328,8 @@ function Get-XenPVInstallStatus {
 
   $Status = New-Object PSObject
   $Status | Add-Member NoteProperty InstallStatus       $InstallStatus
+  $Status | Add-Member NoteProperty OSArchitecture      $OSArchitecture
+
   try {
     $Status | Add-Member NoteProperty RebootStatus      'Unknown'
     if ($cxsis = Gwmi -NameSpace 'root\citrix\xenserver\agent' -Class 'CitrixXenServerInstallStatus' -ea 0) {
