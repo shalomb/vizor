@@ -4,14 +4,13 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'STOP'
 $PSModuleAutoLoadingPreference='None'
 
-Set-PSDebug -Trace 0
-
 Import-Module Microsoft.PowerShell.Host       -ea 0
 Import-Module Microsoft.PowerShell.Management -ea 0
 Import-Module Microsoft.PowerShell.Utility    -ea 0
 
 $ScriptDir = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).Directory.FullName
 
+Set-PSDebug -Trace 0
 Write-Host -Fore Cyan "Begin firstboot script"
 
 # Files to be downloaded from the razor task
@@ -19,6 +18,7 @@ Write-Host -Fore Cyan "Begin firstboot script"
   files = ([
      file_url('metadata.ps1'),
      file_url('l18n.xml'),
+     file_url('sysprep.xml'),
      file_url('nodeprep.seq.ps1'),
      file_url('imageprep.zip', true),
      file_url('unzip.exe', true),
@@ -37,13 +37,14 @@ Write-Host -Fore Cyan "Begin firstboot script"
 
 cd $ScriptDir
 
+Write-Host -Fore Cyan "Downloading firstboot files"
 foreach ($url in $files) {
   $file = ($url -split "/")[-1]
   rm -Force $file -ea 0
   ($retry, $retry_count) = ($False, 0)
   do {
     try{
-      Write-Host -Fore Cyan "  * Download $url"
+      Write-Host -Fore Cyan "  * Download $url -> $file"
       (New-Object System.Net.WebClient).DownloadFile($url, $file)
     } catch{
       Write-Host -Fore Red "  Failed to download $url"; # Not set to Warning due to EAP
@@ -54,18 +55,43 @@ foreach ($url in $files) {
   } while($retry -and ($retry_count -le 10))
 }
 
-reg.exe add "HKCU\Control Panel\International" /f
-reg.exe add "HKCU\Control Panel\International\User Profile" /f
+# Download Language Packs into language_packs/
+$language_packs = @{}
+<%=
+  if node.metadata.has_key?('language_packs')
+    '$language_packs = @{
+      %s
+    };' % (node.metadata['language_packs'].split(/\s*[;,]\s*/).each.collect {
+      |lp|
+      (locale, url) = lp.split(/=/)
+      %q{"%s"="%s";} % [locale, url]
+    }).join("\n\t")
 
-if (Test-Path 'lp.cab') {
-  Write-Host -Fore Cyan " Installing language pack - Dism /online /Add-Package /PackagePath:lp.cab"
-  Dism /online /Add-Package /PackagePath:lp.cab
+  end
+%>
+
+Write-Host -Fore Cyan "Downloading language packs"
+mkdir 'language_packs' -ea 0 | Out-Null
+foreach ($locale in $language_packs.keys) {
+  $url  = $language_packs.($locale)
+  $file = "{0}-{1}" -f $locale, (($url -split "/")[-1])
+
+  $file = Join-Path 'language_packs' $file
+  rm -Force $file -ea 0
+
+  ($retry, $retry_count) = ($False, 0)
+  do {
+    try{
+      Write-Host -Fore Cyan "  * Download language pack $url -> $file"
+      (New-Object System.Net.WebClient).DownloadFile($url, $file)
+    } catch{
+      Write-Host -Fore Red "  Failed to download $url"; # Not set to Warning due to EAP
+      $retry=$True
+      $retry_count++
+      sleep 1
+    }
+  } while($retry -and ($retry_count -le 10))
 }
-
-# reg.exe add 'HKCU\Control Panel\International
-$f = '/f:"{0}"' -f (ls l18n.xml).FullName
-Write-Host -Fore Magenta "Applying l18n settings - control.exe 'intl.cpl,,' $f"
-control.exe 'intl.cpl,,' $f
 
 $SequenceFile = Join-Path $PWD 'nodeprep.seq.ps1'
 
@@ -133,8 +159,9 @@ if not exist Resume-ImagePrep.ps1 (
   exit
 )
 
-start "Resume-ImagePrep.ps1" /b /wait /realtime !SystemRoot!\System32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -file Resume-ImagePrep.ps1
+start "Resume-ImagePrep.ps1" /b /wait /realtime cmd.exe /k !SystemRoot!\System32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -file Resume-ImagePrep.ps1
 
+cd !THISDIR!
 exit /b !ERRORLEVEL!
 '@
 
@@ -151,7 +178,7 @@ $CmdLet   | Out-File -encoding ASCII $CmdFile -Force
 # Register runner to run at every boot - until deleted
 reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v $CmdFile /t REG_SZ /d $CmdFile
 
-
+# Start runner
 try {
   & $CmdFile
 } catch {
