@@ -46,6 +46,7 @@ esac
 for task in "$DIR/../razor/task"/winpe.task/; do
   task_name="${task%/}"
   target_dir="$RAZOR_ROOT/tasks/${task_name##*/}/"
+  mkdir -pv "$target_dir"
   rsync -a "$task/" "$target_dir/"
   ( cd "$target_dir/imageprep" && zip -r ../imageprep.zip ./ )
 done
@@ -91,6 +92,7 @@ waik_dir=( $( mount-point -k device -v KB3AIK_EN.iso -f directory ) )
 # Overlay the task dir with necessary binaries
 winpe_task_dir="$RAZOR_ROOT/tasks/winpe.task"
 log "Installing binaries into task dir $winpe_task_dir ..."
+mkdir -p "$winpe_task_dir"
 cp -av wimboot unzip.exe zip.exe "$winpe_task_dir"
 
 for arch in 'x86_64' 'x86'; do
