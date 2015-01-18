@@ -26,7 +26,8 @@ memory_dynamic_max="${memory_dynamic_max:-$memory_static_max}"
 memory_dynamic_min="${memory_dynamic_min:-$memory_static_min}"
 sr_name="$sr_name"
 template_name="$template_name"
-vcups_at_startup="$vcups_at_startup"
+vcpus_at_startup="$vcpus_at_startup"
+vcpus_max="${vcpus_max:-$vcpus_at_startup}"
 vdisk_size="$vdisk_size"
 vm_description="$vm_description"
 vm_name="$vm_name"
@@ -46,7 +47,8 @@ ${0##*/} [options]
 
   -a mac_address
   -B bootloader_type
-  -c vcups_at_startup
+  -c vcpus_at_startup
+  -C vcpus_max
   -d vm_description
   -H master_vhd_file
   -i iso_name
@@ -65,11 +67,13 @@ ${0##*/} [options]
 EOF
 }
 
-while getopts "a:c:d:i:m:n:p:r:s:t:v:B:D:H:V:TSN" opt; do
+while getopts "a:c:C:d:i:m:n:p:r:s:t:v:B:D:H:V:TSN" opt; do
   case $opt in
     a) mac_address="$OPTARG"
       ;;
-    c) vcups_at_startup="$OPTARG"
+    C) vcpus_max="$OPTARG"
+     ;;
+    c) vcpus_at_startup="$OPTARG"
      ;;
     d) vm_description="$OPTARG"
       ;;
@@ -115,7 +119,6 @@ candidate_network=()
 candidate_network+=( $( xe network-list | \
   xe_grep 'print uuid if name_label =~ /'"$vm_network"'/' ) )
 
-set -xv
 if (( ${#candidate_network[@]-} != 1 )); then
   for c in ${candidate_network[@]-}; do
     xe network-list uuid="$c" | xe_grep 'print "  * network : ",uuid,name_label'
@@ -162,7 +165,7 @@ if (( ${#candidate_template[@]-} != 1 )); then
   for c in ${candidate_template[@]}; do
     xe template-list uuid="$c" | xe_grep 'print "  * template : ",uuid,name_label'
   done
-  die "${#candidate_template[@]-} templates found for regex '$template_name' .. cannot proceed." >&2
+  die "${#candidate_template[@]-} templates found for regex '$template_name' (${candidate_template[@]}) .. cannot proceed." >&2
 fi
 # candidate_template=${candidate_template}
 
@@ -176,8 +179,8 @@ if [[ ! $vm_name ]]; then
   vm_name="${vm_name%_}"
 fi
 
-[[ $vcups_at_startup ]]   || \
-  vcups_at_startup=$(xe_grep 'print VCPUs_at_startup' <<<"$template_params")
+[[ $vcpus_at_startup ]]   || \
+  vcpus_at_startup=$(xe_grep 'print VCPUs_at_startup' <<<"$template_params")
 
 [[ $memory_static_min ]]  || \
   memory_static_min=$(xe_grep 'print memory_static_min' <<<"$template_params")
@@ -185,7 +188,7 @@ fi
 [[ $memory_static_max ]]  || \
   memory_static_max=$(xe_grep 'print memory_static_max' <<<"$template_params")
 
-[[ $vdisk_size ]]         || \
+[[ $vdisk_size ]] || \
   vdisk_size=$(xe_grep 'print other_config =~ /disk .*size="(\d+)"/i' <<<"$template_params")
 
 if [[ ! $vm_description ]]; then
@@ -249,7 +252,7 @@ cat <<EOF
          master_vdi_uuid : $master_vdi_uuid
          master_vhd_file : $master_vhd_file
      ha_restart_priority : $ha_restart_priority
-        vcups_at_startup : $vcups_at_startup
+        vcpus_at_startup : $vcpus_at_startup
        memory_static_min : $memory_static_min
        memory_static_max : $memory_static_max
               vdisk_size : $vdisk_size
@@ -273,12 +276,19 @@ vm_uuid=$(xe vm-install template="$candidate_template" new-name-label="$vm_name"
 
 [[ $ha_restart_priority ]] && \
   xe vm-param-set uuid="$vm_uuid" ha-restart-priority=restart order="$ha_restart_priority"
-xe vm-param-set uuid="$vm_uuid" VCPUs-max="$vcups_at_startup"
-xe vm-param-set uuid="$vm_uuid" VCPUs-at-startup="$vcups_at_startup"
-xe vm-param-set uuid="$vm_uuid" memory-static-max="$memory_static_max" \
-                memory-dynamic-max="$memory_static_max" \
-                memory-dynamic-min="$memory_static_max"
-xe vm-param-set uuid="$vm_uuid" HVM-boot-params:order=dcn # dcn = disk,cdrom,network
+xe vm-param-set uuid="$vm_uuid" VCPUs-max="$vcpus_max"
+xe vm-param-set uuid="$vm_uuid" VCPUs-at-startup="$vcpus_at_startup"
+
+xe vm-param-set uuid="$vm_uuid"  memory-static-min=0
+xe vm-param-set uuid="$vm_uuid"  memory-dynamic-min=0
+xe vm-param-set uuid="$vm_uuid"  memory-dynamic-max=0
+
+xe vm-param-set uuid="$vm_uuid"  memory-static-max="$memory_static_max"
+xe vm-param-set uuid="$vm_uuid"  memory-dynamic-max="$memory_dynamic_max"
+xe vm-param-set uuid="$vm_uuid"  memory-dynamic-min="$memory_dynamic_min"
+xe vm-param-set uuid="$vm_uuid"  memory-static-min="$memory_static_min"
+
+xe vm-param-set uuid="$vm_uuid"  HVM-boot-params:order=dcn # dcn = disk,cdrom,network
 
 echo "                 vm_uuid : $vm_uuid"
 
