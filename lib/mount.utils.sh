@@ -1,6 +1,9 @@
 #!/bin/bash
 
-source apache.sh
+# TODO : apache.sh is not available on remote hosts
+source apache.sh 2>/dev/null || true
+
+DOCUMENT_ROOT="${DOCUMENT_ROOT:-/mnt}"
 
 function mount_iso {
   local file="$1"
@@ -11,7 +14,7 @@ function mount_iso {
     return
   fi
 
-  # Probably need a better way to do this
+  # TODO: Probably need a better way to do this
   if ! losetup -f &>/dev/null; then
     max=0; for i in /dev/loop[0-9]*; do i="${i##*loop}"; (( max = i > max ? i : max )); done 
     next_loop_id=$(( 1 + max ))
@@ -33,8 +36,9 @@ function mount_iso {
 
 function mount_url {
   local url="$1"
+  local mount_options="${2-}"
   local type="${url%://*}"
-  
+
   case "$type" in
     cifs)
       local username="${url#*://}"
@@ -66,7 +70,7 @@ function mount_url {
   else
     mount_point="$DOCUMENT_ROOT/src/${path//[!0-9A-Za-z\$\/_.,]/}"
   fi
- 
+
   [[ -e $mount_point ]] || mkdir -p "$mount_point" &>/dev/null
 
   is_mount_point_empty=0;   is_empty "$mount_point"      && is_mount_point_empty=1
@@ -76,12 +80,14 @@ function mount_url {
     mount_point="${mount_point//\/\///}"
     case "$type" in
       nfs)
-        if ! mount -t "$type" -o 'ro,bg,intr,soft,tcp'   "$hostname:$path"   "$mount_point"; then
+        mount_options="${mount_options:-ro,bg,intr,soft,tcp}"
+        if ! mount -t "$type" -o "$mount_options"       "$hostname:$path"   "$mount_point"; then
           die "mounting $hostname:$path to $mount_point failed."
         fi
       ;;
       cifs)
-        if ! mount -t "$type" -o 'ro,intr,directio,soft' "//$hostname/$path" "$mount_point" -o "username=${username},password=${password}"; then
+        mount_options="${mount_options:-ro,intr,directio,soft}"
+        if ! mount -t "$type" -o "$mount_options"       "//$hostname/$path" "$mount_point" -o "username=${username},password=${password}"; then
           die "mounting //$hostname/$path to $mount_point failed."
         fi
       ;;
@@ -96,7 +102,7 @@ function mount_url {
     esac
   fi
 
-  echo "$mount_point"
+  echo "${mount_point//\/\///}"
 }
 
 
