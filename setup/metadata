@@ -51,7 +51,7 @@ jq -S '.' <<EOF
   "support_hours"           : "9am - 5pm GMT",
   "support_phone"           : "support@$(hostname -d)",
   "support_url"             : "http://support.$(hostname -d)/",
- 
+
   "hostname"                : "*",
   "root_password"           : "P455w0rd",
   "administrative_user"     : "admin",
@@ -64,6 +64,7 @@ jq -S '.' <<EOF
   "colour_depth"            : "32",
   "dpi"                     : "96",
   "refresh_rate"            : "60",
+
   "sysprep"                 : "true",
   "localize"                : "true",
 
@@ -75,22 +76,34 @@ jq -S '.' <<EOF
 EOF
 )
 
-if ! result=$( curl -fsSL "http://localhost:5984/metadata/site" -X PUT -d "$metadata_doc" ) ec=$?; then
+for doc in site geo; do
+  curl -X GET "http://localhost:5984/metadata/$doc?revs_info=true" |
+    jq -r '._revs_info[0].rev' | 
+    while read rev; do
+      curl -sS -f -X DELETE "http://localhost:5984/metadata/$doc?rev=$rev" || true
+    done
+done
+
+if result=$( curl -fsSL "http://localhost:5984/metadata/site" -X PUT -d "$metadata_doc" ) ec=$?; then
+  jq -S '. * {url:"'"http://localhost:5984/metadata/site"'"}' <<<"$result"
+else
   die "Failed to set site metadata : $ec"
 fi
 
 public_ip=$(curl -fsSL --max-time 30 -X GET 'http://www.telize.com/ip')
    ip_api=$(curl -fsSL --max-time 30 -X GET 'http://ip-api.com/json' | jq -e '.')
-  free_ip=$(curl -fsSL --max-time 30 -X GET "http://freegeoip.net/json/$public_ip" | jq -e '.')
    ipinfo=$(curl -fsSL --max-time 30 -X GET "http://ipinfo.io/$public_ip" | jq -e '.')
+geoplugin=$(curl -fsSL --max-time 30 -X GET "http://www.geoplugin.net/json.gp?ip=$public_ip" | jq -e '.')
 
 printf -v geo_metadata_doc '{"public_ip":"%s"}' "$public_ip"
-[[ $ip_api  ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$ip_api") )
-[[ $free_ip ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$free_ip") )
-[[ $ipinfo  ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$ipinfo") )
+[[ $ip_api  ]]   && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$ip_api") )
+[[ $ipinfo  ]]   && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$ipinfo") )
+[[ $geoplugin ]] && geo_metadata_doc=$( jq -s '.[0] * .[1]' <(jq '.' <<<"$geo_metadata_doc") <(jq '.' <<<"$geoplugin") )
 
 if [[ $geo_metadata_doc ]]; then
-  if ! result=$( curl -fsSL "http://localhost:5984/metadata/geo" -X PUT -d "$geo_metadata_doc" ) ec=$?; then
+  if result=$( curl -fsSL "http://localhost:5984/metadata/geo" -X PUT -d "$geo_metadata_doc" ) ec=$?; then
+    jq -S '. * {url:"'"http://localhost:5984/metadata/geo"'"}' <<<"$result"
+  else
     die "Failed to set geo metadata : $ec"
   fi
 fi
