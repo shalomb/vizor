@@ -148,13 +148,13 @@ else {
     }
     else {
       Write-Warning "VMGuestTools did not install successfully"
-      sleep 3 # 0x20C49B # Max
+      sleep 0x20C49B # Max
     }
-  } 
+  }
   catch {
     $ErrMsg = "Install-VMGuestTools failed : $_"
     Write-Warning $ErrMsg
-    sleep 3 # 0x20C49B # Max
+    sleep 0xC49B # Max
     Throw $ErrMsg
   }
 }
