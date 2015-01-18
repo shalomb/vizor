@@ -11,8 +11,8 @@ while getopts ":k:" opt; do
 done
 
 {
-  echo 'id,name,display text,hypervisor,created'
+  echo 'id,name,hypervisor,created,isready,isfeatured,ispublic,ostypename'
   cloudmonkey list templates templatefilter=executable keyword="${keyword}" |
-    jq -c -r '.[][] | [.id,.name,.displaytext,.hypervisor,.created]' 2>/dev/null |
-    sort -t , -k 5 | sed -r 's/^\[|\]$//g'; 
+    jq -c -r '.[][] | [.id,.name,.hypervisor,.created,.isready,.isfeatured,.ispublic,.ostypename]' 2>/dev/null |
+    sort -t , -k 4 | sed -r 's/^\[|\]$//g';
 } | csv_to_table
