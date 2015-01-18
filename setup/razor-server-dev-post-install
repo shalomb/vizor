@@ -31,7 +31,6 @@ while getopts ":w:u:p:" opt; do
   esac
 done
 
-set -xv
 RAZOR_ROOT="$working_dir/razor-server-0.15.0"
 cd "$RAZOR_ROOT"
 
@@ -68,7 +67,6 @@ for env in \
       bin/razor-admin -e "$env" migrate-database
 done
 
-set -xv
 # # Download razor-microkernel
 # cd "$repo_root" 2>/dev/null
 # pwd && sleep 5
