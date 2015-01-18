@@ -3,17 +3,18 @@
   render_template('keyboard_language_map')
   render_template('geo_locations')
 
-  # node.metadata["geo_location"]  = "France"
-  # node.metadata["system_locale"] = "en-GB"
-  # node.metadata["ui_language"]   = "en-GB"
-  # node.metadata["user_locale"]   = "en-GB"
-  # node.metadata["input_locale"]  = "en-GB"
   <<-eos
-      geo_location : #{ node.metadata['geo_location']  ||= node.metadata['default_geo_location'] }
-     system_locale : #{ node.metadata['system_locale'] ||= node.metadata['default_language'] }
-       ui_language : #{ node.metadata['ui_language']   ||= node.metadata['default_language'] }
-  default_language : #{ node.metadata['user_locale']   ||= node.metadata['default_language'] }
-      input_locale : #{ node.metadata['input_locale']  ||= node.metadata['default_language'] }
+  default_language : #{ node.metadata['default_language'] }
+    default_locale : #{ node.metadata['default_locale']  ||= node.metadata['default_language']     ||= 'en-US'         }
+      geo_location : #{ node.metadata['geo_location']    ||= node.metadata['default_geo_location'] ||= 'United States' }
+     system_locale : #{ node.metadata['l18n_system_locale']   ||= node.metadata['default_locale'] }
+       ui_language : #{ node.metadata['l18n_ui_language']     ||= node.metadata['default_locale'] }
+       user_locale : #{ node.metadata['l18n_user_locale']     ||= node.metadata['default_locale'] }
+      input_locale : #{
+        node.metadata['l18n_input_locale'] ||=      node.metadata['default_locale']
+        node.metadata['l18n_input_locale'] += ';' + node.metadata['default_locale']
+        node.metadata['l18n_input_locale'] += ';' + node.metadata['default_locale']
+      }
 eos
 %>
 -->
@@ -22,6 +23,9 @@ eos
   'How to Automate Regional and Language settings'
   http://support.microsoft.com/kb/2764405
 -->
+
+<!-- control intl.cpl,, /f:"filename.xml" -->
+<!-- Dism /online /Add-Package /PackagePath:C:\test\LangPacks\lp.cab -->
 
 <gs:GlobalizationServices xmlns:gs="urn:longhornGlobalizationUnattend">
 
@@ -37,7 +41,7 @@ eos
 
   <!-- system_locale : <%= node.metadata['system_locale'] %> -->
   <%=
-    (node.metadata['system_locale'].split(/\s*[;,]\s*/).collect { |locale|
+    (node.metadata['l18n_system_locale'].split(/\s*[;,]\s*/).collect { |locale|
       # '<gs:Locale Name="%s" SetAsCurrent="true" ResetAllSettings="true"/>' % locale
       '<gs:SystemLocale Name="%s"/>' % locale
     }).join("\r\n\t")
@@ -46,7 +50,7 @@ eos
   <!-- ui_language : <%= node.metadata['ui_language'] %> -->
   <gs:MUILanguagePreferences>
     <%=
-      (node.metadata['ui_language'].split(/\s*[;,]\s*/).collect { |locale|
+      (node.metadata['l18n_ui_language'].split(/\s*[;,]\s*/).collect { |locale|
         '<gs:MUILanguage Value="%s"/>' % locale
       }).join("\r\n\t")
     %>
@@ -56,7 +60,7 @@ eos
   <gs:UserLocale>
     <%=
       default_str=nil
-      (node.metadata['user_locale'].split(/\s*[;,]\s*/).collect { |locale|
+      (node.metadata['l18n_user_locale'].split(/\s*[;,]\s*/).collect { |locale|
         default_str = (default_str =~ /^(?:true|false)$/ ? 'false' : 'true')
         '<gs:Locale Name="%s" SetAsCurrent="%s" ResetAllSettings="true"/>' %
           [ locale, default_str ]
@@ -64,12 +68,11 @@ eos
     %>
   </gs:UserLocale>
 
-  <!-- test         : <%= node.metadata['foo'] %> -->
   <!-- input_locale : <%= node.metadata['input_locale'] %> -->
   <gs:InputPreferences>
     <%=
       default_str=nil
-      (node.metadata['input_locale'].split(/\s*[;,]\s*/).collect { |locale|
+      (node.metadata['l18n_input_locale'].split(/\s*[;,]\s*/).collect { |locale|
         get_keyboard_language_pair('locale', locale).collect{ |pair|
           pair.each.collect{ |id|
             '<gs:InputLanguageID Action="add" ID="%s" %s/>' %
@@ -83,7 +86,4 @@ eos
   </gs:InputPreferences>
 
 </gs:GlobalizationServices>
-
-<!-- control intl.cpl,, /f:"filename.xml" -->
-<!-- Dism /online /Add-Package /PackagePath:C:\test\LangPacks\lp.cab -->
 
