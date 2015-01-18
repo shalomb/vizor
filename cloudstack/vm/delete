@@ -21,7 +21,7 @@ while getopts ":hi:n:" opt; do
   esac
 done
 
-[[ -z $vm_id && -z $vm_name ]] && die "Neither VM name (-n) nor VM id (-i) not specified."
+[[ -z $vm_id && -z $vm_name ]] && die "Neither VM name (-n) nor VM id (-i) specified."
 
 if [[ $vm_name ]]; then
   vm=$(cloudmonkey list virtualmachines keyword="$vm_name" filter=name,id)
