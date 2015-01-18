@@ -1,0 +1,152 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Export Templates/VMs as XVAs
+
+declare host="${HOST:-$XENSERVER_HOST}"
+
+source defaults.sh
+source utils.sh
+
+declare name_regex= destination_dir= include_vms= export_metadata=0 export_vhd=0 \
+        export_xva=0 context="${SCRIPT##*/}"
+
+case "$context" in
+  vhd) export_vhd=1
+    ;;
+  xva) export_xva=1
+    ;;
+  *) die "Unrecognized context $context"
+    ;;
+esac
+
+while getopts ":H:fhn:mo:Vv" opt; do
+  case $opt in
+    H) host="$OPTARG"
+      ;;
+    m) export_metadata=1
+      ;;
+    n) name_regex="$OPTARG"
+      ;;
+    o) destination_dir="$OPTARG"
+      ;;
+    V) include_vms=1
+      ;;
+    v) export_vhd=1
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented option -$OPTARG"
+      ;;
+  esac
+done
+
+[[ $host ]]            || die "No host (-H) specified."
+[[ $name_regex ]]      || die "No name regex (-n) specified"
+[[ $destination_dir ]] || die "No destination directory (-d) specified."
+
+"$host" destination_dir="$destination_dir" include_vms="$include_vms" \
+  export_metadata="$export_metadata" export_vhd="$export_vhd" '
+  # set -eu 
+
+  if [[ ! -d $destination_dir ]]; then
+    if mkdir -p "$destination_dir"; then
+      chmod a+r,g+sx,o+x        "$destination_dir"
+      chown nfsnobody:nfsnobody "$destination_dir" || true
+    else
+      echo "ERROR: Could not create directory '\''$destination_dir'\'' on $HOSTNAME. $?" >&2
+      exit 5
+    fi
+  fi
+
+  if [[ ! -w $destination_dir ]]; then
+    echo "ERROR : '\''$destination_dir'\'' on $HOSTNAME is not writable. Aborting."
+  fi
+
+  function ISO8601ts() { echo "$(date --rfc-3339=ns | tr '\'' '\'' T)"; }
+  TIMEFORMAT="$(ISO8601ts) $0 : "$'\''Real %R\tUser %U\tSys %S\tCPU %P'\''
+
+  {
+    (( include_vms == 1 )) &&
+      xe vm-list is-control-domain=false is-a-template=false \
+                 is-a-snapshot=false params=
+    xe template-list params=
+  } |
+      xe_grep "print uuid,name_label if name_label =~ /'"$name_regex"'/" |
+      while read uuid name; do
+
+        time {
+          if (( export_vhd == 1 )); then
+
+            xe vbd-list vm-uuid="$uuid" type=Disk params= |
+              xe_grep '\''print uuid,vdi_uuid,userdevice,vm_name_label'\'' |
+              while read vbd_uuid vdi_uuid userdevice vm_name_label; do
+                echo "$(ISO8601ts) $0 : Copying $vdi_uuid ($vm_name_label/$vdi_uuid)" >&2
+
+                is_new_vdi=0
+
+                sr_uuid=$( xe vdi-list uuid="$vdi_uuid" params=sr-uuid --minimal )
+                parent_vdi=$( xe vdi-list uuid="$vdi_uuid" params=sm-config --minimal )
+
+                if grep -iq "vhd-parent" <<<"$parent_vdi"; then
+                  # This VDI is a child, we require a coalesced VDI, so we copy
+                  is_new_vdi=1
+                  echo -n "Copying VDI $vdi_uuid ... "
+                  new_vdi_uuid=$(xe vdi-copy uuid="$vdi_uuid" sr-uuid="$sr_uuid")
+                  echo "  $new_vdi_uuid"
+                else
+                  # Parent
+                  new_vdi_uuid="$vdi_uuid"
+                fi
+
+                mkdir -p   "$destination_dir/xen"
+                chmod g+rwxs,o+rx "$destination_dir/xen"
+
+                rsync -tOP   "/var/run/sr-mount/$sr_uuid/$new_vdi_uuid.vhd" \
+                             "$destination_dir/xen/"
+
+                chmod a+r                 "$destination_dir/xen/$new_vdi_uuid.vhd"
+                chown nfsnobody:nfsnobody "$destination_dir/xen/$new_vdi_uuid.vhd" || true
+
+                metadata_file="$destination_dir/xen/$vm_name_label.${userdevice}.metadata.xml"
+                [[ -e $metadata_file ]] && rm -f "$metadata_file" || true
+                xe template-export template-uuid="$uuid" metadata=true filename="$metadata_file" >&2
+                chmod a+r                 "$metadata_file"
+                chown nfsnobody:nfsnobody "$metadata_file" || true
+
+                file="$vm_name_label.${userdevice}.vhd"
+                if cd "$destination_dir"; then
+                  ln -sf            "xen/$new_vdi_uuid.vhd" "$file"
+                fi
+
+                if cd "$destination_dir/xen"; then
+                  [[ $new_vdi_uuid != $vdi_uuid ]] &&
+                    ln -sf   "$new_vdi_uuid.vhd" "$vdi_uuid.vhd"
+                fi
+
+                (( is_new_vdi == 1 )) &&
+                  echo "destroying temporary vdi $new_vdi_uuid" &&
+                    xe vdi-destroy uuid="$new_vdi_uuid"
+
+                echo "$file"
+              done
+
+          else
+            if (( export_metadata == 1 )); then
+              echo "$(ISO8601ts) $0 : xe template-export template-uuid=$uuid metadata=true # name-label=$name" >&2
+              file="$destination_dir/$name.metadata.xml"
+              xe template-export template-uuid="$uuid" filename="$file" metadata=true >&2
+            else
+              file="$destination_dir/$name.xva"
+              xe template-export template-uuid="$uuid" filename="$file" >&2
+            fi
+
+            chmod a+r  "$file"
+            chown nfsnobody:nfsnobody "$file" || true
+
+            echo "$file"
+          fi
+        }
+      done
+'
+
