@@ -5,7 +5,7 @@ source utils.sh
 
 declare instance_id= template_name= is_featured=false is_public=false snapshot_id= volume_id=
 
-while getopts ":fi:n:p" opt; do
+while getopts ":fhi:n:p" opt; do
   case $opt in
     i) instance_id="$OPTARG"
       ;;
@@ -14,6 +14,8 @@ while getopts ":fi:n:p" opt; do
     f) is_featured=true
       ;;
     p) is_public=true
+      ;;
+    h) show_help; exit 3;
       ;;
   esac
 done
