@@ -10,10 +10,6 @@
     RequiredModules         = @('ModuleUtils')
     ScriptsToProcess        = @('Register-Dependencies.ps1')
     ModuleList              = @(
-      @{  ModuleName        = 'CDRom';
-          ModuleVersion     = '1.0.0.0';
-          GUID              = '71df0f2f-2cef-4f55-a246-c8b8f89046a6'
-      },
       @{  ModuleName        = 'XenTools';
           ModuleVersion     = '1.0.0.0';
           GUID              = '8d22586c-1501-48ad-897d-c1b5988d21bc'
@@ -25,6 +21,10 @@
       @{  ModuleName        = 'HyperVIC';
           ModuleVersion     = '1.0.0.0';
           GUID              = '8346f5e1-a051-43e5-9a4c-2eab8916f788'
+      },
+      @{  ModuleName        = 'CDRom';
+          ModuleVersion     = '1.0.0.0';
+          GUID              = '71df0f2f-2cef-4f55-a246-c8b8f89046a6'
       }
     ) 
     AliasesToExport         = '*'
