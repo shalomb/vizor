@@ -58,7 +58,7 @@ results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_se
       "query": "('"$query_string"')"
     }
   }
-}' ) 
+}' )
 
 if (( ${#identity_fields[@]} == 1 )); then
   jq -r -c -S '.hits.hits[] | .["_source"] | '"${identity_fields[0]}"'' <<<"$results"
