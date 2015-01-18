@@ -11,18 +11,16 @@ $IPLogDir       = "$IPDir\Log"
 $IPRunRegister  = "$IPDir\Runs.xml"
 $CurrentSequenceFile = $Null
 
-if ( -not(Test-Path $IPDir) )     { 
-  Write-Host -Fore Green "Mkdir IPDir       : $IPDir"
+if ( -not(Test-Path $IPDir) )     {
   mkdir -Force $IPDir -ea 0
 }
-if ( -not(Test-Path $IPLogDir) )  { 
-  Write-Host -Fore Green "mkdir IPLogDir : $IPLogDir"
+if ( -not(Test-Path $IPLogDir) )  {
   mkdir -Force $IPLogDir -ea 0
 }
 
 function Get-Run {
   [CmdletBinding()] param()
-  
+
   $Runs = $Null
   try {
     if ( Test-Path $IPRunRegister ) {
@@ -39,7 +37,7 @@ function Get-Run {
   }
 }
 
-function Get-CurrentSequenceFile { 
+function Get-CurrentSequenceFile {
   [CmdletBinding()] param()
 
   if ( $Runs = @(Get-Run) ) {
@@ -54,7 +52,7 @@ function Get-CurrentStage {
   )
 
   if ( $Runs = @(Get-Run) ) {
-    try { 
+    try {
       return ($Runs | ?{ $_.Sequence -imatch [Regex]::Escape($SequenceFile) } | Select -Last 1)
     } catch {}
   }
@@ -102,12 +100,13 @@ function Show-Transcript {
   }
   Write-Host ""
   Write-Host "Which one? [$i] " -NoNewline
+  $Editor = if ( gcm write.exe ) { 'write.exe' } else { 'notepad.exe' }
   $Reply = [Int](Read-Host)
   if ( -not($Reply) ) {
-    & write.exe $Transcripts[-1]
+    & $Editor $Transcripts[-1]
   }
   else {
-    & write.exe $Transcripts[$Reply-1]
+    & $Editor $Transcripts[$Reply-1]
   }
 }
 
@@ -132,7 +131,7 @@ function Resume-ImageMaintenance {
     Get-Task -SequenceFile $SequenceFile -Stage $Stage | Invoke-Task -Force:$Force | fl *
     $Stage++
     Set-Stage -SequenceFile $SequenceFile -Stage $Stage
-  } 
+  }
   catch { throw "Error running sequence file '$SequenceFile' : $_" }
 }
 
@@ -159,7 +158,7 @@ function Get-Task {
 
     try {
       $SequenceList = , @(& $SequenceFile) # Explicit list conversion
-    } catch { 
+    } catch {
       throw "Unable to parse SequenceFile '$SequenceFile' : $_"
     }
 
@@ -181,7 +180,7 @@ function Get-Task {
 
           try {
             $TaskDefinition = [HashTable]$TaskDefinition
-          } catch { 
+          } catch {
             throw "Unable to cast TaskDefinition to a HashTable : $_"
           }
 
@@ -215,7 +214,7 @@ function Get-Task {
 }
 
 function Invoke-Task {
-# TODO, 
+# TODO,
 # * Pre,Post validation
 # * Switch to fail on pre-assert, pause if failed
 # * Reboot Handler, switch to no reboot after stage
@@ -225,13 +224,13 @@ function Invoke-Task {
 # * What-If?
 
   [CmdletBinding(SupportsShouldProcess=$True)]
-  param(  
+  param(
     [Parameter(
-        Position=0, Mandatory=$true, 
+        Position=0, Mandatory=$true,
         ValueFromPipeline=$true,
         ValueFromPipelineByPropertyName=$true
       ) ]
-    [Alias('TaskList')] 
+    [Alias('TaskList')]
       [Object[]]$Tasks,
     [Parameter( Mandatory=$False, ValueFromPipeline=$False  )]
       [System.IO.DirectoryInfo]$LogDir = $IPLogDir,
@@ -243,35 +242,35 @@ function Invoke-Task {
       [switch]$ConfirmMode,
     [Parameter( Mandatory=$False, ValueFromPipeline=$False  )]
       [switch]$DryRun
-  ) 
+  )
 
   begin {
     $LastSubStatus = $True
     try { Stop-Transcript | Write-Verbose } catch {}
     $LogFile = "$IPLogDir\ImagePrep-$($Env:COMPUTERNAME)-$PID-$(Get-Date -UFormat '%Y%m%dT%H%M%S').log"
-    
+
     Start-Transcript -Path $LogFile | Write-Verbose
-    
+
     # Write-Host ('*'  * 80)
-    # Write-Host "Invocation details."  
+    # Write-Host "Invocation details."
     # Write-Host "Time                             : $(Get-Date -Uformat '%Y%m%dT%H%M%S%Z')"
-    # Write-Host "PID                              : $PID" 
+    # Write-Host "PID                              : $PID"
     # Write-Host "PWD                              : $PWD"
     # Write-Host "Username                         : $Env:USERNAME@$ENV:USERDOMAIN"
     # Write-Host "Hostname                         : $Env:COMPUTERNAME"
-    # 
+    #
     # Write-Host '$MyInvocation'
     # $MyInvocation
-    # 
+    #
     # Write-Host "Environment Variables "
     # ls Env:\*       | %{ $_.Name } | sort | %{ try { "{0,-32} : {1}" -f $_, (ls Env:\$_).Value } catch {} }
-    # 
+    #
     # Write-Host "  PS Variables "
     # ls Variable:\*  | %{ $_.Name } | sort | %{ try { "{0,-32} : {1}" -f $_, (ls Variable:\$_).Value } catch {} }
-    # 
+    #
     # Write-Host ""
     # Write-Host ('*'  * 80)
-    
+
     Write-Verbose "Start invoking commands."
   }
 
@@ -293,19 +292,19 @@ function Invoke-Task {
         $SubState = New-Object -TypeName PSObject
 
         try {
-          if ( ($PrevStatus -eq $True) -and -not( $Force ) ) { 
-            throw "Task already complete, skipping .." 
+          if ( ($PrevStatus -eq $True) -and -not( $Force ) ) {
+            throw "Task already complete, skipping .."
           }
 
           if ( ($SubName -eq "script") -and ($LastSubStatus -eq $False) ) { # Pre Failed
             $SubState | Add-Member NoteProperty "status" $False
             Write-Warning "Pre script/assertion failed for task '$($Task.Name)' .. skipping."
-          } 
+          }
           else {
             if (Test-Member -InputObject $task -Name $SubName) {
               try {
                 [String]$ScriptOutput = $task.$SubName.Invoke()
-              } 
+              }
               catch {
                 Throw "Unable to invoke Sub '$SubName' for '$($Task.Name)' : $_"
               }
@@ -317,26 +316,26 @@ function Invoke-Task {
             if ( $SubName -eq "script" ) { $LastSubStatus | Out-File -Encoding ASCII $StateFile }
           }
 
-        } 
+        }
         catch [Exception] {
           if ( $NoStrict -or ($SubName -imatch '^(?:pre|post)$') ) {
             $SubState = Add-Member -InputObject $SubState -PassThru -Force -MemberType NoteProperty -Name "status" -Value $False
             $SubState = Add-Member -InputObject $SubState -PassThru -Force -MemberType NoteProperty -Name "exception" -Value $_
             $LastSubStatus = $False
-          } 
+          }
           else {
             if ($_ -imatch 'Task already complete, skipping') {
               ;
-            } 
+            }
             else {
-              $Local:ErrorActionPreference = "SilentlyContinue" 
+              $Local:ErrorActionPreference = "SilentlyContinue"
               $_ | Out-String | Write-Host -Fore Red
-              $Local:ErrorActionPreference = "STOP" 
+              $Local:ErrorActionPreference = "STOP"
               Stop-Transcript
               Throw $_
             }
           }
-        } 
+        }
         finally {
           if (Test-Member -InputObject $task -Name $SubName) {
             $SubState | Add-Member NoteProperty "sub"     $task.$SubName
