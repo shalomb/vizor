@@ -1,6 +1,9 @@
 # Powershell
 
-# This file is not to be meant to run directly.
+# This file is not to be meant to run directly but instead
+# run through one of the cmdlets in ImageMaintenance
+#
+# Logs and transcripts are stored in %programdata%\imageprep
 
 [CmdletBinding()]
 Param()
@@ -15,12 +18,12 @@ $PSModuleAutoLoadingPreference  = 'None'
 Import-Module Microsoft.PowerShell.Host -ea 0 # Seems to fail import on PSv2
 Import-Module CDROM
 Import-Module GroupPolicy
-Import-Module Locale
+# Import-Module Locale
 Import-Module MSRT
-Import-Module OSRegion
-Import-Module RegistryUtils
-Import-Module RDP
-Import-Module Robocopy
+# Import-Module OSRegion
+# Import-Module RegistryUtils
+# Import-Module RDP
+# Import-Module Robocopy
 Import-Module SystemUtils
 Import-Module TaskUtils
 Import-Module VDIOptimizations
@@ -30,61 +33,109 @@ Import-Module WindowsUpdate
 Import-Module WinMgmt
 # Import-Module ZipUtils
 
-# Tasks Outstanding
-#  Enable Pagefile on first startup
-#  Language Packs
-#  Source Parameters from config file
-#  Windows8and2012VDIBaseline.vbs
-#  Review
-
 #Define the environment for the run
-$Env:OLBASE       = "$Env:SystemDrive\ProgramData\OneLab"
-$Env:OLCONF       = Join-Path $Env:OLBASE "conf"
-$Env:OLBIN        = Join-Path $Env:OLBASE "bin"
-$Env:OLLOG        = Join-Path $Env:OLBASE "log"
-$Env:OLIP         = Join-Path $Env:OLLOG  "ImagePrep"
-
-$Env:RAZOR_STATUS_URL ='<%= stage_done_url('') %>'
-$Env:WSUS_URL     = '<%= node.metadata["wsus_url"]        ||= "http://chesvwsecbuildwsus.eng.citrite.net:8530" %>'
-$Env:KMS_SERVER   = '<%= node.metadata["kms_server"]      ||= 'camesvwkms01.eng.citrite.net' %>'
+$Env:WSUS_URL     = '<%= node.metadata["wsus_url"]    %>'
+$Env:KMS_SERVER   = '<%= node.metadata["kms_server"]  %>'
 $Env:KMS_PORT     = '<%= node.metadata["kms_server_port"] ||= 1688 %>'
+$Env:NTP_SERVERS  = '<%= node.metadata["ntp_server_list"] ||= 'pool.ntp.org,time.windows.com,time.nis.gov' %>'
 
-$Env:NTP_SERVERS  = '<%= node.metadata["ntp_server_list"] %>'
-if (-not($Env:NTP_SERVERS)) { $Env:NTP_SERVERS = "eng.citrite.net,citrite.net,pool.ntp.org,time.windows.com,time.nis.gov"; }
+$Env:INSTALL_DOTNET35 = <%= node.metadata["install_dotnet35"] ? '$True' : '$False' %>
+
+$Env:COMPUTER_DESCRIPTION = '<%= node.metadata["computer_description"] ||= node.metadata['vstring_long'] %>'
 
 $Env:TIMEZONE     = '<%= node.metadata["windows_timezone"] ||= "GMT Standard Time" %>'
-# if (-not($Env:TIMEZONE)) { $Env:TIMEZONE = "GMT Standard Time" }
-
 $Env:L18NXML_URL  = '<%= file_url('l18n.xml') %>'
 
+$Env:PATH += ";$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
 if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\SysInternals;" }
-$Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
 
 # Stage 0
+#   Prepare image
+#   Install packages/roles
+#   Install Windows updates
 @(
-  @{ name    =   "stage_1_begins-$(date -uformat %s)";
-      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_begins') %>') };
+  @{ name    =   "stage_0_begins-$(date -uformat %s)";
+      script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_0_begins') %>') } catch{} };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'create_onelab_support_directory_hierarchy';
-      script = {
-        $Env:OLBASE,$Env:OLCONF,$Env:OLBIN,$Env:OLLOG,$Env:OLIP | %{
-          mkdir -Force -Verbose:$VerbosePreference $_ | Out-Null
-        }
-      };
+  @{ name    =   'start_w32tm_service_1';
+      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic | Start-Service };
       pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'set_ntp_servers';
-#     script = { Set-NTPServers $Env:NTP_SERVERS -Verbose };
-#     pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_ntp_servers';
+      script = { Set-NTPServers $Env:NTP_SERVERS -Verbose };
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'sync_ntp_time_stage_0';
       script = { Sync-W32Time };
       pre    = { 1 }; post   = { 1 }; }
+
+  @{ name    =   'install_powershell_taskbar_shortcut';
+      script = { try{Install-DesktopShortcut -Label "PowerShell" -Command "$Env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"} catch {} };
+      pre    = { 1; }; post   = { 1 }; }
+  @{ name    =   'install_cmd_taskbar_shortcut';
+      script = { try{Install-DesktopShortcut -Label "CMD" -Command "cmd.exe"} catch {} };
+      pre    = { 1; }; post   = { 1 }; }
+  @{ name    =   'install_taskmgr_taskbar_shortcut';
+      script = { try{Install-DesktopShortcut -Label "TaskManager" -Command "taskmgr.exe"} catch{} };
+      pre    = { 1; }; post   = { 1 }; }
+  @{ name    =   'install_event_viewer_taskbar_shortcut';
+      script = { try{Install-DesktopShortcut -Label "Event Viewer" -Command "eventvwr.exe"} catch{}};
+      pre    = { 1; }; post   = { 1 }; }
+  @{ name    =   'install_psr_taskbar_shortcut';
+      script = { try{Install-DesktopShortcut -Label "Problem Steps Recorder" -Command "psr.exe"}catch{} };
+      pre    = { 1; }; post   = { 1 }; }
+
+  @{ name    =   'set_cscript_as_wsh_host';
+      script = { Set-WSHScriptHost "CScript" };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_kms_server';
+      script = { & slmgr.vbs -skms "${Env:KMS_SERVER}:${Env:KMS_PORT}" };
+      pre    = {
+        if ( -not($Env:KMS_SERVER) ) { Throw "No KMS Hostname specified." }
+        if ( ([Double](Get-OSVersion).CurrentVersion) -inotmatch '5.1' ) { Throw 'On Windows XP/2003. slmgr.vbs is not available.' }
+      }; post   = { 1 }; }
+  @{ name    =   'activate_windows';
+      script = { Invoke-WindowsActivation };
+      pre    = { 1 }; post   = { Get-WindowsActivationStatus }; }
+  @{ name    =   'install_show_desktop_on_logon';
+      script = {
+        Install-GlobalLogonScript -Name 'ShowDesktopOnLogon' -Script 'explorer.exe "shell:::{3080F90D-D7AD-11D9-BD98-0000947B0257}"'
+      };
+      pre    = {
+        if ( (Get-OSVersion).InstallationType -eq 'Server'  )     { Throw "Is a Server OS";     }
+        if ( ([Double](Get-OSVersion).CurrentVersion) -inotmatch '6.[23]' ) { Throw 'Not on Windows 8/8.1' }
+      };
+      post   = { 1 }; }
+  @{ name    =   'install_backup_show_desktop_on_logon';
+      script = {
+$scf=@"
+[Shell]
+Command=2
+IconFile=Explorer.exe,3
+[Taskbar]
+Command=ToggleDesktop
+"@
+        $scf | Out-File -ea 0 -Encoding ascii ($showDesktopCmd = Join-Path $PWD 'Show-Desktop.scf')
+        Install-GlobalLogonScript -Name 'ShowDesktopOnLogonBackup' -Script $showDesktopCmd
+      };
+      pre    = {
+        if ( (Get-OSVersion).InstallationType -eq 'Server'  )     { Throw "Is a Server OS";     }
+        if ( ([Double](Get-OSVersion).CurrentVersion) -inotmatch '6.[23]' ) { Throw 'Not on Windows 8/8.1' }
+      };
+      post   = { 1 }; }
+  @{ name    =   'install_ipconfig_registerdns_on_logon';
+      script = {
+        Install-GlobalLogonScript -Name 'IpconfigRegisterDnsOnLogon' -Script 'ipconfig /registerdns'
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_computer_description';
+      script = {  Set-ComputerDescription -Description $Env:COMPUTER_DESCRIPTION };
+      pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'enable_crash_control_crash_dump_full';
       script = { Enable-CrashControlCrashDump -Value 1 -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'enable_crash_control_nmi_crash_dump';
       script = { Enable-NMICrashDump -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
-  # TODO, Autoreboot on system failure, blue screens, etc?
   @{ name    =   'disable_auto_reboot_on_system_failure';
       script = { Disable-AutoRebootOnSystemFailure };
       pre    = { 1 }; post   = { 1 }; }
@@ -103,365 +154,567 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    =   'enable_crash_control_always_keep_memory_dump';
       script = { Enable-CrashControlAlwaysKeepMemoryDump -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'disable_first_logon_animations';
       script = { Disable-FirstLogonAnimations };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'disable_server_manager';
-      script = { Disable-ServerManager -Verbose:$VerbosePreference };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'disable_network_location_prompt';
+      script = {
+        reg.exe add 'HKLM\SOFTWARE\Microsoft\ServerManager\Oobe' /f /v DoNotOpenInitialConfigurationTasksAtLogon /t REG_DWORD /d 1
+        reg.exe add 'HKLM\SOFTWARE\Microsoft\ServerManager'      /f /v DoNotOpenServerManagerAtLogon             /t REG_DWORD /d 1
+      }
+      pre    = { $OSVersion = Get-OSVersion; if ( $OSVersion.InstallationType -ne 'Server' ) { Throw "Not a Server OS"; } };
+      post   = { 1 }; }
+  @{ name    =   'set_network_name_to_work';
       script = { Set-NetworkLocation -NetworkName 'Work' };
       pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'disable_network_location_wizard';
+      script = { Disable-NetworkLocationPrompt -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'uninstall_msmsgs_startup_commands';
-      pre    = { if (-not((Get-OSVersion).CurrentVersion -imatch '5.1')){ throw 'Not on Windows XP/2003.' } };
+      pre    = { if (-not(([Double](Get-OSVersion).CurrentVersion) -imatch '5.1')) { Throw 'Not on Windows XP/2003.' } };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'msmsgs' } | Uninstall-StartupCommand -Verbose:$VerbosePreference } catch {} }; post   = { 1 }; }
   @{ name    =   'uninstall_ctfmon_startup_commands';
-      pre    = { if (-not((Get-OSVersion).CurrentVersion -imatch '5.1')){ throw 'Not on Windows XP/2003.' } };
+      pre    = { if (-not(([Double](Get-OSVersion).CurrentVersion) -imatch '5.1')) { Throw 'Not on Windows XP/2003.' } };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'ctfmon.exe' } | Uninstall-StartupCommand -Verbose:$VerbosePreference }catch{}}; post   = { 1 }; }
   @{ name    =   'uninstall_welcomecenter_startup_commands';
-      pre    = { $os = gwmi win32_operatingsystem; if (-not($os.version -imatch '^(?:5\.0|6\.0)')){} };
+      pre    = { $os = Get-Win32_OperatingSystem; if (-not($os.version -imatch '^(?:5\.0|6\.0)')) {} };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'welcomecenter' } | Uninstall-StartupCommand -Verbose:$VerbosePreference }catch{}}; post   = { 1 }; }
   @{ name    =   'uninstall_sidebar_startup_commands';
-      pre    = { $os = gwmi win32_operatingsystem; if (-not($os.version -imatch '^6\.[01]')){ Write-Warning 'Not on Windows Vista/7.' } };
+      pre    = { $os = Get-Win32_OperatingSystem; if (-not($os.version -imatch '^6\.[01]')) { Write-Warning 'Not on Windows Vista/7.' } };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'sidebar' } | Uninstall-StartupCommand -Verbose:$VerbosePreference } catch{} }; post   = { 1 }; }
   @{ name    =   'uninstall_windows_defender_startup_commands';
       pre    = { 1 };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'windows defender' } | Uninstall-StartupCommand -Verbose:$VerbosePreference } catch{} }; post   = { 1 }; }
   @{ name    =   'disable_windows_sidebar';
       script = { Disable-WindowsSidebar -Verbose:$VerbosePreference };
-      pre    = { $os = gwmi win32_operatingsystem; if (-not($os.version -imatch '^6\.0')){ throw 'Not on Windows Vista.' } }; post   = { 1 }; }
+      pre    = { $os = Get-Win32_OperatingSystem; if (-not($os.version -imatch '^6\.0')) { Throw 'Not on Windows Vista.' } }; post   = { 1 }; }
   @{ name    =   'disable_screensaver';
       script = { Disable-ScreenSaver -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'initialize_sysinternals_tools';
       script = { SystemUtils\Initialize-SysInternals };
       pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'disable_system_restore';
       script = { Disable-SystemResoreOnLocalDrives -ea 0 };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'set_cscript_as_wsh_host';
-      script = { Set-WSHScriptHost "CScript" };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'disable_screen_savers';
-      script = { Disable-ScreenSaver };
-      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_user_preferences';
-      script = { Set-UserPreferences -Verbose:$VerbosePreference };
+      script = { try { Set-UserPreferences -Verbose:$VerbosePreference } catch {
+        # TODO, Workaround. HKU:/ hive fails to load if the registry .dat file
+        #       is in use. Investigations and refactoring of cmdlet needed.
+        $ErrMsg = "Failed to set user preferences. Rebooting to retry."
+        Restart-Machine -Delay 5 -Message $ErrMsg
+      } };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'disable_device_autorun';
       script = { Disable-AutoRun };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'set_w32tm_service_autostart';
-      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic -Verbose:$VerbosePreference };
+
+  @{ name    =   'set_powersheme_disable_hibernation';
+      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
+        powercfg.exe -h off
+        powercfg.exe -change -hibernate-timeout-ac 0
+        powercfg.exe -change -hibernate-timeout-dc 0
+      } catch {} };
       pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_powerscheme_high_performance';
+      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
+        powercfg.exe -s           8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+        powercfg.exe -setabsentia 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+        powercfg -setacvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c fea3413e-7e05-4911-9a71-700331f1c294 245d8541-3943-4422-b025-13a784f679b7 1
+        powercfg -setdcvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c fea3413e-7e05-4911-9a71-700331f1c294 245d8541-3943-4422-b025-13a784f679b7 1
+      } catch {} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_powerscheme_always_on';
+      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
+        powercfg.exe -setactive scheme_min
+        powercfg.exe -setactive "Always On"
+      } catch {} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_powersheme_prevent_display_blanking';
+      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
+        powercfg.exe -change -monitor-timeout-ac 0
+      } catch {} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_powersheme_standby_timout';
+      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
+        powercfg.exe -change -standby-timeout-ac 0
+      } catch {} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_powersheme_disk_timeout';
+      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
+        powercfg.exe -change -disk-timeout-ac 0
+        powercfg.exe -setacvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0
+        powercfg.exe -setdcvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0
+      } catch {} };
+      pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'set_wsus_server';
-      script = { Set-WSUSServer -WUServer  '<%= node.metadata["wsus_url"]        ||= "http://10.108.80.42:8530" %>' };
+      script = {
+        Write-Warning "Setting WSUS URL to $Env:WSUS_URL"
+        Set-WSUSServer -WUServer  $Env:WSUS_URL
+      };
+      pre    = { if ( -not($Env:WSUS_URL) ) { Throw "No WSUS URL specified." } };
+      post   = { 1 }; }
+  @{ name    =   'enable_windows_update';
+      script = {
+        $WUEnabled=$False;
+        while ( -not($WUEnabled) ) {
+          try {
+            Disable-WindowsUpdate; Enable-WindowsUpdate
+            $WUEnabled = $True
+          } catch {
+            Write-Warning "Error restarting Windows Update Services. $_, ($($Error[0]))"
+          }
+        }
+      };
       pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'enable_windows_update';
-#     script = { Disable-WindowsUpdate; Enable-WindowsUpdate };
-#     pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'install_dotnet35_on_2008r2';
-#     script = { if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
-#                   Import-Module ServerManager -Verbose:$VerbosePreference;
-#                   $Result = Add-WindowsFeature as-net-framework -Verbose:$VerbosePreference
-#                 }
-#     };
-#     pre    = { $os = gwmi win32_operatingsystem; if (-not($os.version -imatch '^6\.1\.')){ throw 'Not on Windows 2008 R2.' } }; post   = { 1 }; }
+  @{ name    =   'create_l18n_prereqs';
+      script = { try {
+          # Create the necessary reg keys for Internationalization
+          reg.exe add "HKCU\Control Panel\International" /f              | Write-Verbose
+          reg.exe add "HKCU\Control Panel\International\User Profile" /f | Write-Verbose
+        } catch {}
+      };
+      pre    = { 1 };
+      post   = { 1 }; }
+  @{ name    =   'install_dotnet35_sp1';
+      script = {
+        if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
+          $razor_metadata = . .\metadata.ps1
+          if ( Test-Path($sxs_dir = Join-Path $razor_metadata.repo_share 'sources\sxs') ) {
+            Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $($OSVersion.Version))"
+            dism.exe /English /Online /Enable-Feature /FeatureName:NetFx3 /All /Source:$sxs_dir /NoRestart | Write-Verbose
+            if     ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
+              $ErrMsg = "Install of .Net3.5 SP1 role successful (exit_code: $LASTEXITCODE). Rebooting to continue .."
+              Restart-Machine -Delay 5 -Message $ErrMsg
+            }
+            else {
+              $ErrMsg = "dism.exe exited with an unknown exit code '$LASTEXITCODE'. Aborting."
+              Restart-Machine -Delay 5 -Message $ErrMsg
+              Throw $ErrMsg
+            }
+          }
+          else {
+            Throw "SXS dir $sxs_dir not found or unreachable."
+          }
+        }
+      };
+      pre    = {
+        if ( -not($Env:INSTALL_DOTNET35) )       { Throw "Not installing .Net3.5" }
+        $OSVersion = Get-OSVersion;
+        if ( ([Double]$OSVersion.CurrentVersion) -lt 6.2 ) { Throw 'Not on Windows >= Windows 8/2012' }
+      };
+      post   = { 1 }; }
+  @{ name    =   "install_language_packs";
+      # N.B: This must come after the installation of .Net 3.5 (if applicable)
+      script = {
+        $RebootRequired = $False
+        $OSVersion = Get-OSVersion;
+        foreach ($language_pack in @(ls language_packs/*.cab)) {
+          Write-Verbose "Installing language pack : $language_pack (OS Version: $($OSVersion.Version))"
+          dism.exe /English /Online /Add-Package /PackagePath:$language_pack | Write-Verbose
+
+          if ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
+            $ErrMsg = "Install of langpack successful (exit_code: $LASTEXITCODE). Rebooting to continue .."
+            Write-Verbose $ErrMsg
+            $RebootRequired = $True
+          }
+          else {
+            # TODO. If we fail, we potentially end up with an infinite retry loop.
+            #       dism logs are in %windir%\log\{dism.log,cbs\cbs.log}
+            $ErrMsg  = "Language pack install failed."
+            $ErrMsg += "dism.exe exited with an unknown exit code '$LASTEXITCODE'."
+            Write-Warning $ErrMsg
+            try {
+              Write-Warning "Attempting to cleanup image"
+              & dism.exe /Online /Cleanup-image /Restorehealth
+            } catch {
+              Write-Warning "Exception caught running dism cleanup : $_"
+            }
+            $ErrMsg += "Rebooting to retry."
+            Restart-Machine -Delay 15 -Message $ErrMsg
+            Throw $ErrMsg
+          }
+        }
+
+        if ($RebootRequired) {
+          Restart-Machine -Delay 3 -Message "Language pack installation complete. Rebooting to continue .."
+        }
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'install_dotnet35_on_2008r2';
+      script = {
+        if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
+          Import-Module ServerManager -Verbose:$VerbosePreference;
+          Add-WindowsFeature as-net-framework -Verbose:$VerbosePreference
+          Restart-Machine -Delay 15 -Message "Install of .Net 3.5 feature completed. Rebooting to continue .."
+        }
+      };
+      pre    = {
+        if ( -not($Env:INSTALL_DOTNET35) ) { Throw "Not installing .Net3.5" }
+        $OSVersion = Get-OSVersion;
+        if ( $OSVersion.InstallationType           -ne 'Server' ) { Throw "Not a Server OS"; }
+        if ( ([Double]$OSVersion.CurrentVersion)   -ne 6.1      ) { Throw 'Not on Windows Server 2008R2' }
+      };
+      post   = { 1 }; }
+  @{ name    =   "applying_l18n_settings-$(Get-Date -uformat %s)";
+      script = {
+        # TODO, control.exe/intl.cpl does not return a meaningful error code
+        #       and so we may be unable to detect failures.
+        #       The key of this block is set to be different on every run to attempt
+        #       a retry on every boot during this stage.
+        # Events are generated in the Windows/International section
+        if ( Test-Path 'l18n.xml' ) {
+          $l18n_xml = '/f:"{0}"' -f (ls l18n.xml).FullName
+          Write-Verbose "Applying l18n settings - control.exe 'intl.cpl,,' $l18n_xml"
+          control.exe 'intl.cpl,,' $l18n_xml | Write-Verbose
+        }
+      };
+      pre    = { 1 }; post   = { 1 }; }
 # @{ name    =   'install_windows_updates';
 #     script = {
-#       $RebootRequired = $False
-#       while ($UpdateCollection = Search-WindowsUpdate -ImportantOnly -Verbose:$VerbosePreference) {
-#         $UpdateResult = $UpdateCollection | Install-WindowsUpdate -Verbose:$VerbosePreference
-#         $RebootRequired = $UpdateResult.RebootRequired
-#         if ( $UpdateResult.ResultCode -ne 0 ) {
-#           break
-#         }
-#       }
-#       if ($RebootRequired) {
-#         Restart-Computer
-#       }
+#       Install-ImportantWindowsUpdates -RebootIfNecessary -Verbose:$VerbosePreference
 #     };
 #     pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'update_powershell_help';
-#     script = { Update-Help -Verbose:$VerbosePreference };
-#     pre    = { $psver=$PSVersionTable.PSversion; if (-not($psver -ge 3.0)){ throw 'Not on PowerShell >= 3.0.' } }; post   = { 1 }; }
-# @{ name    =   'disable_windows_update';
-#     script = { Disable-WindowsUpdate };
-#     pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'start_windows_defender_service';
+      script = { try { Get-Service WinDefend | Set-Service -StartupType Manual | Start-Service } catch {} };
+      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      post   = { 1 }; }
+  @{ name    =   'invoke_windows_defender_update';
+      script = { try { Invoke-WindowsDefenderUpdate -Verbose:$VerbosePreference } catch {} };
+      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      post   = { 1 }; }
+  @{ name    =   'invoke_windows_defender_quick_scan';
+      script = { try { Invoke-WindowsDefenderScan -Quick -Verbose:$VerbosePreference } catch {} };
+      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      post   = { 1 }; }
+  @{ name    =   'invoke_malicious_software_removal_tool_detect_scan';
+      script = { try { Invoke-MSRTScan -DetectOnly -Verbose:$VerbosePreference } catch {} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'collect_windows_defender_files';
+      script = { try { Invoke-WindowsDefenderCommand -MPCmdRunArgs @('-GetFiles') -Verbose:$VerbosePreference } catch {} };
+      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      post   = { 1 }; }
+  @{ name    =   'update_powershell_help';
+      script = { Update-Help -Verbose:$VerbosePreference };
+      pre    = { if ( -not( ([Double][String]($PSVersionTable.PSversion)) -ge 3 ) ) { Throw 'Not on PowerShell >= 3.0.' } };
+      post   = { 1 }; }
+  @{ name    =   'disable_windows_update';
+      script = { Disable-WindowsUpdate };
+      pre    = { 1 }; post   = { 1 }; }
+# @{ name    =   'set_screen_resolution_1024x768';
+#   script = { reg.exe query "HKEY_CURRENT_CONFIG\System\CurrentControlSet\Control\VIDEO" | ?{$_} | %{
+#                reg.exe query $_ | ?{ $_ } | %{
+#                  reg.exe add "$_" /v DefaultSettings.XResolution /t REG_DWORD /d 0x400 /f;
+#                  reg.exe add "$_" /v DefaultSettings.YResolution /t REG_DWORD /d 0x300 /f;
+#                }
+#              }
+#           };
+#     pre    = { if (([Double](Get-OSVersion).CurrentVersion) -ne 6.1) { Throw "Not on Windows 7/2008" } };
+#     post   = { 1 }; }
+  @{ name    =   'set_screen_resolution_to_1024x768';
+      script = {
+        # Requires .Net 3.5
+        SetResolution.exe | %{
+          if ( $_ -imatch '^\s*(\d+).*1024.*768.*24.*' ) {
+            SetResolution.exe --id $matches[1]
+          }
+        }
+      };
+      pre    = { if (-not(([Double](Get-OSVersion).CurrentVersion) -imatch '6.1')) { Throw 'Not on Windows 7/2008R2' } };
+      post   = { 1 }; }
+  @{ name    =  "install_vm_guest_tools-$(Get-Date -Uformat %s)"
+      script = {
+        # Requires .Net 3.5
+        $PSFile = @"
+          `$Env:PSModulePath="$Env:PSModulePath"
+          # TODO, -Global is needed here, why?
+          # This also reboots the VM
+          Import-Module ModuleUtils  -Global -Force
+          Import-Module XenTools     -Global -Force
+          Import-Module HyperVIC     -Global -Force
+          Import-Module VMWareTools  -Global -Force
+          Import-Module VMGuestTools -Global -Force
+          Import-Module CDRom        -Global -Force
+          # TODO, The InstallStatus flag doesn't necessarily indicate a complete install
+          if ( -not((Get-VMGuestToolsStatus).InstallStatus) ) {
+            VMGuestTools\Install-VMGuestTools
+          }
+"@
+         $VMGTI = (join-path $Env:TEMP 'VMGuestTools.ps1')
+         $PSFile | Out-File -Encoding ASCII $VMGTI
+         # TODO, workaround scoping issues where the above imports succeed
+         #       but none of the functions can be executed.
+         #       Workaround for now, launch script in its own process space
+         # TODO, Validate the installer has successfully completed before
+         #       proceeding, even if installers force reboots.
+         try {
+           powershell.exe -executionpolicy bypass -file $VMGTI
+         } catch {
+           # If the process has failed, reboot.
+           # TODO: This may react to a false positive.
+           # - There is no clear way to discriminate failures from
+           #   the installers vs those from powershell.
+           # - This fails when there are no CD-ROM drives containing
+           #   the installer. An infinite reboot cycle is caused.
+           $ErrMsg = "Failed to install VM Guest Tools : $_"
+           Write-Warning $ErrMsg
+           Restart-Machine -Delay 15 -Message "$ErrMsg. Rebooting to continue .."
+         }
+         # TODO, test installation status before returning
+      };
+      pre    = { 1 }; post   = { 1 }; }
 
-  # Configure Service Startup Type
-
-  # Application Layer Gateway Service
-  @{ name    =  'set_service__alg';
-      script = { Set-Service 'ALG' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Bitlocker Drive Encryption Service
-  @{ name    =  'set_service__bdesvc';
-      script = { Set-Service 'BDESVC' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # BITS - Background Intelligent Transfer Services
-  @{ name    =  'set_service__bits_background_intelligent_transfer_services_to_startuptype_manual';
-      script = { Set-Service 'BITS' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Background Intelligent Transfer Service
-  @{ name    =  'set_service__bits';
-      script = { Set-Service 'BITS' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Computer Browser Service
-  @{ name    =  'set_service__browser';
-      script = { Set-Service 'Browser' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Offline Files
-  @{ name    =  'set_service__cscservice';
-      script = { Set-Service 'CscService' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # DefragSvc - Optimize Drives
-  @{ name    =  'set_service__defragsvc_optimize_drives_to_startuptype_disabled';
-      script = { Set-Service 'defragsvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Device Association Service
-  @{ name    =  'set_service__deviceassociationservice';
-      script = { Set-Service 'DeviceAssociationService' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Diagnostic Policy Services
-  @{ name    =  'set_service__dps';
-      script = { Set-Service 'DPS' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Device Setup Manager Service
-  @{ name    =  'set_service__dsmsvc';
-      script = { Set-Service 'DsmSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Encrypting File System Service
-  @{ name    =  'set_service__efs';
-      script = { Set-Service 'EFS' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # ErSvc - Error Reporting
-  @{ name    =  'set_service__ersvc_error_reporting_to_startuptype_manual';
-      script = { Set-Service 'ERSvc' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Fax Service
-  @{ name    =  'set_service__fax';
-      script = { Set-Service 'Fax' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Fax - Fax
-  @{ name    =  'set_service__fax_to_startuptype_disabled';
-      script = { Set-Service 'Fax' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Function Discovery Resource Publication Service
-  @{ name    =  'set_service__fdrespub';
-      script = { Set-Service 'FDResPub' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # HelpSvc - Help and Support Service
-  @{ name    =  'set_service__helpsvc_help_and_support_to_startuptype_manual';
-      script = { Set-Service 'helpsvc' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # HomeGroup Listener Service
-  @{ name    =  'set_service__homegrouplistener';
-      script = { Set-Service 'HomeGroupListener' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # HomeGroup Provider Service
-  @{ name    =  'set_service__homegroupprovider';
-      script = { Set-Service 'HomeGroupProvider' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Microsoft iSCSI Initiator Service
-  @{ name    =  'set_service__msiscsi';
-      script = { Set-Service 'msiscsi' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Set Network List Service to Auto
-  @{ name    =  'set_service__netprofm';
-      script = { Set-Service 'netprofm' -StartupType 'Automatic' };
-      pre    = { 1 }; post   = { 1 }; }
-  # BranchCache Service
-  @{ name    =  'set_service__peerdistsvc';
-      script = { Set-Service 'PeerDistSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # RemoteRegistry - Remote Registry
-  @{ name    =  'set_service__remoteregistry_remote_registry_to_startuptype_manual';
-      script = { Set-Service 'RemoteRegistry' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Backup Service
-  @{ name    =  'set_service__sdrsvc';
-      script = { Set-Service 'SDRSVC' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Sensor Monitoring Service
-  @{ name    =  'set_service__sensrsvc';
-      script = { Set-Service 'SensrSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Shell Hardware Detection Service
-  @{ name    =  'set_service__shellhwdetection';
-      script = { Set-Service 'ShellHWDetection' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # SNMP Trap Service
-  @{ name    =  'set_service__snmptrap';
-      script = { Set-Service 'SNMPTRAP' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # SSDP Discovery Service
-  @{ name    =  'set_service__ssdpsrv';
-      script = { Set-Service 'SSDPSRV' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Secure Socket Tunneling Protocol Service
-  @{ name    =  'set_service__sstpsvc';
-      script = { Set-Service 'SstpSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Microsoft Software Shadow Copy Provider Service
-  @{ name    =  'set_service__swprv';
-      script = { Set-Service 'swprv' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # SuperFetch
-  @{ name    =  'set_service__sysmain';
-      script = { Set-Service 'SysMain' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Telephony Service
-  @{ name    =  'set_service__tapisrv';
-      script = { Set-Service 'TapiSrv' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # TapiSrv - Telephony
-  @{ name    =  'set_service__tapisrv_telephony_to_startuptype_manual';
-      script = { Set-Service 'TapiSrv' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Themes Service
-  @{ name    =  'set_service__themes';
-      script = { Set-Service 'Themes' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Distributed Link Tracking Client Service
-  @{ name    =  'set_service__trkwks';
-      script = { Set-Service 'TrkWks' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # UPnP Device Host Service
-  @{ name    =  'set_service__upnphost';
-      script = { Set-Service 'upnphost' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Volume Shadow Copy Service
-  # @{ name    =  'set_service__vss';
-  #     script = { Set-Service 'VSS' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-  #     pre    = { 1 }; post   = { 1 }; }
-  # Block Level Backup Engine Service
-  @{ name    =  'set_service__wbengine';
-      script = { Set-Service 'wbengine' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Connect Now - Config Registrar Service
-  @{ name    =  'set_service__wcncsvc';
-      script = { Set-Service 'wcncsvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Color System Service
-  @{ name    =  'set_service__wcspluginservice';
-      script = { Set-Service 'WcsPlugInService' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Diagnostic Policy Services
-  @{ name    =  'set_service__wdiservicehost';
-      script = { Set-Service 'WdiServiceHost' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Diagnostic Policy Services
-  @{ name    =  'set_service__wdisystemhost';
-      script = { Set-Service 'WdiSystemHost' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Error Reporting Service
-  @{ name    =  'set_service__wersvc';
-      script = { Set-Service 'WerSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # WerSvc - Error Reporting
-  @{ name    =  'set_service__wersvc_windows_error_reporting_service_to_startuptype_manual';
-      script = { Set-Service 'WerSvc' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # WinDefend - Windows Defender
-  @{ name    =  'set_service__windefend_windows_defender_service_to_startuptype_disabled';
-      script = { Set-Service 'WinDefend' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Defender Service
-  @{ name    =  'set_service__windefent';
-      script = { Set-Service 'WinDefend' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # WLAN AutoConfig Service
-  @{ name    =  'set_service__wlansvc';
-      script = { Set-Service 'Wlansvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Media Player Network Sharing Service
-  @{ name    =  'set_service__wmpnetworksvc';
-      script = { Set-Service 'WMPNetworkSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Family Safety Service
-  @{ name    =  'set_service__wpcsvc';
-      script = { Set-Service 'WPCSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # Security Center
-  @{ name    =  'set_service__wscsvc';
-      script = { Set-Service 'wscsvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # WscSvc - Security Center
-  @{ name    =  'set_service__wscsvc_security_center_to_startuptype_manual';
-      script = { Set-Service 'wscsvc' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Search Service
-  @{ name    =  'set_service__wsearch';
-      script = { Set-Service 'WSearch' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # WSearch - Windows Search
-  @{ name    =  'set_service__wsearch_windows_search_to_startuptype_disabled';
-      script = { Set-Service 'WSearch' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # WuauServ - Automatic Updates
-  @{ name    =  'set_service__wuauserv_automatic_updates_to_startuptype_disabled';
-      script = { Set-Service 'wuauserv' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # WzcSvc - Wireless Autoconfiguration
-  @{ name    =  'set_service__wzcsvc_wireless_to_startuptype_manual';
-      script = { Set-Service 'WZCSVC' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
-      pre    = { 1 }; post   = { 1 }; }
-  # Windows Updates
-  @{ name    =  'set_service__wuauserv';
-      script = { Set-Service 'wuauserv' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
-  # WWAN AutoConfig Service
-  @{ name    =  'set_service__wwansvc';
-      script = { Set-Service 'WwanSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
-      pre    = { 1 }; post   = { 1 }; }
+# # # Configure Service Startup
+# # # Application Layer Gateway Service
+# # @{ name    =  'set_service__alg';
+# #     script = { Set-Service 'ALG' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Bitlocker Drive Encryption Service
+# # @{ name    =  'set_service__bdesvc';
+# #     script = { Set-Service 'BDESVC' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # BITS - Background Intelligent Transfer Services
+# # @{ name    =  'set_service__bits_startuptype_manual';
+# #     script = { Set-Service 'BITS' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
+# #     pre    = { 1 }; post   = { 1 }; }
+# Bluetooth Support Service
+#   @{ name    =  'set_service__bthserv_startuptype_disabled';
+#       script = { Set-Service bthserv -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+# # # Computer Browser Service
+# # @{ name    =  'set_service__browser';
+# #     script = { Set-Service 'Browser' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Offline Files
+# # @{ name    =  'set_service__cscservice';
+# #     script = { Set-Service 'CscService' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+#   # DefragSvc - Optimize Drives
+#   @{ name    =  'set_service__defragsvc_optimize_drives_to_startuptype_disabled';
+#       script = { Set-Service 'defragsvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+# # # Device Association Service
+# # @{ name    =  'set_service__deviceassociationservice';
+# #     script = { Set-Service 'DeviceAssociationService' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Diagnostic Policy Services
+# # @{ name    =  'set_service__dps';
+# #     script = { Set-Service 'DPS' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Device Setup Manager Service
+# # @{ name    =  'set_service__dsmsvc';
+# #     script = { Set-Service 'DsmSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Encrypting File System Service
+# # @{ name    =  'set_service__efs';
+# #     script = { Set-Service 'EFS' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+#   # ErSvc - Error Reporting
+#   @{ name    =  'set_service__ersvc_error_reporting_to_startuptype_manual';
+#       script = { Set-Service 'ERSvc' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # Fax Service
+#   @{ name    =  'set_service__fax';
+#       script = { Set-Service 'Fax' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+# # # Function Discovery Resource Publication Service
+# # @{ name    =  'set_service__fdrespub';
+# #     script = { Set-Service 'FDResPub' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # HelpSvc - Help and Support Service
+# # @{ name    =  'set_service__helpsvc_help_and_support_to_startuptype_manual';
+# #     script = { Set-Service 'helpsvc' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
+# #     pre    = { 1 }; post   = { 1 }; }
+#   # HomeGroup Listener Service
+#   @{ name    =  'set_service__homegrouplistener';
+#       script = { Set-Service 'HomeGroupListener' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # HomeGroup Provider Service
+#   @{ name    =  'set_service__homegroupprovider';
+#       script = { Set-Service 'HomeGroupProvider' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+# # # Microsoft iSCSI Initiator Service
+# # @{ name    =  'set_service__msiscsi';
+# #     script = { Set-Service 'msiscsi' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Set Network List Service to Auto
+# # @{ name    =  'set_service__netprofm';
+# #     script = { Set-Service 'netprofm' -StartupType 'Automatic' };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # BranchCache Service
+# # @{ name    =  'set_service__peerdistsvc';
+# #     script = { Set-Service 'PeerDistSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+#   # RemoteRegistry - Remote Registry
+#   @{ name    =  'set_service__remoteregistry_remote_registry_to_startuptype_manual';
+#       script = { Set-Service 'RemoteRegistry' -StartupType 'Automatic' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+# # # Windows Backup Service
+# # @{ name    =  'set_service__sdrsvc';
+# #     script = { Set-Service 'SDRSVC' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Sensor Monitoring Service
+# # @{ name    =  'set_service__sensrsvc';
+# #     script = { Set-Service 'SensrSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Shell Hardware Detection Service
+# # @{ name    =  'set_service__shellhwdetection';
+# #     script = { Set-Service 'ShellHWDetection' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # SNMP Trap Service
+# # @{ name    =  'set_service__snmptrap';
+# #     script = { Set-Service 'SNMPTRAP' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # SSDP Discovery Service
+# # @{ name    =  'set_service__ssdpsrv';
+# #     script = { Set-Service 'SSDPSRV' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Secure Socket Tunneling Protocol Service
+# # @{ name    =  'set_service__sstpsvc';
+# #     script = { Set-Service 'SstpSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Microsoft Software Shadow Copy Provider Service
+# # @{ name    =  'set_service__swprv';
+# #     script = { Set-Service 'swprv' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # SuperFetch
+# # @{ name    =  'set_service__sysmain';
+# #     script = { Set-Service 'SysMain' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+#   # Telephony Service
+#   @{ name    =  'set_service__tapisrv';
+#       script = { Set-Service 'TapiSrv' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+# # # Themes Service
+# # @{ name    =  'set_service__themes';
+# #     script = { Set-Service 'Themes' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Distributed Link Tracking Client Service
+# # @{ name    =  'set_service__trkwks';
+# #     script = { Set-Service 'TrkWks' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # UPnP Device Host Service
+# # @{ name    =  'set_service__upnphost';
+# #     script = { Set-Service 'upnphost' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # Volume Shadow Copy Service
+# # @{ name    =  'set_service__vss';
+# #     script = { Set-Service 'VSS' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # Block Level Backup Engine Service
+# # @{ name    =  'set_service__wbengine';
+# #     script = { Set-Service 'wbengine' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Windows Connect Now - Config Registrar Service
+# # @{ name    =  'set_service__wcncsvc';
+# #     script = { Set-Service 'wcncsvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Windows Color System Service
+# # @{ name    =  'set_service__wcspluginservice';
+# #     script = { Set-Service 'WcsPlugInService' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Diagnostic Policy Services
+# # @{ name    =  'set_service__wdiservicehost';
+# #     script = { Set-Service 'WdiServiceHost' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+# # # Diagnostic Policy Services
+# # @{ name    =  'set_service__wdisystemhost';
+# #     script = { Set-Service 'WdiSystemHost' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+# #     pre    = { 1 }; post   = { 1 }; }
+#   # Windows Error Reporting Service
+#   @{ name    =  'set_service__wersvc';
+#       script = { Set-Service 'WerSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # WinDefend - Windows Defender
+#   @{ name    =  'set_service__windefend_windows_defender_service_to_startuptype_disabled';
+#       script = { Set-Service 'WinDefend' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # WLAN AutoConfig Service
+#   @{ name    =  'set_service__wlansvc';
+#       script = { Set-Service 'Wlansvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # Windows Media Player Network Sharing Service
+#   @{ name    =  'set_service__wmpnetworksvc';
+#       script = { Set-Service 'WMPNetworkSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # Family Safety Service
+#   @{ name    =  'set_service__wpcsvc';
+#       script = { Set-Service 'WPCSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # Security Center
+#   @{ name    =  'set_service__wscsvc';
+#       script = { Set-Service 'wscsvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # Windows Search Service
+#   @{ name    =  'set_service__wsearch';
+#       script = { Set-Service 'WSearch' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # WSearch - Windows Search
+#   @{ name    =  'set_service__wsearch_windows_search_to_startuptype_disabled';
+#       script = { Set-Service 'WSearch' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # WuauServ - Automatic Updates
+#   @{ name    =  'set_service__wuauserv';
+#       script = { Set-Service 'wuauserv' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # WzcSvc - Wireless Autoconfiguration
+#   @{ name    =  'set_service__wzcsvc_wireless_to_startuptype_manual';
+#       script = { Set-Service 'WZCSVC' -StartupType 'Manual' -ea 0 -verb:$VerbosePreference;  };
+#       pre    = { 1 }; post   = { 1 }; }
+#   # WWAN AutoConfig Service
+#   @{ name    =  'set_service__wwansvc';
+#       script = { Set-Service 'WwanSvc' -StartupType 'Disabled' -ea 0 -verb:$VerbosePreference; };
+#       pre    = { 1 }; post   = { 1 }; }
 
   # Scheduled Task Status
-
   # Application Information Telemetry
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_Application_Experience_AitAgent';
       script = { Disable-ScheduledTask "microsoft\windows\Application Experience\AitAgent" -ea 0; };
          pre = { 1 }; post = { 1 }; }
-  # Cleans up each package's unused temporary files.
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_ApplicationData_CleanupTemporaryState';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\ApplicationData\CleanupTemporaryState" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # Program Telemetry for the Microsoft Customer Experience Program
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_Application_Experience_ProgramDataUpdater';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\Application Experience\ProgramDataUpdater" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # Scans startup entries and rasies notification to the user if there are too many startup entries.
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_Application_Experience_StartupAppTask';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\Application Experience\StartupAppTask" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # This task collects and uploads autochk SQM data if opted-in to the Microsoft Customer.
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_Autochk_Proxy';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\Autochk\Proxy" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
+# # Cleans up each package's unused temporary files.
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_ApplicationData_CleanupTemporaryState';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\ApplicationData\CleanupTemporaryState" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # Program Telemetry for the Microsoft Customer Experience Program
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_Application_Experience_ProgramDataUpdater';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\Application Experience\ProgramDataUpdater" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # Scans startup entries and rasies notification to the user if there are too many startup entries.
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_Application_Experience_StartupAppTask';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\Application Experience\StartupAppTask" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # This task collects and uploads autochk SQM data if opted-in to the Microsoft Customer.
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_Autochk_Proxy';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\Autochk\Proxy" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
   # Cleanup Bluetooth Devices
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_Bluetooth_UninstallDeviceTask';
       script = { Disable-ScheduledTask "microsoft\windows\Bluetooth\UninstallDeviceTask" -ea 0; };
          pre = { 1 }; post = { 1 }; }
-  # NTFS Volume Health Scan
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_Chkdsk_ProactiveScan';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\Chkdsk\ProactiveScan" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # Telemtry for the Customer Experience Program
-  @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_BthSQM';
-      script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\BthSQM' -ea 0 };
-         pre = { 1 }; post = { 1 }; };
-  @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_Consolidator';
-      script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator' -ea 0 };
-         pre = { 1 }; post = { 1 }; };
-  @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_KernelCeipTask';
-      script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask' -ea 0 };
-         pre = { 1 }; post = { 1 }; };
-  @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_Uploader';
-      script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\Uploader' -ea 0 };
-         pre = { 1 }; post = { 1 }; };
-  @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_UsbCeip';
-      script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip' -ea 0 };
-         pre = { 1 }; post = { 1 }; };
+# # NTFS Volume Health Scan
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_Chkdsk_ProactiveScan';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\Chkdsk\ProactiveScan" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # Telemtry for the Customer Experience Program
+# @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_BthSQM';
+#     script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\BthSQM' -ea 0 };
+#        pre = { 1 }; post = { 1 }; };
+# @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_Consolidator';
+#     script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator' -ea 0 };
+#        pre = { 1 }; post = { 1 }; };
+# @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_KernelCeipTask';
+#     script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask' -ea 0 };
+#        pre = { 1 }; post = { 1 }; };
+# @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_Uploader';
+#     script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\Uploader' -ea 0 };
+#        pre = { 1 }; post = { 1 }; };
+# @{ name    = 'disable_scheduled_task__Microsoft_Windows_Customer Experience Improvement Program_UsbCeip';
+#     script = { Disable-ScheduledTask '\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip' -ea 0 };
+#        pre = { 1 }; post = { 1 }; };
   # Scans fault-tolerant volumes for fast crash recovery
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_Data_Integrity_Scan_Data_Integrity_Scan';
       script = { Disable-ScheduledTask "\Microsoft\Windows\Data Integrity Scan\Data Integrity Scan" -ea 0; };
@@ -536,28 +789,14 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    = 'disable_scheduled_task__Microsoft_Windows_Ras_MobilityManager';
       script = { Disable-ScheduledTask '\Microsoft\Windows\Ras\MobilityManager' -ea 0 };
          pre = { 1 }; post = { 1 }; };
-  # NGEN Service
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319_Critical';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 Critical" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64_Critical';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64 Critical" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # NGEN Service
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
   # This task controls periodic background synchronization of Offline Files when the user is working in an offline mode.
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_Offline_Files_Background_Synchronization';
       script = { Disable-ScheduledTask "\Microsoft\Windows\Offline Files\Background Synchronization" -ea 0; };
          pre = { 1 }; post = { 1 }; }
-  # This job analyzes the system looking for conditions that may cause high energy use.
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_Power_Efficiency_Diagnostics_AnalyzeSystem';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\Power Efficiency Diagnostics\AnalyzeSystem" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
+# # This job analyzes the system looking for conditions that may cause high energy use.
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_Power_Efficiency_Diagnostics_AnalyzeSystem';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\Power Efficiency Diagnostics\AnalyzeSystem" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
   # Registry Idle Backup Task
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_Registry_RegIdleBackup';
       script = { Disable-ScheduledTask "\Microsoft\Windows\Registry\RegIdleBackup" -ea 0; };
@@ -603,12 +842,12 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_SystemRestore_SR';
       script = { Disable-ScheduledTask "\Microsoft\Windows\SystemRestore\SR" -ea 0; };
          pre = { 1 }; post = { 1 }; }
-  @{ name    = 'disable_scheduled_task__Microsoft_Windows_UPnP_UPnPHostConfig';
-      script = { Disable-ScheduledTask '\Microsoft\Windows\UPnP\UPnPHostConfig' -ea 0 };
-         pre = { 1 }; post = { 1 }; };
-  @{ name    = 'disable_scheduled_task__Microsoft_Windows_WDI_ResolutionHost';
-      script = { Disable-ScheduledTask '\Microsoft\Windows\WDI\ResolutionHost' -ea 0 };
-         pre = { 1 }; post = { 1 }; };
+# @{ name    = 'disable_scheduled_task__Microsoft_Windows_UPnP_UPnPHostConfig';
+#     script = { Disable-ScheduledTask '\Microsoft\Windows\UPnP\UPnPHostConfig' -ea 0 };
+#        pre = { 1 }; post = { 1 }; };
+# @{ name    = 'disable_scheduled_task__Microsoft_Windows_WDI_ResolutionHost';
+#     script = { Disable-ScheduledTask '\Microsoft\Windows\WDI\ResolutionHost' -ea 0 };
+#        pre = { 1 }; post = { 1 }; };
   # This scheduled task notifies the user that Windows Backup has not been configured.
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_WindowsBackup_ConfigNotification';
       script = { Disable-ScheduledTask "\Microsoft\Windows\WindowsBackup\ConfigNotification" -ea 0; };
@@ -616,10 +855,10 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    = 'disable_scheduled_task__Microsoft_Windows_Windows Filtering Platform_BfeOnServiceStartTypeChange';
       script = { Disable-ScheduledTask '\Microsoft\Windows\Windows Filtering Platform\BfeOnServiceStartTypeChange' -ea 0 };
          pre = { 1 }; post = { 1 }; };
-  # This task applies color calibration settings.
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_WindowsColorSystem_Calibration_Loader';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\WindowsColorSystem\Calibration Loader" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
+# # This task applies color calibration settings.
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_WindowsColorSystem_Calibration_Loader';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\WindowsColorSystem\Calibration Loader" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
   # Periodic maintenance task.
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_Windows_Defender_Windows_Defender_Cache_Maintenance';
       script = { Disable-ScheduledTask "\Microsoft\Windows\Windows Defender\Windows Defender Cache Maintenance" -ea 0; };
@@ -656,111 +895,73 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    =   'disable_scheduled_task__Microsoft_Windows_WindowsUpdate_Scheduled_Start';
       script = { Disable-ScheduledTask "\Microsoft\Windows\WindowsUpdate\Scheduled Start" -ea 0; };
          pre = { 1 }; post = { 1 }; }
-  # Store License Sync
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_Sync_Licenses';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\WS\Sync Licenses" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # Store Refresh Banned App List Task
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_WSRefreshBannedAppsListTask';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\WS\WSRefreshBannedAppsListTask" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # Windows Store Maintenance Task
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_WSTask';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\WS\WSTask" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # This task uploads Customer Experience Improvement Program (CEIP) data for Portable Devices
-  @{ name    =   'disable_scheduled_task__WPD_SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-1001';
-      script = { Disable-ScheduledTask "\WPD\SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-1001" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # This task uploads Customer Experience Improvement Program (CEIP) data for Portable Devices
-  @{ name    =   'disable_scheduled_task__WPD_SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-500';
-      script = { Disable-ScheduledTask "\WPD\SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-500" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
+# # Store License Sync
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_Sync_Licenses';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\WS\Sync Licenses" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # Store Refresh Banned App List Task
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_WSRefreshBannedAppsListTask';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\WS\WSRefreshBannedAppsListTask" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # Windows Store Maintenance Task
+# @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_WSTask';
+#     script = { Disable-ScheduledTask "\Microsoft\Windows\WS\WSTask" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # This task uploads Customer Experience Improvement Program (CEIP) data for Portable Devices
+# @{ name    =   'disable_scheduled_task__WPD_SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-1001';
+#     script = { Disable-ScheduledTask "\WPD\SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-1001" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
+# # This task uploads Customer Experience Improvement Program (CEIP) data for Portable Devices
+# @{ name    =   'disable_scheduled_task__WPD_SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-500';
+#     script = { Disable-ScheduledTask "\WPD\SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-500" -ea 0; };
+#        pre = { 1 }; post = { 1 }; }
 
-  @{ name    =   'set_powersheme_disable_hibernation';
-      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
-        powercfg.exe -h off
-        powercfg.exe -change -hibernate-timeout-ac 0
-        powercfg.exe -change -hibernate-timeout-dc 0
-      } catch {} };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'set_powerscheme_high_performance';
-      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
-        powercfg.exe -s           8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-        powercfg.exe -setabsentia 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-        powercfg -setacvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c fea3413e-7e05-4911-9a71-700331f1c294 245d8541-3943-4422-b025-13a784f679b7 1
-        powercfg -setdcvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c fea3413e-7e05-4911-9a71-700331f1c294 245d8541-3943-4422-b025-13a784f679b7 1
-      } catch {} };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'set_powerscheme_always_on';
-      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
-        powercfg.exe -setactive scheme_min
-        powercfg.exe -setactive "Always On"
-      } catch {} };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'set_powersheme_prevent_display_blanking';
-      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
-        powercfg.exe -change -monitor-timeout-ac 0
-      } catch {} };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'set_powersheme_standby_timout';
-      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
-        powercfg.exe -change -standby-timeout-ac 0
-      } catch {} };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'set_powersheme_disk_timeout';
-      script = {  try { $Local:ErrorActionPreference = "CONTINUE"
-        powercfg.exe -change -disk-timeout-ac 0
-        powercfg.exe -setacvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0
-        powercfg.exe -setdcvalueindex 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0
-      } catch {} };
-      pre    = { 1 }; post   = { 1 }; }
+  # Clear and remove pagefile for defrag/sdelete in the next stage
   @{ name    =   'disable_automatic_managed_pagefile';
       script = { Disable-AutomaticManagedPagefile -Verbose:$VerbosePreference };
-      pre    = { $os = gwmi win32_operatingsystem; if ($os.version -imatch '^5\.1'){ throw 'On Windows XP/2003.' } };
+      pre    = { $os = Get-Win32_OperatingSystem; if ($os.version -imatch '^5\.1') { Throw 'On Windows XP/2003.' } };
       post   = { 1 }; }
   @{ name    =   'enable_clear_pagefile_at_shutdown';
       script = { Enable-ClearPagefileAtShutdown -Verbose:$VerbosePreference };
-      pre    = { 1 };
-      post   = { 1 }; }
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'delete_pagefiles';
       script = { Get-Pagefile | Remove-Pagefile -Verbose:$VerbosePreference };
-      pre    = { 1 };
-      post   = { 1 }; }
-  @{ name    =   'set_desktop_resolution_1024x768';
-    script = { reg.exe query "HKEY_CURRENT_CONFIG\System\CurrentControlSet\Control\VIDEO" | ?{$_} | %{
-                 reg.exe query $_ | ?{ $_ } | %{
-                   reg.exe add "$_" /v DefaultSettings.XResolution /t REG_DWORD /d 0x400 /f;
-                   reg.exe add "$_" /v DefaultSettings.YResolution /t REG_DWORD /d 0x300 /f;
-                 }
-               }
-            };
-      pre    = { if ((Get-OSVersion).CurrentVersion -ne 6.1) { throw "Not on Windows 7/2008" } };
-      post   = { 1 }; }
-  @{ name    =   'eject_cdrom_devices_1';
-      script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'gpupdate_update_force_stage_1';
-      script = { gpupdate.exe /force /sync /boot; try { shutdown.exe -a } catch {}; };
+
+  @{ name    =   'gpupdate_stage_0';
+      script = { gpupdate.exe };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'stage_1_ends';
-      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_ends') %>') };
+  @{ name    =   'gpupdate_update_force_stage_0';
+      script = { gpupdate.exe /force /sync /boot; try { shutdown.exe -a } catch {} finally { sleep 3 }; };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   "reboot_for_stage_1-$(date -uformat %s)";
-      script = { & shutdown.exe -r -t 3 -c "Imagprep Stage 1 Complete - Rebooting to continue .." };
+  @{ name    =   'stage_0_ends';
+      script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_0_ends') %>') } catch{} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   "reboot_for_stage_0-$(date -uformat %s)";
+      script = {
+        Restart-Machine -Delay 15 -Message "Imagprep Stage 1 Complete - Rebooting to continue .."
+      };
       pre    = { 1 }; post   = { 1 }; }
 ),
 
-# stage 1
+# Stage 1
+#   Cleanup image
+#   Prepare for templating
 @(
-  @{ name    =   'stage_2_begins';
-      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_2_begins') %>') };
+  @{ name    =   'stage_1_begins';
+      script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_begins') %>') } catch{} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'start_w32tm_service_2';
+      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic | Start-Service };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_timezone'; # Will fail on 2008R2 without .Net3.5
       pre    = { (Gwmi Win32_TimeZone) -imatch "^${Env:TIMEZONE}$" };
       script = { Get-TimeZone -TimeZoneName "${Env:TIMEZONE}" | Set-TimeZone -Verbose:$VerbosePreference };
       post   = { (Gwmi Win32_TimeZone) -imatch "${Env:TIMEZONE}" }; }
-  @{ name    =   'sync_ntp_time_stage_2';
+  @{ name    =   'activate_windows_stage_1';
+      script = { Invoke-WindowsActivation };
+      pre    = { 1 }; post   = { Get-WindowsActivationStatus }; }
+  @{ name    =   'sync_ntp_time_stage_1';
       script = { Sync-W32Time };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'uninstall_browserchoice_startup_command';
@@ -769,21 +970,9 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    =   'show_w32tm_status';
       script = { Show-W32tmStatus -Status };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'install_powershell_taskbar_shortcut';
-      script = { try{Install-DesktopShortcut -Label "PowerShell" -Command "$Env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"} catch {} };
-      pre    = { 1; }; post   = { 1 }; }
-  @{ name    =   'install_cmd_taskbar_shortcut';
-      script = { try{Install-DesktopShortcut -Label "CMD" -Command "cmd.exe"} catch {} };
-      pre    = { 1; }; post   = { 1 }; }
-  @{ name    =   'install_taskmgr_taskbar_shortcut';
-      script = { try{Install-DesktopShortcut -Label "TaskManager" -Command "taskmgr.exe"} catch{} };
-      pre    = { 1; }; post   = { 1 }; }
-  @{ name    =   'install_event_viewer_taskbar_shortcut';
-      script = { try{Install-DesktopShortcut -Label "Event Viewer" -Command "eventvwr.exe"} catch{}};
-      pre    = { 1; }; post   = { 1 }; }
-  @{ name    =   'install_psr_taskbar_shortcut';
-      script = { try{Install-DesktopShortcut -Label "Problem Steps Recorder" -Command "psr.exe"}catch{} };
-      pre    = { 1; }; post   = { 1 }; }
+  @{ name    =   'eject_cdrom_devices_1';
+      script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_console_window_dimensions';
       script = {
           '%SystemRoot%_System32_WindowsPowerShell_v1.0_powershell.exe',
@@ -797,30 +986,39 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
           }
       };
       pre    = { 1; }; post   = { 1 }; }
-  @{ name    =   'set_kms_server';
-      script = { & slmgr.vbs -skms "${Env:KMS_SERVER}:${Env:KMS_PORT}" };
-      pre    = { $os = gwmi win32_operatingsystem; if ($os.version -imatch '^5\.1'){ throw 'On Windows XP/2003.' } }; post   = { 1 }; }
-  @{ name    =   'activate_windows';
-      script = { Invoke-WindowsActivation };
+  @{ name    =   'add_powershell_assembLies_to_ngen_queue_2';
+      script = { Add-AssemblyToNgenQueue -CurrentDomainAssemblies -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'add_powershell_assemblies_to_ngen_queue_2';
-#     script = { Add-AssemblyToNgenQueue -CurrentDomainAssemblies -Verbose:$VerbosePreference };
-#     pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'start_ngen_queued_tasks_2';
-#     script = { Start-NgenQueuedTasks -Verbose:$VerbosePreference };
-#     pre    = { 1 }; post   = { 1 }; }
+  # TODO. Forcing ngen to execute queued items like this is reported to take up
+  #       considerable space on Windows 2012 R2 (and other?) images.
+  #       However, not invoking it causes .Net apps to run slowly.
+  @{ name    =   'start_ngen_queued_tasks_2';
+      script = { Start-NgenQueuedTasks -Update -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+  # NGEN Service
+  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319_Critical';
+      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 Critical" -ea 0; };
+         pre = { 1 }; post = { 1 }; }
+  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64_Critical';
+      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64 Critical" -ea 0; };
+         pre = { 1 }; post = { 1 }; }
+  # NGEN Service
+  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319';
+      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319" -ea 0; };
+         pre = { 1 }; post = { 1 }; }
+  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64';
+      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64" -ea 0; };
+         pre = { 1 }; post = { 1 }; }
   @{ name    =   'invoke_winmgmt_repository_reset';
       script = { try { Invoke-WinMgmt -ResetRepository }catch{} };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'invoke_winmgmt_repository_verify';
       script = { try { Invoke-WinMgmt -VerifyRepository }catch{} };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'invoke_windows_defender_full_scan';
-      script = { Invoke-WindowsDefenderScan -Full -Verbose:$VerbosePreference };
-      pre    = { $os = gwmi win32_operatingsystem; if ($os.version -imatch '^(?:6\.[1-9])'){ throw 'On Windows 8.1/2012R2.' } }; post   = { 1 }; }
-  @{ name    =   'collect_windows_defender_files';
-      script = { Invoke-WindowsDefenderCommand -MPCmdRunArgs @('-GetFiles') -Verbose:$VerbosePreference };
-      pre    = { $os = gwmi win32_operatingsystem; if ($os.version -imatch '^(?:6\.[1-9])'){ throw 'On Windows 8.1/2012R2.' } }; post   = { 1 }; }
+  @{ name    =   'clear_bitsadmin_cache';
+      # bitsadmin is not available on some localized OSes??
+      script = { try{& bitsadmin.exe /cache /clear} catch{} };
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'remove_hiberfil.sys';
       script = {
         Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | ?{
@@ -835,9 +1033,9 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
           }
         }
       }; }
-  @{ name    =   'clear_bitsadmin_cache';
-      # bitsadmin is not available on some localized OSes??
-      script = { try{& bitsadmin.exe /cache /clear} catch{} };
+
+  @{ name    =   'delete_pagefile_files';
+      script = { 'pagefile.sys', 'swapfile.sys' | %{ rm -Force  (Join-Path $Env:SystemDrive $_) -ea 0 } };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'remove_temp_files';
       script = { rm -Force -Verbose:$VerbosePreference -Recurse (Join-Path $Env:TEMP '*') -ea 0};
@@ -845,24 +1043,24 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    =   'remove_windows_temp_files';
       script = { rm -Force -Verbose:$VerbosePreference -Recurse (Join-Path $Env:WINDIR 'TEMP\*') -ea 0 };
       pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'remove_c_temp_files';
+      script = { rm -Force -Verbose:$VerbosePreference -Recurse (Join-Path $Env:SystemDrive 'TEMP\*') -ea 0 };
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'remove_windows_downloaded_program_files';
       script = { rm -Force -Verbose:$VerbosePreference -Recurse (Join-Path $Env:WINDIR 'Downloaded Program Files\*') -ea 0 };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'remove_windows_prefetch_files';
       script = { rm -Force -Verbose:$VerbosePreference -Recurse (Join-Path $Env:WINDIR 'Prefetch\*') -ea 0 };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'invoke_dism_service_pack_cleanup';
-      script = { & dism.exe /online /cleanup-image /spsuperseded };
-      pre    = { Get-Command dism.exe -ea 1 }; post   = { 1 }; }
-      # @{ name    =   'remove_ntuninstall_files';
-      #     script = {
-      #       try {
-      #         ls -ea 0 -Force (Join-Path $Env:WINDIR '$NT*install*') -Recurse | %{
-      #           rm -ea 0 -Recurse -Force -Verbose:$VerbosePreference $_
-      #         }
-      #       } catch {}
-      #     };
-      #     pre    = { 1 }; post   = { 1 }; }
+# @{ name    =   'remove_ntuninstall_files';
+#    script = {
+#      try {
+#        ls -ea 0 -Force (Join-Path $Env:WINDIR '$NT*install*') -Recurse | %{
+#          rm -ea 0 -Recurse -Force -Verbose:$VerbosePreference $_
+#        }
+#      } catch {}
+#    };
+#    pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'remove_software_distribution_download_files';
       script = {
         Get-Service *inst* | Stop-Service -Verbose:$VerbosePreference -ea 0
@@ -877,6 +1075,56 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
         rm -Force -Verbose:$VerbosePreference -recurse (Join-Path $Env:WINDIR 'Installer\$PatchCache$\*')  -ea 0
       };
       pre    = { Test-Path (Join-Path $Env:WINDIR 'Installer\$PatchCache$') }; post   = { 1 }; }
+
+  @{ name    = 'setup_disk_cleanup_sageset_65535';
+      script = {
+        try {
+          # Setup disk cleanup (cleanmgr.exe) run so that it can be automated later.
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Active Setup Temp Folders'                      /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\BranchCache'                                    /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Compress old files'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Content Indexer Cleaner'                        /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Downloaded Program Files'                       /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Internet Cache Files'                           /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Memory Dump Files'                              /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Office Setup Files'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Offline Files'                                  /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Offline Pages Files'                            /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Old ChkDsk Files'                               /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Previous Installations'                         /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Recycle Bin'                                    /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Remote Desktop Cache Files'                     /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Service Pack Cleanup'                           /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Setup Log Files'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Setup Log Files'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System error memory dump files'                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System error minidump files'                    /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System Restore'                                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Files'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Offline Files'                        /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Setup Files'                          /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Sync Files'                           /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Thumbnail Cache'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Update Cleanup'                                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Upgrade Discarded Files'                        /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\User file versions'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\WebClient and WebPublisher Cache'               /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Defender'                               /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Error Reporting Archive Files'          /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Error Reporting Queue Files'            /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Error Reporting System Archive Files'   /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Error Reporting System Queue Files'     /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows ESD installation files'                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Upgrade Log Files'                      /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+        } catch {}
+      }
+      pre    = { gcm cleanmgr.exe -ea 1 };
+      post   = { 1 }; }
+  @{ name    =   'start_disk_cleanup_sagerun_65535';
+      script = { Start-Process cleanmgr.exe -ArgumentList '/sagerun:65535' -Wait -NoNewWindow };
+      pre    = { gcm cleanmgr.exe -ea 1 };
+      post   = { 1 }; }
+
   @{ name    =   'disable_indexing_on_local_drives';
       script = {
         Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | %{
@@ -888,27 +1136,52 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
         }
       };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'start_service_pack_cleanup_tool';
-      script = { Start-Process vsp1cln.exe -ArgumentList '/quiet' -Wait -NoNewWindow };
-      pre    = { Get-Command 'vsp1cln.exe' -ea 1 }; post   = { 1 }; }
-  @{ name    =   'start_component_cleanup_tool';
-      script = { Start-Process compcln.exe -argumentlist '/quiet' -wait -NoNewWindow };
-      pre    = { Get-Command 'compcln.exe' -ea 1 }; post   = { 1 }; }
+# @{ name    =   'start_service_pack_cleanup_tool';
+#     script = { Start-Process vsp1cln.exe -ArgumentList '/quiet' -Wait -NoNewWindow };
+#     pre    = { Get-Command 'vsp1cln.exe' -ea 1 }; post   = { 1 }; }
+# @{ name    =   'start_component_cleanup_tool';
+#     script = { Start-Process compcln.exe -argumentlist '/quiet' -wait -NoNewWindow };
+#     pre    = { Get-Command 'compcln.exe' -ea 1 }; post   = { 1 }; }
+# @{ name    =   'start_dism_component_cleanup_analysis';
+#     script = {
+#       try {
+#         Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/AnalyzeComponentStore' ) -wait -NoNewWindow
+#       } catch {}
+#     };
+#     pre    = { Get-Command 'dism.exe' -ea 1 }; post   = { 1 }; }
+# @{ name    =   'start_dism_component_cleanup';
+#     script = {
+#       try {
+#         Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/StartComponentCleanup' ) -wait -NoNewWindow
+#       } catch {}
+#       try {
+#         Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/SPSuperceded' ) -wait -NoNewWindow
+#       } catch {}
+#       try {
+#         Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/SPSuperceded', '/HideSP' ) -wait -NoNewWindow
+#       } catch {}
+#       try {
+#         Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase' ) -wait -NoNewWindow
+#       } catch {}
+#     };
+#     pre    = { Get-Command 'dism.exe' -ea 1 }; post   = { 1 }; }
 # @{ name    =   'start_sfc_integrity_check';
 #     script = { try { Start-SFC -scannow -Verbose:$VerbosePreference } catch {
 #                       Write-Warning "SFC Failed to complete :$_"
 #                     }};
 #     pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'start_defrag_on_local_drives';
-#     script = {
-#       Get-Service defragsvc -ea 0 | Set-Service -StartupType Manual -PassThru | Start-Service -Verbose:$VerbosePreference
-#       Start-Process defrag.exe -ArgumentList @('-f','-v','c:') -wait -NoNewWindow
-#       Get-Service defragsvc -ea 0 | Set-Service -StartupType Disabled -PassThru
-#     };
-#   pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'start_defrag_on_local_drives';
+      script = {
+        Get-Service defragsvc -ea 0 | Set-Service -StartupType Manual -PassThru | Start-Service -Verbose:$VerbosePreference
+        1..8 | %{
+          Start-Process defrag.exe -ArgumentList @('-f','-v','c:') -wait -NoNewWindow
+        }
+        Get-Service defragsvc -ea 0 | Set-Service -StartupType Disabled -PassThru
+        reg.exe add 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Dfrg\BootOptimizeFunction' /f /v Enable /t REG_SZ /d N
+      };
+    pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'install_contig';
       script = {
-        cp (Join-Path $Env:IPBaseDir "bin\contig.exe") "$Env:OLBIN" -Verbose:$VerbosePreference -Force
         reg.exe add HKCU\SOFTWARE\Sysinternals\C /v EulaAccepted /t REG_DWORD /d 1 /f
       };
       pre    = { 1 }; post   = { 1 }; }
@@ -927,17 +1200,20 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
         }
       };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'start_precompact';
-      script = {
-        cp -force -Verbose:$VerbosePreference (@(gcm precompact.exe)[0].Definition) $Env:TEMP
-        Start-Process "$Env:TEMP\precompact.exe" -argumentlist '-silent' -wait -NoNewWindow
-        rm -Force "$Env:TEMP\precompact.exe" -Verbose:$VerbosePreference
-      };
-      pre    = { Get-Command 'precompact.exe' -ea 1 }; post   = { 1 }; }
+
+# # ATTENTION: Using precompact/sdelete to zero out free space has the effect
+# #            of inflating the size of the vdisk to 100% of potential capacity when
+# #            using thin-provisioned storage. Use with care.
+# @{ name    =   'start_precompact';
+#     script = {
+#       cp -force -Verbose:$VerbosePreference (@(gcm precompact.exe)[0].Definition) $Env:TEMP
+#       Start-Process "$Env:TEMP\precompact.exe" -argumentlist '-silent' -wait -NoNewWindow
+#       rm -Force "$Env:TEMP\precompact.exe" -Verbose:$VerbosePreference
+#     };
+#     pre    = { Get-Command 'precompact.exe' -ea 1 }; post   = { 1 }; }
 # @{ name    =   'install_sdelete';
 #    script = {
 #      reg.exe add 'HKCU\SOFTWARE\Sysinternals\SDelete' /v EulaAccepted /t REG_DWORD /d 1 /f
-#      cp (Join-Path $Env:IPBaseDir "bin/sdelete.exe") "$Env:OLBIN" -Verbose:$VerbosePreference -Force
 #    };
 #    pre    = { 1 }; post   = { 1 }; }
 # @{ name    =   'start_sdelete_to_zero_free_space_on_local_drive';
@@ -945,6 +1221,7 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
 #       Start-Process 'bin/sdelete.exe' -ArgumentList @('-a', '-c', '-r', '-z', '-p', '3', 'c') -Wait -NoNewWindow
 #     };
 #     pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'eject_cdrom_devices_2';
       script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
@@ -956,29 +1233,15 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'enable_automatic_managed_pagefile';
       script = { Enable-AutomaticManagedPagefile -Verbose:$VerbosePreference };
-      pre    = { $os = gwmi win32_operatingsystem; if ($os.version -imatch '^5\.1'){ throw 'On Windows XP/2003.' } }; post   = { 1 }; }
+      pre    = { $os = Get-Win32_OperatingSystem; if ($os.version -imatch '^5\.1') { Throw 'On Windows XP/2003.' } }; post   = { 1 }; }
   @{ name    =   'disable_clear_pagefile_on_shutdown';
       script = { Disable-ClearPageFileAtShutdown -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =  "clear_event_logs-$(date -uformat %s)";
-      script = { Get-EventLog -LogName * | %{ Clear-EventLog -LogName $_.Log -Verbose:$VerbosePreference } };
-      pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'eject_cdrom_devices_2';
       script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =  "register_vm_guest_tools_install_script-$(date -uformat %s)"
-      script = {
-        # TODO : ModuleUtils ought to install these automatically
-        Write-Host -Fore Cyan "VMGuestTools install in $PWD"
-        $ProgramDataDir = if ($Env:PROGRAMDATA) {$Env:PROGRAMDATA} else {Join-Path $Env:SYSTEMDRIVE "ProgramData"}
-        $TargetModuleBaseDir = Join-Path $ProgramDataDir "Citrix\PowerShell\Modules\"
-        mkdir $TargetModuleBaseDir -Force | Out-Null
-        'CDRom','XenTools','VMGuestTools','HyperVIC','VMWareTools','ModuleUtils','SystemUtils' | %{
-          cp -Verbose:$VerbosePreference -Recurse -Force "$Env:IPBaseDir\Modules\$_\" "$TargetModuleBaseDir\"
-        }
-        & "$TargetModuleBaseDir\VMGuestTools\Tests\Install-VMGuesttools.ps1" -SelfInstall
-      };
-      pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'initialize_bginfo';
       script = {
         reg.exe add HKCU\SOFTWARE\Sysinternals\BGInfo /v EulaAccepted  /t REG_DWORD /d 1 /f | Write-Verbose
@@ -986,14 +1249,9 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =  'install_bginfo_desktop_startup_script';
       script = {
-        $bginfo = (Join-Path $Env:IPBaseDir "bin/bginfo.exe")
-        $bgifile = (Resolve-Path (Join-Path $Env:IPBaseDir "conf\*.bgi")).ProviderPath 
-        Install-GlobalLogonScript -ScriptPath "$bginfo /nolicprompt /timer:0 $bgifile" -ValueName 'bginfo'
-      };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'install_show_desktop_on_logon';
-      script = {
-        Install-GlobalLogonScript 'explorer.exe "shell:::{3080F90D-D7AD-11D9-BD98-0000947B0257}"' "ShowDesktopOnLogon"
+        $bginfo  = [String](Join-Path $Env:IPBaseDir "bin/bginfo.exe")
+        $bgifile = [String]((Resolve-Path (Join-Path $Env:IPBaseDir "conf\*.bgi")).ProviderPath)
+        Install-GlobalLogonScript -Name 'UpdateBgInfoOnLogon' -Script "$bginfo /nolicprompt /timer:0 $bgifile"
       };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "uninstall_imageprep_startup_script-$(date -uformat %s)";
@@ -1002,14 +1260,65 @@ $Env:PATH += ";$Env:OLBIN;$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
   @{ name    =   "install_bootstrap_startup_script-$(date -uformat %s)";
       script = { Install-GlobalLogonScript -ScriptPath (ls Start-BootStrap.cmd).FullName };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'gpupdate_update_force_stage_2';
-      script = { gpupdate.exe /force /sync /boot; try { shutdown.exe -a } catch {}; };
+
+  @{ name    =   "sysprep_server_os";
+      script = { Invoke-Sysprep -Generalize -Oobe -Quit -AnswerFile 'sysprep.xml' };
+      pre    = { $OSVersion = Get-OSVersion; if ( $OSVersion.InstallationType -ne 'Server' ) { Throw "Not a Server OS"; } };
+      post   = { 1 }; }
+  @{ name    =  "clear_event_logs-$(date -uformat %s)";
+      script = { Get-EventLog -LogName * | %{ Clear-EventLog -LogName $_.Log -Verbose:$VerbosePreference } };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'stage_2_ends';
-      script = { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_2_ends') %>') };
+  @{ name    =   'gpupdate_stage_1';
+      script = { gpupdate.exe };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'gpupdate_update_force_stage_1';
+      script = { gpupdate.exe /force /sync /boot; try { shutdown.exe -a } catch {} finally { sleep 3 }; };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'report_image_id_back_to_razor';
+      script = {
+        # TODO: This section is quite error prone on win7/2k8r2
+        #       wrapped in try{}catch{} for now
+        $ReportStatus = $False; $RetryCount = 0
+        while ( -not($ReportStatus) -and ($RetryCount -le 10) ) {
+          try {
+            # TODO: $ImageId is malformed/contains duplicate info
+            if ($ImageId = Get-ImageID) {
+              $callback = @"
+                (New-Object Net.WebClient).DownloadString('<%= stage_done_url("image_id__{0}") %>')
+"@
+              $callback = $callback -f $ImageId
+              Write-Verbose "  Reporting $ImageId to Razor via $callback"
+              iex $callback
+              $ReportStatus = $True
+            } else {
+              Throw "Unable to derive ImageId"
+            }
+          }
+          catch {
+            Write-Warning "Failed to report ImageId to Razor"
+          }
+          finally {
+            $RetryCount++
+          }
+        }
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'stage_1_ends';
+      script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_ends') %>') } catch{} };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'flush_dns_cache';
+      script = { ipconfig /flushdns };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "shutdown_for_templating-$(date -uformat %s)";
-      script = { & shutdown.exe -s -t 30 -c "Imagprep Stage 2 Complete - Shutting down for templating" };
+      script = {
+        Restart-Machine -Delay 15 -Message "Imagprep Stage 2 Complete - Shutting down for templating"
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   "shutdown_for_templating_backup-$(date -uformat %s)";
+      script = {
+        # TODO: Backup shutdown, as the above attempt sometimes fails on windows 7
+        sleep 10; Stop-Computer; while (1) { shutdown.exe -s -t 0 }
+      };
       pre    = { 1 }; post   = { 1 }; }
 )
 
