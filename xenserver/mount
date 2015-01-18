@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Mount URLs (NFS, CIFS, etc) on a XenServer host.
+
+declare host="${HOST:-$XENSERVER_HOST}"
+
+source defaults.sh
+source utils.sh
+
+declare mount_options= mount_point= test_writability=1 url=
+
+while getopts ":H:fhn:o:Tu:V" opt; do
+  case $opt in
+    H) host="$OPTARG"
+      ;;
+    m) mount_point="$OPTARG"
+      ;;
+    o) mount_options="$OPTARG"
+      ;;
+    u) url="$OPTARG"
+      ;;
+    T) test_writability=0
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented option -$OPTARG"
+      ;;
+  esac
+done
+
+[[ $host ]]            || die "No host (-H) specified."
+[[ $url ]]             || die "No url (-u) specified."
+
+"$host" url="$url" mount_point="$mount_point" mount_options="$mount_options" \
+  test_writability="$test_writability" '
+    set -eu
+
+    shopt -s sourcepath
+    source utils.sh
+    source mount.utils.sh
+
+    mount_options="${mount_options:-rw,intr,soft}"
+
+    if ! mount_point=$( mount_url "$url" "$mount_options" ) ec=$?; then
+      echo "ERROR: Failed to mount $url"
+      exit 6
+    fi
+
+    if (( test_writability == 1 )); then
+      if ! temp_file=$(mktemp -p "$mount_point" -t "write.test.XXXXXXXX") ec=$?; then
+        echo "ERROR: $url on $mount_point is not writable"
+        exit 5
+      else
+        rm -f "$temp_file"
+      fi
+    fi
+
+    echo "$mount_point"
+  '
