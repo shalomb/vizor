@@ -53,7 +53,7 @@ query_string="${query_string:-${user_query_string}}"
 [[ -z $query_string ]] && query_string='*'
 [[ -z $query_string ]] && die "query_string : $query_string"
 
-echo -n "Querying '$database' for '$query_string' .. " >&2
+[[ ${DEBUG-} ]] && echo -n "Querying '$database' for '$query_string' .. " >&2
 
 results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_search?search_type=scan&scroll=1s' -d '{
   "query" : {
@@ -65,7 +65,7 @@ results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_se
 
 total_hits=$(jq -e -r -S '.hits.total' <<<"$results")
 
-echo "found '$total_hits' documents." >&2
+[[ ${DEBUG-} ]] && echo "found '$total_hits' documents." >&2
 
 results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_search?from=0&size='"$total_hits"'' -d '{
   "query" : {
