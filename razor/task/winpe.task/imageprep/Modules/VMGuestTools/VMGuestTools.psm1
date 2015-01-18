@@ -29,23 +29,26 @@ function Get-VMGuestToolsStatus {
   [CmdletBinding()]
   Param()
 
-  Write-Verbose "  Installing tools for VMType : $(Get-VMType).VMType"
+  Write-Verbose "  Retrieving VM Guest Tools InstallStatus for VMType : $(Get-VMType).VMType"
   $Report = New-Object PSObject
   Switch -Regex ( (Get-VMType).VMType ) {
     'Xen' {
-      $Report | Add-Member NoteProperty Type        'Xen'
-      $Report | Add-Member NoteProperty Installed   (Test-XenToolsInstallation -ea 0)
-      $Report | Add-Member NoteProperty Version     (Get-XenToolsVersion -ea 0)
+      $Report | Add-Member NoteProperty Type          'Xen'
+      $Report | Add-Member NoteProperty Installed     (Test-XenToolsInstallation -ea 0)
+      $Report | Add-Member NoteProperty InstallStatus ([Boolean]((Get-XenPVInstallStatus).InstallStatus))
+      $Report | Add-Member NoteProperty Version       (Get-XenToolsVersion -ea 0)
     }
     'VMWare' {
-      $Report | Add-Member NoteProperty Type        'VMWare'
-      $Report | Add-Member NoteProperty Installed   (Test-VMWareToolsInstallation -ea 0)
-      $Report | Add-Member NoteProperty Version     (Get-VMWareToolsVersion -ea 0)
+      $Report | Add-Member NoteProperty Type          'VMWare'
+      $Report | Add-Member NoteProperty Installed     (Test-VMWareToolsInstallation -ea 0)
+      $Report | Add-Member NoteProperty InstallStatus (Test-VMWareToolsInstallation -ea 0)
+      $Report | Add-Member NoteProperty Version       (Get-VMWareToolsVersion -ea 0)
     }
     'HyperV' {
-      $Report | Add-Member NoteProperty Type        'HyperV'
-      $Report | Add-Member NoteProperty Installed   (Test-HyperVToolsInstallation -ea 0)
-      $Report | Add-Member NoteProperty Version     (Get-HyperVToolsVersion -ea 0)
+      $Report | Add-Member NoteProperty Type          'HyperV'
+      $Report | Add-Member NoteProperty Installed     (Test-HyperVToolsInstallation -ea 0)
+      $Report | Add-Member NoteProperty InstallStatus (Test-HyperVToolsInstallation -ea 0)
+      $Report | Add-Member NoteProperty Version       (Get-HyperVToolsVersion -ea 0);;;
     }
   }
   $Report
