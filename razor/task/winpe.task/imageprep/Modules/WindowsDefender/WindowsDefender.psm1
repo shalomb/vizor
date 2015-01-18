@@ -7,6 +7,10 @@ Set-PSDebug -Trace 0
 $WinDefendDir   = Join-Path $Env:ProgramFiles 'Windows Defender'
 $WinDefendPath  = Join-Path $WinDefendDir     'MpCmdRun.exe'
 
+function Test-IsWindowsDefenderAvailable {
+  [CmdletBinding()] Param()
+  Test-Path $WinDefendPath
+}
 
 function Disable-WindowsDefender {
   [CmdletBinding()]
@@ -29,7 +33,7 @@ function Invoke-WindowsDefenderCommand {
     [Switch]$EnableIntegrityServices,
     [String[]]$MPCmdRunArgs
   )
-  
+
   $WinDefendArgs  = @()
   $WinDefendArgs =    if ($GetFiles)                { '-Getfiles' }
                   elseif ($EnableIntegrityServices) { '-EnableIntegrityServices' }
