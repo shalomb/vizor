@@ -1,21 +1,23 @@
 # Script Module VDIOptimizations/VDIOptimizations.psm1
 
+# This Module performs some of the core optimizations as laid out in
+# 'Windows 8 and Server 2012 Optimization Guide | Citrix Blogs' http://blogs.citrix.com/2014/02/06/windows-8-and-server-2012-optimization-guide/
+
 Set-StrictMode -Version 2.0
 Set-PSDebug -Trace 0
-
 
 
 function Set-UserPreferences {                  #M:VDIOptimizations
   [CmdletBinding()]
   Param()
   Write-Verbose "Setting User Preferences"
-  
+
   if (Test-Path ($profilesRoot = Join-Path $Env:SystemDrive "Users")) { # >= 6.0
     ; # ... do nothing, the assignment is done .. fall through
   }
   elseif (Test-Path ($profilesRoot = Join-Path $Env:SystemDrive "Documents and Settings")) {  # <= 5.1
     ; # ... do nothing, the assiment is done .. fall through
-  } 
+  }
   else {
     Throw "Error looking up the default user's profile."
   }
@@ -76,7 +78,6 @@ function Set-UserPreferences {                  #M:VDIOptimizations
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\InternetSettings\Cache"   )   /f  /v  "Persistent"                 /t REG_DWORD    /d 0x0  | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "ForceStartMenuLogOff"       /t REG_DWORD    /d 0x1 | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "HideSCAHealth"              /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "HideSCAHealth"              /t REG_DWORD    /d 0x1  | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "NoRecycleFiles"             /t REG_DWORD    /d 0x1 | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "NoWelcomeScreen"            /t REG_DWORD    /d 0x1 | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\System"          )   /f  /v  "Wallpaper"                  /t REG_SZ       /d "." | Write-Verbose
@@ -232,7 +233,7 @@ function Set-PowerSchemeOptimizations {
   if ( (gwmi Win32_OperatingSystem).Version -lt 6) { # xp
     & powercfg.exe -setactive "Always On"
     & powercfg.exe -query
-  } 
+  }
   else {
     & powercfg.exe -setactive scheme_min          # always on
     & powercfg.exe -getactivescheme
