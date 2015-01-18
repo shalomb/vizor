@@ -306,25 +306,26 @@ function Get-DotNetVersion {
     return ([System.Runtime.InteropServices.RuntimeEnvironment]::GetSystemVersion())
   }
 
-  $FrameworkBasePathx86 = (Join-Path $Env:WINDIR 'Microsoft.Net\FrameWork')
-  $FrameworkBasePathx64 = (Join-Path $Env:WINDIR 'Microsoft.Net\FrameWork64')
-
   $RegQueryPaths = @()
+  $RegQueryPaths += @(ls "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\")
   if ( Test-Path ($rpath = 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4*') ) {
     $RegQueryPaths += @(ls (Join-Path $rpath '\*') | ?{ $_.PSIsContainer })
-  } else {
-    $RegQueryPaths += @(ls "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\")
   }
 
   $RegQueryPaths | %{
-    $r   = Get-ItemProperty -Path $_.PSPath | %{ $_ | Select * -ExcludeProperty PS* }
-    $r | Add-Member NoteProperty NDPPath $_ -Force
+    $record   = Get-ItemProperty -Path $_.PSPath | %{ $_ | Select * -ExcludeProperty PS* }
+    $record | Add-Member NoteProperty NDPPath $_ -Force
 
     if ( -not(Get-ItemProperty -Path $_.PSPath -Name Increment -ea 0) ) {
-      $r | Add-Member NoteProperty Increment 0 -Force
+      $record | Add-Member NoteProperty Increment 0 -Force
     }
-    $r
+    $record
   }
+}
+
+function Test-DotNet35 {
+  [CmdletBinding()] Param()
+  Test-Path "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5"
 }
 
 function Install-DotNet35 {
@@ -332,27 +333,22 @@ function Install-DotNet35 {
     [Parameter(Mandatory=$True)] $SxSSourcePath,
     [Switch] $Force
   )
-  # This needs to be a pragmatically called i.e. only when deemed a pre-requisite on the SUT.
-  #  i.e. e.g. is not needed on Win7
-  Write-Verbose "Installing .Net3.5"
 
-  if (-not($Force) -and (Test-Path "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5")) {
-    Write-Host -ForegroundColor magenta ".Net3.5 appears to be installed. Aborting.."
+  Write-Verbose "Installing .Net3.5 from $SxSSourcePath"
+
+  if (-not($Force) -and (Test-DotNet35)) {
+    Write-Verbose ".Net3.5 appears to be installed. Aborting.."
     return $True
   }
 
-  if ( Add-Module "ServerManager" ) {
+  if ( Import-Module ServerManager -ea 0 ) {
     Write-Verbose "Installing .Net 3.5 using Windows Roles and Features (ServerManager\Add-WindowsFeature)."
-    Add-WindowsFeature -Name NET-Framework-Features -source $SxSSourcePath
-  }
-  elseif ( (Test-Path ($SxSSourcePath = (Join-Path $CDDevice "Sources\sxs"))) ) {
-    Write-Verbose "Installing .Net 3.5 using DISM (dism.exe ... /enable-feature /featurename:NetFX3 ...)"
-    & dism.exe /online /enable-feature /featurename:NetFX3 /All /Source:"$SxSSourcePath" /LimitAccess
+    Add-WindowsFeature -Name NET-Framework-Features -Source $SxSSourcePath
   }
   else {
-    Throw "Failed attempting to install .Net 3.5. No Feature available or $SxSSourcePath not present/available."
+    Write-Verbose "Installing .Net 3.5 using DISM (dism.exe ... /enable-feature /featurename:NetFX3 ...)"
+    & dism.exe /online /enable-feature /featurename:NetFX3 /All /Source:$SxSSourcePath /LimitAccess
   }
-
 }
 
 function Get-Ngen {
@@ -426,7 +422,8 @@ function Start-NgenQueuedTasks {
 
 function Get-NgenService {
   [CmdletBinding()] Param(
-    [Switch] $Name
+    [Switch] $Name,
+    [String] $ngen = (Get-Ngen -Current)
   )
   Write-Verbose "$ngen queue status"
   $clr = & $ngen queue status /nologo    | ?{ $_ -imatch 'clr' }
@@ -559,7 +556,7 @@ Show-DiskUtilization -Factor 1MB
 }
 
 sal Get-DiskUtilization Show-DiskUtilization
-sal du                  Show-DiskUtilization
+sal df                  Show-DiskUtilization
 
 function Get-SMBBlockSigning {
   [CmdletBinding()] Param() Write-Verbose "Disabling SMB Block Signing."
@@ -911,17 +908,17 @@ function Invoke-SystemAudit {
 
   Write-Verbose "Running SysInternals log gathering tools"
   Initialize-SysInternals
-  if ( gcm CoreInfo.exe ) {
+  if ( gcm CoreInfo.exe -ea 0 ) {
     & CoreInfo.exe           > "$logDir\CoreInfo.txt"
   } else {
     Write-Warning "SysInternals CoreInfo.exe not available."
   }
-  if ( gcm PsInfo.exe ) {
+  if ( gcm PsInfo.exe -ea 0 ) {
     & PsInfo.exe   -h -s -d  > "$logDir\PsInfo.txt"
   } else {
     Write-Warning "SysInternals PsInfo.exe not available."
   }
-  if ( gcm NTFSInfo.exe ) {
+  if ( gcm NTFSInfo.exe -ea 0 ) {
     & NTFSInfo.exe $Env:SystemDrive      > "$logDir\NTFSInfo.txt"
   } else {
     Write-Warning "SysInternals NTFSInfo.exe not available."
@@ -2067,7 +2064,7 @@ function Get-ImageID {
       '%\d*[Gg].*' {
         [Int32]  $Rep = [String]([Regex]::Match($_, '%(\d*)[Gg]')).Groups[1]
         [String] $MachineGuid = (Get-MachineId).MachineGuid
-        $_ -replAce '%\d*[Gg]', ( $MachineGuid.SubString($MachineGuid.Length-$Rep) )
+        $_ -replace '%\d*[Gg]', ( $MachineGuid.SubString($MachineGuid.Length-$Rep) )
       }
       '%\d*[Rr].*' {
         [Int32]$Rep = [String]([Regex]::Match($_, '%(\d*)[Rr]')).Groups[1]
@@ -2111,6 +2108,11 @@ function Enable-WindowsErrorReporting {
   [CmdletBinding()] Param() Set-WindowsErrorReporting -Enabled
 }
 
+function Disable-WindowsErrorReporting {
+  [CmdletBinding()] Param()
+  Set-WindowsErrorReporting -Enabled:$False
+}
+
 function Set-HostName {
   [CmdletBinding()] Param(
     [Parameter(Mandatory=$False)] [String] $ComputerName,
@@ -2137,11 +2139,6 @@ if ( -not(gcm Rename-Computer -ea 0) ) {
   sal Rename-Computer Set-Hostname
 }
 
-function Disable-WindowsErrorReporting {
-  [CmdletBinding()] Param()
-  Set-WindowsErrorReporting -Enabled:$False
-}
-
 function Set-WSHScriptHost {
   [CmdletBinding()] Param(
     $scripthost = "cscript" )
@@ -2151,19 +2148,44 @@ function Set-WSHScriptHost {
 }
 
 function Invoke-Sysprep {
-  [CmdletBinding()] Param()
+  [CmdletBinding()] Param(
+    [Alias('Unattend', 'Unattended')]
+      [String]$AnswerFile,
+    [Switch] $Generalize,
+    [Switch] $Oobe,
+    [Switch] $Quit,
+    [Switch] $Shutdown,
+    [Switch] $Reboot,
+    [Switch] $Quiet,
+    [Switch] $Audit,
+    [String] $Mode
+  )
   # TODO - Look at reusing the unattend.xml files
   # Support modes
   Write-Verbose "Enabling sysprep-based OS Generalizations."
 
   if (Test-Path($sysprep = ls (Join-Path $Env:SystemRoot "System32\Sysprep\sysprep.exe") | %{$_.FullName})) {
     if ( (Get-Win32_OperatingSystem).Version -lt 6 ) { # xp
-    # $args = ('-reseal', '-activated', '-mini', '-quiet', '-noreboot')
-      $args = ('-audit', '-quiet', '-quiet')
+    # $args = ('-reseal', '-activated', '-mini',  '-noreboot')
+      $args = ('-audit',  '-quiet')
     }
     else {
-      $args = ('-audit', '-generalize', '-quiet', '-quit')
+      if ( $Quiet      )  { $args+=( '-quiet'                ) }
+      if ( $Generalize )  { $args+=( '-generalize'           ) }
+      if ( $Audit      )  { $args+=( '-audit'                ) }
+      if ( $Oobe       )  { $args+=( '-oobe'                 ) }
+      if ( $Shutdown   )  { $args+=( '-shutdown'             ) }
+      if ( $Reboot     )  { $args+=( '-Reboot'               ) }
+      if ( $Quit       )  { $args+=( '-quit'                 ) }
+      if ( $AnswerFile )  { $args+=( "-unattend:$AnswerFile" ) }
+      if ( $Mode       )  { $args+=( "-mode:$Mode"           ) }
+
+      if ( -not( $args.count ) ) {
+        $args = ('-oobe', '-generalize', '-quit')
+      }
+
     }
+    Write-Verbose "  Invoking $sysprep $args"
     $process = Start-Process -FilePath $sysprep -wait -PassThru -ArgumentList $args
     if (-not $process) {
       Throw "Could not start sysprep"
@@ -2214,12 +2236,19 @@ function Set-NetworkLocation {
 
 function Disable-NetworkLocationPrompt {
   [CmdletBinding()] Param(
-    [String]$Name
   )
-  reg.exe add "HKLM\System\CurrentControlSet\Control\Network\NewNetworkWindowOff" /f | Write-Verbose
-  reg.exe add "HLKM\SYSTEM\CurrentControlSet\Control\Network\NetworkLocationWizard" /f | Write-Verbose
-  reg.exe add "HLKM\SYSTEM\CurrentControlSet\Control\Network\NetworkLocationWizard" /f /v HideWizard /t REG_DWORD /d 1 | Write-Verbose
-  reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\NewNetworks" /v NetworkList /t REG_MULTI_SZ /d 00000000 /f | Write-Verbose
+
+  try {
+    reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Network'                  /f | Write-Verbose
+    reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList'              /f | Write-Verbose
+    reg.exe add 'HKLM\SYSTEM\CurrentControlSet\Control\Network\NewNetworkWindowOff'          /f | Write-Verbose
+    reg.exe add 'HLKM\SYSTEM\CurrentControlSet\Control\Network\NetworkLocationWizard'        /f | Write-Verbose
+    reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\NewNetworks'  /f /v NetworkList /t REG_MULTI_SZ /d 00000000   | Write-Verbose
+    reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Network\NwCategoryWizard' /f /v Show        /t REG_DWORD    /d 0x00000000 | Write-Verbose
+    reg.exe add 'HLKM\SYSTEM\CurrentControlSet\Control\Network\NetworkLocationWizard'        /f /v HideWizard  /t REG_DWORD    /d 0x00000001 | Write-Verbose
+  } catch {
+    Write-Warning "One of more attempts to configure the network location wizard failed."
+  }
 }
 
 # ---- Crash Control ----
@@ -2512,11 +2541,13 @@ function Disable-AutoAdminLogon {               #M:UserLogon
 
 function Uninstall-UserLogonScript {            #M:UserLogon
   [CmdletBinding()] Param(
-      [Parameter(Mandatory=$False)] $ValueName
-    )
-  Write-Verbose "Removing $ValueName from user logon start."
+    [Parameter(Mandatory=$False)] 
+    [Alias('Description','ValueName')]
+      [String]$Name
+  )
+  Write-Verbose "Removing $Name from user logon start."
 
-  & reg.exe delete "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v $ValueName /f | Write-Verbose
+  & reg.exe delete "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v $Name /f | Write-Verbose
 }
 
 function Install-LogonScript {
@@ -2532,7 +2563,7 @@ function Install-LogonScript {
     [Switch]$Hidden
   )
 
-  if ( -not (Test-Path $Script) ) {
+  if ( -not (Test-Path $Script -ea 0) ) {
     Write-Warning "Script $Script does not exist and so may not be invoked on logon. Proceeding anyway .."
   }
 
@@ -2567,13 +2598,14 @@ End If
 function Install-GlobalLogonScript {            #M:UserLogon
   [CmdletBinding()] Param(
     [Parameter(Mandatory=$True)]
-      [String]$ScriptPath,
+    [Alias("ScriptPath")]
+      [String]$Script,
     [Parameter(Mandatory=$False)]
-    [Alias("Description")]
-      [String]$ValueName
+    [Alias("Description",'ValueName')]
+      [String]$Name
   )
-  if (-not $ValueName) { $ValueName = $ScriptPath }
-  Install-LogonScript -ScriptPath $ScriptPath -Description $ValueName -Global
+  if (-not $Name) { $Name = $Script }
+  Install-LogonScript -Script $Script -Description $Name -Global
 }
 
 function Install-RebootTest { # TODO: Remove - this is a test case
@@ -2698,7 +2730,6 @@ function Install-MachineStartupScript {
         }
       }
     }
-    set-psdebug -tr 1
 
     Write-Verbose "    TargetIndex ?? "
     $TargetIndex = if ( $TargetKey ) { $TargetKey.MajorKey } else { $ScriptsIniHash.Keys.Count }
@@ -3077,6 +3108,7 @@ function Disable-ServerManager {                #M:DesktopUtils
   Write-Verbose "Disabling Server Manager"
   if (Test-Path "HKLM:\SOFTWARE\Microsoft\ServerManager") {
     & reg.exe add "HKLM\SOFTWARE\Microsoft\ServerManager" /f  /v  "DoNotOpenServerManagerAtLogon" /t REG_DWORD  /d 0x1 | Write-Verbose
+    & reg.exe add "HKCU\Software\Microsoft\ServerManager" /f  /v  "CheckedUnattendLaunchSetting"  /t REG_DWORD  /d 0x0 | Write-Verbosooe
   }
 }
 
@@ -3117,7 +3149,7 @@ function Set-TimeZone {                         #M:TimeUtils
     [Switch]$DSTOff
   )
   Begin {
-    $OSVersion = (Get-Win32_OperatingSystem).Version -replace "\.\d{3,}$"
+    $OSVersion = ([Int]((Get-Win32_OperatingSystem).Version -replace "\.\d{3,}$"))
   }
   Process {
     $TimeZoneName = $TimeZoneInfoObject.ID
@@ -3260,6 +3292,16 @@ function Get-ISO8601TimeStamp {                 #M:TimeUtils
   $Result = if ( -not($Result) ) { Get-Date -UFormat %s } else { $Result }
 
   return ($_ = if ( $Compact ) { $Result -replace '[-:]','' } else { $Result })
+}
+
+function Restart-Machine {
+  [CmdletBinding()] Param(
+    [Alias('Delay')]
+      [Int32] $Time = 0,
+    [String] $Message = "Rebooting Machine"
+  )
+
+  Start-Process shutdown.exe -ArgumentList @('-r', '-t', $Time, '-c', $Message) -Wait -NoNewWindow
 }
 
 Set-Alias reboot    Restart-Computer
