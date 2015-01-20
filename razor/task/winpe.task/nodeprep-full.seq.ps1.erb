@@ -204,8 +204,8 @@ Command=ToggleDesktop
       script = { try { Set-UserPreferences -Verbose:$VerbosePreference } catch {
         # TODO, Workaround. HKU:/ hive fails to load if the registry .dat file
         #       is in use. Investigations and refactoring of cmdlet needed.
-        $ErrMsg = "Failed to set user preferences. Rebooting to retry."
-        Restart-Machine -Delay 5 -Message $ErrMsg
+        Write-Warning "Failed to set user preferences. Rebooting to retry."
+        Restart-Computer
       } };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'disable_device_autorun';
@@ -280,32 +280,32 @@ Command=ToggleDesktop
       };
       pre    = { 1 };
       post   = { 1 }; }
-  @{ name    =   'install_dotnet35_sp1';
+  @{ name    =   'install_dotnet35_sp1_on_win8_or_2012';
+      pre    = {
+        if ( -not($Env:INSTALL_DOTNET35) )       { Throw "Not installing .Net3.5" }
+        $OSVersion = Get-OSVersion;
+        if ( ([Double]$OSVersion.CurrentVersion) -lt 6.2 ) { Throw 'Not on Windows >= Windows 8/2012' }
+      };
       script = {
         if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
           $razor_metadata = . .\metadata.ps1
           if ( Test-Path($sxs_dir = Join-Path $razor_metadata.repo_share 'sources\sxs') ) {
-            Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $($OSVersion.Version))"
+            Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $((Get-OSVersion).Version))"
             dism.exe /English /Online /Enable-Feature /FeatureName:NetFx3 /All /Source:$sxs_dir /NoRestart | Write-Verbose
             if     ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
-              $ErrMsg = "Install of .Net3.5 SP1 role successful (exit_code: $LASTEXITCODE). Rebooting to continue .."
-              Restart-Machine -Delay 5 -Message $ErrMsg
+              Write-Verbose "Install of .Net3.5 SP1 role successful (exit_code: $LASTEXITCODE). Rebooting to continue .."
+              Restart-Computer
             }
             else {
-              $ErrMsg = "dism.exe exited with an unknown exit code '$LASTEXITCODE'. Aborting."
-              Restart-Machine -Delay 5 -Message $ErrMsg
-              Throw $ErrMsg
+              Write-Warning "dism.exe exited with an unknown exit code '$LASTEXITCODE'. Aborting."
+              Restart-Computer
+              Throw $ErrMsg # TODO. Does this ever get reached?
             }
           }
           else {
             Throw "SXS dir $sxs_dir not found or unreachable."
           }
         }
-      };
-      pre    = {
-        if ( -not($Env:INSTALL_DOTNET35) )       { Throw "Not installing .Net3.5" }
-        $OSVersion = Get-OSVersion;
-        if ( ([Double]$OSVersion.CurrentVersion) -lt 6.2 ) { Throw 'Not on Windows >= Windows 8/2012' }
       };
       post   = { 1 }; }
   @{ name    =   "install_language_packs";
@@ -335,13 +335,15 @@ Command=ToggleDesktop
               Write-Warning "Exception caught running dism cleanup : $_"
             }
             $ErrMsg += "Rebooting to retry."
-            Restart-Machine -Delay 15 -Message $ErrMsg
-            Throw $ErrMsg
+            Write-Warning $ErrMsg
+            Restart-Computer
+            Throw $ErrMsg # TODO. Does this ever get reached?
           }
         }
 
         if ($RebootRequired) {
-          Restart-Machine -Delay 3 -Message "Language pack installation complete. Rebooting to continue .."
+          Write-Verbose "Language pack installation complete. Rebooting to continue .."
+          Restart-Computer
         }
       };
       pre    = { 1 }; post   = { 1 }; }
@@ -350,7 +352,8 @@ Command=ToggleDesktop
         if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
           Import-Module ServerManager -Verbose:$VerbosePreference;
           Add-WindowsFeature as-net-framework -Verbose:$VerbosePreference
-          Restart-Machine -Delay 15 -Message "Install of .Net 3.5 feature completed. Rebooting to continue .."
+          Write-Verbose "Install of .Net 3.5 feature completed. Rebooting to continue .."
+          Restart-Computer
         }
       };
       pre    = {
@@ -362,8 +365,9 @@ Command=ToggleDesktop
       post   = { 1 }; }
   @{ name    =   "applying_l18n_settings-$(Get-Date -uformat %s)";
       script = {
-        # TODO, control.exe/intl.cpl does not return a meaningful error code
-        #       and so we may be unable to detect failures.
+        # TODO, control.exe/intl.cpl does not return a meaningful/accurate error code
+        #       and so we may be unable to detect failures. More investigations needed.
+        #
         #       The key of this block is set to be different on every run to attempt
         #       a retry on every boot during this stage.
         # Events are generated in the Windows/International section
@@ -374,11 +378,11 @@ Command=ToggleDesktop
         }
       };
       pre    = { 1 }; post   = { 1 }; }
-# @{ name    =   'install_windows_updates';
-#     script = {
-#       Install-ImportantWindowsUpdates -RebootIfNecessary -Verbose:$VerbosePreference
-#     };
-#     pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'install_windows_updates';
+      script = {
+        Install-ImportantWindowsUpdates -RebootIfNecessary -Verbose:$VerbosePreference
+      };
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'start_windows_defender_service';
       script = { try { Get-Service WinDefend | Set-Service -StartupType Manual | Start-Service } catch {} };
       pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
@@ -460,9 +464,10 @@ Command=ToggleDesktop
            #   the installers vs those from powershell.
            # - This fails when there are no CD-ROM drives containing
            #   the installer. An infinite reboot cycle is caused.
-           $ErrMsg = "Failed to install VM Guest Tools : $_"
+           $ErrMsg  = "Failed to install VM Guest Tools : $_"
+           $ErrMsg += "$ErrMsg. Rebooting to retry .."
            Write-Warning $ErrMsg
-           Restart-Machine -Delay 15 -Message "$ErrMsg. Rebooting to continue .."
+           Restart-Computer
          }
          # TODO, test installation status before returning
       };
@@ -939,7 +944,8 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "reboot_for_stage_0-$(date -uformat %s)";
       script = {
-        Restart-Machine -Delay 15 -Message "Imagprep Stage 1 Complete - Rebooting to continue .."
+        Write-Verbose "Imagprep Stage 1 Complete - Rebooting to continue .."
+        Restart-Computer
       };
       pre    = { 1 }; post   = { 1 }; }
 ),
@@ -1311,7 +1317,8 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "shutdown_for_templating-$(date -uformat %s)";
       script = {
-        Restart-Machine -Delay 15 -Message "Imagprep Stage 2 Complete - Shutting down for templating"
+        Write-Verbose "Imagprep Stage 2 Complete - Shutting down for templating"
+        Stop-Computer
       };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "shutdown_for_templating_backup-$(date -uformat %s)";
