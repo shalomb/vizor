@@ -159,7 +159,7 @@ if not exist Resume-ImagePrep.ps1 (
   exit
 )
 
-start "Resume-ImagePrep.ps1" /b /wait /realtime cmd.exe /k !SystemRoot!\System32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -file Resume-ImagePrep.ps1
+start "Resume-ImagePrep.ps1" /b /wait /max /realtime cmd.exe /k !SystemRoot!\System32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -file Resume-ImagePrep.ps1
 
 cd !THISDIR!
 exit /b !ERRORLEVEL!
