@@ -40,7 +40,7 @@ if image_def=$( curl -fsS "$image_url" ) ec=$?; then
     iso_id=$( jq -e -c -r '.iso_id'  <<<"$image_def" )
   if [[ $iso_id ]]; then
     if ! iso_def=$( curl -fsS "http://localhost:5984/iso/$iso_id" ) ec=$?; then
-      die "Unable to find iso definition for '$iso_id'"
+      die "Unable to find ISO definition for image with ID '$iso_id'"
     else
       iso_file=$( jq -e -c -r '.path' <<<"$iso_def" )
     fi
@@ -174,9 +174,9 @@ if [[ -n $langpack_locales ]]; then
         l=$( jq -c -r -e '.locale' <<<"$json" )
         u=$( jq -c -r -e '.url'    <<<"$json" )
         candidate_langpacks+=( "$l=$u" )
-      done < <(vizor windows langpack find -Q                      \
+      done < <( vizor windows langpack find -Q \
            'language:'"$locale"' AND version:'"$major_version.$minor_version.$build_version"'* AND architecture:'"$architecture"' AND name:*'"$installation_type"'*'  |
-             jq -c -e 'select(.language=="'"${locale,,}"'") | {modify_time:.modify_time, url:.url, locale:.language}' | sort -nr
+             jq -c -e 'select(.locale=="'"${locale,,}"'") | {modify_time:.modify_time, url:.url, locale:.language}' | sort -nr
         )
 
       if (( ${#candidate_langpacks[@]-} == 0 )); then
@@ -408,7 +408,7 @@ for i in  \
   name    \
   ctime   \
   mtime   \
-  ; do 
+  ; do
     key="$i"
     value="${!i-}"
     master_doc=$( jq -r '.'"$key"' = "'"$value"'"' <<<"$master_doc" )
