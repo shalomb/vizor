@@ -3294,16 +3294,6 @@ function Get-ISO8601TimeStamp {                 #M:TimeUtils
   return ($_ = if ( $Compact ) { $Result -replace '[-:]','' } else { $Result })
 }
 
-function Restart-Machine {
-  [CmdletBinding()] Param(
-    [Alias('Delay')]
-      [Int32] $Time = 0,
-    [String] $Message = "Rebooting Machine"
-  )
-
-  Start-Process shutdown.exe -ArgumentList @('-r', '-t', $Time, '-c', $Message) -Wait -NoNewWindow
-}
-
 Set-Alias reboot    Restart-Computer
 Set-Alias poweroff  Stop-Computer
 
