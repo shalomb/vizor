@@ -945,7 +945,7 @@ Command=ToggleDesktop
   @{ name    =   "reboot_for_stage_0-$(date -uformat %s)";
       script = {
         Write-Verbose "Imagprep Stage 1 Complete - Rebooting to continue .."
-        Restart-Computer
+        & shutdown.exe -r -t 5 # Not Restart-Computer to be non-blocking
       };
       pre    = { 1 }; post   = { 1 }; }
 ),
