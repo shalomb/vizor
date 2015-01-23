@@ -16,13 +16,11 @@ function Enable-WindowsUpdate {
   [CmdletBinding()] Param(
     [ValidateSet('Manual','Automatic')]
       [String]  $StartupType = 'Manual',
-    [Switch] $AutoInstallMinorUpdates = $False,
-    [Switch] $NoAutoRebootWithLoggedOnUsers = $True,
     [Switch] $StartWindowsUpdateService = $True
   )
+
   Write-Verbose "Enabling Windows Updates"
-  & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v AutoInstallMinorUpdates       /t REG_DWORD /d ([Int][Boolean]$AutoInstallMinorUpdates) /f | Write-Verbose
-  & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v NoAutoRebootWithLoggedOnUsers /t REG_DWORD /d ([Int][Boolean]$NoAutoRebootWithLoggedOnUsers) /f | Write-Verbose
+
   if ($StartWindowsUpdateService) {
     Get-Service wuauserv |
       Set-Service -StartupType $StartupType -Verbose:$VerbosePreference -PassThru |
@@ -55,7 +53,9 @@ function Disable-WindowsUpdate {
       [String]  $StartupType = 'Manual'
   )
   Write-Verbose "Disabling Windows Updates"
-  Get-Service wuauserv | Set-Service -StartupType $StartupType -Verbose:$VerbosePreference -PassThru | Stop-Service -Verbose:$VerbosePreference
+  Get-Service wuauserv |
+    Set-Service -StartupType $StartupType -Verbose:$VerbosePreference -PassThru |
+    Stop-Service -Verbose:$VerbosePreference
 <#
 .SYNOPSIS
 Set the windows update service startup type to be manual (not automatic).
@@ -68,8 +68,72 @@ Set the windows update service startup type to be one of Manual (default) or Dis
 #>
 }
 
+function Set-WindowsUpdatePreference {
+  # KB328010
+  [CmdletBinding()] Param(
+    [Switch] $AUDisabled,
+    [Switch] $AUNotifyOfDownloadAndInstallation,
+    [Switch] $AUDownloadAndNotifyOfInstallation,
+    [Switch] $AUDownloadAndScheduleInstallation,
+    [Switch] $AutoInstallMinorUpdates,
+    [Switch] $ElevateNonAdmins,
+    [Switch] $EnableFeaturedSoftware,
+    [Switch] $IncludeRecommendedUpdates,
+    [Switch] $NoAutoRebootWithLoggedOnUsers,
+    [Switch] $NoAutoUpdate,
+    [Switch] $UseWUServer
+  )
+
+  $AuOption = if     ($AUDisabled)                         { 1 }
+              elseif ($AUNotifyOfDownloadAndInstallation)  { 2 }
+              elseif ($AUDownloadAndNotifyOfInstallation)  { 3 }
+              elseif ($AUDownloadAndScheduleInstallation)  { 4 }
+              else                                         { $Null }
+
+  if ( $AuOption ) {
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" `
+      /f /v AuOptions /t REG_SZ /d $AuOption | Write-Verbose
+    & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" `
+      /f /v AuOptions /t REG_SZ /d $AuOption | Write-Verbose
+  }
+
+  if ( $PSBoundParameters.ContainsKey('AutoInstallMinorUpdates') ) {
+    & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" `
+      /v AutoInstallMinorUpdates /t REG_DWORD /d ([Int][Boolean]$AutoInstallMinorUpdates)   /f | Write-Verbose
+  }
+
+  if ( $PSBoundParameters.ContainsKey('ElevateNonAdmins') ) {
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" `
+      /v ElevateNonAdmins        /t REG_DWORD /d ([Int][Boolean]$ElevateNonAdmins) /f | Write-Verbose
+  }
+
+  if ( $PSBoundParameters.ContainsKey('EnableFeaturedSoftware') ) {
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" `
+      /v EnableFeaturedSoftware        /t REG_DWORD /d ([Int][Boolean]$EnableFeaturedSoftware) /f | Write-Verbose
+  }
+
+  if ( $PSBoundParameters.ContainsKey('IncludeRecommendedUpdates') ) {
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" `
+      /v IncludeRecommendedUpdates /t REG_DWORD /d ([Int][Boolean]$IncludeRecommendedUpdates) /f | Write-Verbose
+  }
+
+  if ( $PSBoundParameters.ContainsKey('NoAutoUpdate') ) {
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" `
+      /v NoAutoUpdate /t REG_DWORD /d ([Int][Boolean]$NoAutoUpdate) /f | Write-Verbose
+    & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" `
+      /v NoAutoUpdate /t REG_DWORD /d ([Int][Boolean]$NoAutoUpdate) /f | Write-Verbose
+  }
+
+  if ( $PSBoundParameters.ContainsKey('UseWUServer') ) {
+    & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" `
+      /v UseWUServer /t REG_DWORD /d ([Int][Boolean]$UseWUServer) /f | Write-Verbose
+  }
+
+}
+
 function Get-WindowsUpdateSettings {
   [CmdletBinding()] Param()
+
   Write-Verbose "Getting Windows Updates settings"
   $Result = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" | Select -Exclude PS* *
 
@@ -83,7 +147,7 @@ function Get-WindowsUpdateSettings {
 
   $AuPolicy = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" | Select -Exclude PS* *
   $AuPolicy | gm -MemberType NoteProperty | %{
-    $Result | Add-Member NoteProperty "GP$($_.Name)" $AuPolicy.($_.Name) -Force
+    $Result | Add-Member NoteProperty "GP_$($_.Name)" $AuPolicy.($_.Name) -Force
   }
 
   $Result
@@ -92,6 +156,55 @@ function Get-WindowsUpdateSettings {
 .SYNOPSIS
 List setting related to the windows update service.
 #>
+}
+
+function Get-WSUSClientSettings {
+  [CmdletBinding()] Param()
+
+  $Result = New-Object PSObject
+
+  if ( Test-Path ($WURegPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate") ) {
+    $Result = Get-ItemProperty $WURegPath | Select -ExcludeProperty PS* *
+  }
+
+  if ( Test-Path ($WURegPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU") ) {
+    Get-ItemProperty $WURegPath | Select -ExcludeProperty PS* * | %{
+      $Obj = $_
+      $_ | gm -MemberType NoteProperty | Select -ExpandProperty Name | %{
+        $Result | Add-Member NoteProperty $_ $Obj.($_) -Force
+      }
+    }
+  }
+
+  $Result
+}
+
+function Update-WUA {
+  [CmdletBinding()] Param()
+
+  $OS = Gwmi Win32_OperatingSystem
+
+  if ( ($OS.Version -imatch '^6.1') ) { # Windows 7
+    $PkgUrl = Switch ( $OS.OSArchitecture ) {
+      '32-bit'  {
+        'http://download.windowsupdate.com/windowsupdate/redist/standalone/7.6.7600.320/WindowsUpdateAgent-7.6-x86.exe'
+      }
+      '64-bit' {
+        'http://download.windowsupdate.com/windowsupdate/redist/standalone/7.6.7600.320/WindowsUpdateAgent-7.6-x64.exe'
+      }
+    }
+
+    if ( -not( Test-Path ($PkgFile = Join-Path $Env:TEMP (($PkgUrl -split '/')[-1])) ) ) {
+      try {
+        (New-Object Net.WebClient).DownloadFile($PkgUrl, $PkgFile)
+      } catch {
+        Write-Warning "$_"
+        return
+      }
+    }
+
+    $Process = Start-Process -FilePath $PkgFile -ArgumentList @('/quiet', '/norestart') -Wait -PassThru
+  }
 }
 
 function Set-WSUSServer {
@@ -130,6 +243,31 @@ URL of the WUStatusServer (No validation is performed).
 .PARAMETER DoNotConnectToWindowsUpdateInternetLocations
 Instruct the WSUS client to never connect to locations other than the WSUS server.
 #>
+}
+
+function Disable-WSUSServer {
+  [CmdletBinding()] Param()
+
+  & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" `
+      /f /v UseWUServer    /t REG_DWORD  /d 0x0              | Write-Verbose
+  & reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"    `
+      /f /v DoNotConnectToWindowsUpdateInternetLocations  /t REG_DWORD      `
+      /d 0x0                                                 | Write-Verbose
+
+<#
+.SYNOPSIS
+Disable the use of WSUS Server to provide Windows Update.
+
+.DESCRIPTION
+Disable the use of WSUS Server to provide Windows Update.
+#>
+}
+
+function Get-WUAVersion {
+  [CmdletBinding()] Param()
+
+  $MUAInfo =  New-Object -ComObject Microsoft.Update.AgentInfo
+  [version]($MUAInfo).GetInfo('ProductVersionString')
 }
 
 function Get-WindowsUpdateResults {
@@ -317,35 +455,40 @@ Show the Windows Update Feature Opt-in dialog box.
 #>
 }
 
+function Invoke-WindowsUpdateDetection {
+  [CmdletBinding()] Param()
+  & WUAuclt.exe /DetectNow
+}
+
 function Search-WindowsUpdate {
+  # https://msdn.microsoft.com/en-gb/library/windows/desktop/aa386526(v=vs.85).aspx
   [CmdletBinding()] Param(
-    [switch]$ImportantOnly,
-    [switch]$All,
-    [switch]$History
+    # Default is '(IsInstalled=0 AND IsHidden=0)'
+    # IsAssigned=1 is added to select "important" updates (those meant to be deployed)
+    [String]$SearchCriteria = "(IsInstalled=0 AND IsHidden=0 AND IsAssigned=1)",
+    [Switch]$IncludeAutoSelected,
+    [Switch]$History
   )
 
   Write-Verbose $MyInvocation.MyCommand
-  Write-Verbose "  -ImportantOnly : $ImportantOnly"
-  Write-Verbose "  -All           : $All"
-
-  if ($ImportantOnly -and $All) {
-    # TODO : Use parameter sets to set exclusivity
-    Throw "ERROR: The switches -ImportantOnly and -All are mutually exclusive."
-  }
 
   $Global:UpdateSession = New-Object -ComObject Microsoft.Update.Session
-  $updateSearcher = $Global:UpdateSession.CreateupdateSearcher()
+  $UpdateSearcher = $Global:UpdateSession.CreateUpdateSearcher()
+
+  # TODO. Define a parameter to select WSUS
+  # $UpdateSearcher.ServerSelection = 2 #ssWindowsUpdate, conflicts with WSUS
 
   if ($History) {
     Write-Verbose "Listing History ..."
-    return ($updateSearcher.QueryHistory(1, $updateSearcher.GetTotalHistoryCount()))
+    return ($UpdateSearcher.QueryHistory(1, $UpdateSearcher.GetTotalHistoryCount()))
   }
 
-  Write-Verbose "Searching for updates ..."
-  $searchString = "IsInstalled=0 and IsAssigned=1"
-  if (-not($All)) { $searchString += " and AutoSelectOnWebSites=1" } # Install ImportantOnly by default
-  Write-Verbose "searchString : $searchString"
-  $SearchResult = $updateSearcher.Search($searchString)
+  if ($IncludeAutoSelected) {
+    $SearchCriteria += " OR (IsInstalled=0 AND AutoSelectOnWebSites=1)"
+  }
+
+  Write-Verbose "Searching for updates : $SearchCriteria"
+  $SearchResult = $UpdateSearcher.Search($SearchCriteria)
 
   Write-Verbose "Number of updates found: $($SearchResult.Updates.Count)"
 
@@ -358,17 +501,14 @@ Search for available windows updates.
 .DESCRIPTION
 Search for available windows updates.
 
-.PARAMETER ImportantOnly
-Search for and return important updates only.
-
-.PARAMETER All
-Search and return All windows updates.
+.PARAMETER SearchCriteria
+Set the criteria to be used by the WUA when searching for updates.
 
 .PARAMETER History
 Search for and return the updates that were previously applied.
 
 .EXAMPLE
-$AvailableUpdates = Search-WindowsUpdate -ImportantOnly
+$AvailableUpdates = Search-WindowsUpdate -SearchCriteria '(IsInstalled=0)'
 $AvailableUpdates | Install-WindowsUpdate
 #>
 
@@ -477,21 +617,27 @@ function Install-ImportantWindowsUpdates {
   Enable-WindowsUpdate
 
   $UpdateResults = @()
-  $Count = 0
+  $i = 0
 
-  while ($UpdateCollection = Search-WindowsUpdate -ImportantOnly -Verbose:$VerbosePreference) {
+  while ($UpdateCollection = Search-WindowsUpdate -Verbose:$VerbosePreference) {
     if ( $UpdateResult = $UpdateCollection | Install-WindowsUpdate -Verbose:$VerbosePreference ) {
       $UpdateResults += $UpdateResult
 
-      $Result = "  Count: {0}, ResultCode: {1}, RebootRequired: {2}" `
-                  -f $Count, $UpdateResult.ResultCode, $UpdateResult.RebootRequired
-      Write-Verbose $Result
+      try {
+        # TODO. UpdateResult may not have a ResultCode Property
+        $Result = "  i: {0}, ResultCode: {1}, RebootRequired: {2}" `
+                  -f $i, $UpdateResult.ResultCode, $UpdateResult.RebootRequired
+        Write-Verbose $Result
+      }
+      catch {
+        Write-Warning "$_"
+      }
 
-      if ( (([Boolean]($UpdateResult.RebootRequired)) -and $RebootIfNecessary) -or ($Count -ge 5) ) {
+      if ( (([Boolean]($UpdateResult.RebootRequired)) -and $RebootIfNecessary) -or ($i -ge 5) ) {
         Restart-Computer
       }
 
-      $Count++
+      $i++
     }
   }
 
@@ -500,12 +646,12 @@ function Install-ImportantWindowsUpdates {
 
 <#
 .SYNOPSIS
-Convenience function to search for and install important windows update.
+Convenience function to search for and install important windows updates.
 
 .DESCRIPTION
-Convenience function to search for and install important windows update.
+Convenience function to search for and install important windows updates.
 This function effectively calls
-Search-WindowsUpdate -ImportantOnly | Install-WindowsUpdate
+Search-WindowsUpdate | Install-WindowsUpdate
 
 .PARAMETER RebootIfNecessary
 Reboot the machine any updates require a reboot to be effectively applied.
