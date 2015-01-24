@@ -205,14 +205,20 @@ Command=ToggleDesktop
       };
       pre    = { 1 };
       post   = { 1 }; }
-  @{ name    =   'set_user_preferences';
-      script = { try { Set-UserPreferences -Verbose:$VerbosePreference } catch {
-        # TODO, Workaround. HKU:/ hive fails to load if the registry .dat file
-        #       is in use. Investigations and refactoring of cmdlet needed.
-        Write-Warning "Failed to set user preferences. Rebooting to retry."
-        Restart-Computer
-      } };
-      pre    = { 1 }; post   = { 1 }; }
+#  @{ name    =   'set_user_preferences';
+#      script = {
+#        try {
+#          # TODO. The settings in this section are very questionable as defaults.
+#          #       Review needed.
+#          # TODO, Workaround. HKU:/ hive fails to load if the registry .dat file
+#          #       is in use. Investigations and refactoring of cmdlet needed.
+#          Set-UserPreferences -Verbose:$VerbosePreference 
+#        } catch {
+#          Write-Warning "Failed to set user preferences. Rebooting to retry."
+#          Restart-Computer
+#        }
+#      };
+#      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'disable_device_autorun';
       script = { Disable-AutoRun };
       pre    = { 1 }; post   = { 1 }; }
