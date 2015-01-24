@@ -251,6 +251,16 @@ Command=ToggleDesktop
       } catch {} };
       pre    = { 1 }; post   = { 1 }; }
 
+  @{ name    =   'update_windows_update_agent';
+      script = {
+        Write-Warning "Update Windows Update Agent"
+        Update-WUA -Verbose:$VerbosePreference
+        shutdown.exe -r -t 0 -c "Restarting to update windows update agent"
+      };
+      pre    = {
+        if ( ([Double]$OSVersion.CurrentVersion) -ne 6.1 ) { Throw 'Not on Windows <= Windows 7/2008R2' }
+      }
+      post   = { Get-WUAVersion }; }
   @{ name    =   'set_wsus_server';
       script = {
         Write-Warning "Setting WSUS URL to $Env:WSUS_URL"
