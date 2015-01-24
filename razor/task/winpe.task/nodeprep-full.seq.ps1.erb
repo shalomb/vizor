@@ -373,9 +373,10 @@ Command=ToggleDesktop
         # TODO, control.exe/intl.cpl does not return a meaningful/accurate error code
         #       and so we may be unable to detect failures. More investigations needed.
         #
-        #       The key of this block is set to be different on every run to attempt
-        #       a retry on every boot during this stage.
-        # Events are generated in the Windows/International section
+        #       The key of this block is set to be dynamic and so different on every run
+        #       to attempt a retry on every boot during this stage.
+        #
+        # Events are generated in the Windows/International section of eventvwr
         if ( Test-Path 'l18n.xml' ) {
           $l18n_xml = '/f:"{0}"' -f (ls l18n.xml).FullName
           Write-Verbose "Applying l18n settings - control.exe 'intl.cpl,,' $l18n_xml"
