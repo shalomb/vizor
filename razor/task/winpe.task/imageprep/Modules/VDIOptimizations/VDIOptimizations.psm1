@@ -1,11 +1,11 @@
 # Script Module VDIOptimizations/VDIOptimizations.psm1
 
 # This Module performs some of the core optimizations as laid out in
-# 'Windows 8 and Server 2012 Optimization Guide | Citrix Blogs' http://blogs.citrix.com/2014/02/06/windows-8-and-server-2012-optimization-guide/
+# 'Windows 8 and Server 2012 Optimization Guide | Citrix Blogs'
+#   http://blogs.citrix.com/2014/02/06/windows-8-and-server-2012-optimization-guide/
 
 Set-StrictMode -Version 2.0
 Set-PSDebug -Trace 0
-
 
 function Set-UserPreferences {                  #M:VDIOptimizations
   [CmdletBinding()]
@@ -23,91 +23,81 @@ function Set-UserPreferences {                  #M:VDIOptimizations
   }
 
   if ( Test-Path ($defaultUserNTUSERDAT = ls -ErrorAction "SilentlyContinue" -Force (Join-Path $profilesRoot "Default*\NTUSER.DAT") 2> $Null | %{ $_.FullName }) ) {
+    Write-Verbose "Loading '$defaultUserNTUSERDAT' into 'HKU:\dutemp'"
 
     $HKUDefaultUserTemp = "HKU\DefaultUserTempLoad\"
-    Write-Verbose "Loading '$defaultUserNTUSERDAT' into '$HKUDefaultUserTemp'"
     & reg.exe load    $HKUDefaultUserTemp $defaultUserNTUserDat | Write-Verbose
 
     $HKUDefaultUserTemp, "HKCU\", "HKLM\" | %{
-      $hive = $_
-      Write-Verbose "Making changes under the '$_' hive."
+      $RegBasePath   = $_
 
-      if (Test-Path(Join-Path "${Hive}:" "Console" )) {
-        Write-Verbose "  Setting console parameter ..."
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "FaceName"                   /t REG_SZ       /d "Lucida Console" | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "FontFamily"                 /t REG_DWORD    /d 0x36 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "FontSize"                   /t REG_DWORD    /d 0xc0000 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "FontWeight"                 /t REG_DWORD    /d 0x190 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "HistoryBufferSize"          /t REG_DWORD    /d 0x0400 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "NumberOfHistoryBuffers"     /t REG_DWORD    /d 0x0008 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "ScreenBufferSize"           /t REG_DWORD    /d 0x270f0078 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "WindowPosition"             /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "WindowSize"                 /t REG_DWORD    /d 0x00400090 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "QuickEdit"                  /t REG_DWORD    /d 0x0 | Write-Verbose
-      }
+      Write-Verbose "Making changes under the '$RegBasePath' registry path."
 
-      if (Test-Path (Join-Path "${Hive}:" "Control Panel")) {
-        Write-Verbose "  Setting desktop parameters ..."
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "AutoEndTasks"              /t REG_SZ       /d 1    | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "DragFullWindows"           /t REG_SZ       /d 0    | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "MenuShowDelay"             /t REG_SZ       /d 10   | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "ScreenSaveActive"          /t REG_SZ       /d 0    | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "ScreenSaverIsSecure"       /t REG_SZ       /d 0    | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "ScreenSaveTimeOut"         /t REG_SZ       /d 0    | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "WaitToKillAppTimeout"      /t REG_DWORD    /d 8000 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "Wallpaper"                 /t REG_SZ       /d "." | Write-Verbose
-      }
+      Write-Verbose "  Setting console parameter ..."
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "FaceName"               /t REG_SZ    /d "Lucida Console" | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "FontFamily"             /t REG_DWORD /d 0x36             | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "FontSize"               /t REG_DWORD /d 0xc0000          | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "FontWeight"             /t REG_DWORD /d 0x190            | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "HistoryBufferSize"      /t REG_DWORD /d 0x0400           | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "NumberOfHistoryBuffers" /t REG_DWORD /d 0x0008           | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "ScreenBufferSize"       /t REG_DWORD /d 0x270f0078       | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "WindowPosition"         /t REG_DWORD /d 0x0              | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "WindowSize"             /t REG_DWORD /d 0x00400090       | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "QuickEdit"              /t REG_DWORD /d 0x0              | Write-Verbose
 
-      if (Test-Path (Join-Path "${Hive}:" "Software")) {
-        Write-Verbose "  Setting VM Image policy ..."
-        & reg.exe add ( Join-Path $hive "Software\Image"                                                     )   /f  /v  "Revision"                  /t REG_SZ       /d 1.0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Image"                                                     )   /f  /v  "Virtual"                   /t REG_SZ       /d "Yes" | Write-Verbose
-      }
 
-      if (Test-Path (Join-Path "${Hive}:" "Software")) {
-        Write-Verbose "  Setting desktop policy ..."
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Feeds"                                           )   /f  /v  "SyncStatus"                 /t REG_DWORD    /d 0x0  | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Applets\Tour"             )   /f  /v  "RunCount"                   /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"        )   /f  /v  "Hidden"                     /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"        )   /f  /v  "HideFileExt"                /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"        )   /f  /v  "ShowSuperHidden"            /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"        )   /f  /v  "StartButtonBalloonTip"      /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"        )   /f  /v  "Start_ShowRun"              /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Explorer\CabinetState"    )   /f  /v  "FullPathAddress"            /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Explorer\tips"            )   /f  /v  "Show"                       /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\InternetSettings\Cache"   )   /f  /v  "Persistent"                 /t REG_DWORD    /d 0x0  | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "ForceStartMenuLogOff"       /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "HideSCAHealth"              /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "NoRecycleFiles"             /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"        )   /f  /v  "NoWelcomeScreen"            /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Policies\System"          )   /f  /v  "Wallpaper"                  /t REG_SZ       /d "." | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Internet Explorer\Main"                 )   /f  /v  "DisableFirstRunCustomize"   /t REG_DWORD    /d 0x1 | Write-Verbose
-      }
+      Write-Verbose "  Setting desktop parameters ..."
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "AutoEndTasks"         /t REG_SZ    /d 1    | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "DragFullWindows"      /t REG_SZ    /d 0    | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "MenuShowDelay"        /t REG_SZ    /d 10   | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "ScreenSaveActive"     /t REG_SZ    /d 0    | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "ScreenSaverIsSecure"  /t REG_SZ    /d 0    | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "ScreenSaveTimeOut"    /t REG_SZ    /d 0    | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "WaitToKillAppTimeout" /t REG_DWORD /d 8000 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Control Panel\Desktop" ) /f  /v "Wallpaper"            /t REG_SZ    /d "."  | Write-Verbose
 
-      if (Test-Path (Join-Path "${Hive}:" "Software")) {
-        Write-Verbose "  Setting screensaver parameters ..."
-        & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Control Panel\Desktop"          )   /f  /v  "ScreenSaveActive"          /t REG_SZ       /d 0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Control Panel\Desktop"          )   /f  /v  "ScreenSaverIsSecure"       /t REG_SZ       /d 0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Control Panel\Desktop"          )   /f  /v  "ScreenSaveTimeOut"         /t REG_SZ       /d 0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Control Panel\Desktop"          )   /f  /v  "ScreenSaveTimeOut"         /t REG_SZ       /d 0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows NT\SystemRestore"               )   /f  /v  "DisableSR"                 /t REG_DWORD    /d 0x1 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Sideshow"                       )   /f  /v  "Disabled"                  /t REG_DWORD    /d 0x1 | Write-Verbose
-      }
+      Write-Verbose "  Setting VM Image policy ..."
+      & reg.exe add ( Join-Path $RegBasePath "Software\Image" ) /f /v "Revision" /t REG_SZ /d 1.0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Image" ) /f /v "Virtual"  /t REG_SZ /d "Yes" | Write-Verbose
 
-      if (Test-Path (Join-Path "${Hive}:" "Software")) {
-        Write-Verbose "  Setting crashcontrol parameters ..."
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "CrashDumpEnabled"          /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "LogEvent"                  /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "SendAlert"                 /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" )   /f  /v  "ClearPageFileAtShutdown"   /t REG_DWORD    /d 0x0 | Write-Verbose
+      Write-Verbose "  Setting desktop policy ..."
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Feeds"                                         ) /f  /v  "SyncStatus"                 /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Applets\Tour"           ) /f  /v  "RunCount"                   /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"      ) /f  /v  "Hidden"                     /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"      ) /f  /v  "HideFileExt"                /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"      ) /f  /v  "ShowSuperHidden"            /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"      ) /f  /v  "StartButtonBalloonTip"      /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"      ) /f  /v  "Start_ShowRun"              /t REG_DWORD    /d 0x1 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Explorer\CabinetState"  ) /f  /v  "FullPathAddress"            /t REG_DWORD    /d 0x1 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Explorer\tips"          ) /f  /v  "Show"                       /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\InternetSettings\Cache" ) /f  /v  "Persistent"                 /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"      ) /f  /v  "ForceStartMenuLogOff"       /t REG_DWORD    /d 0x1 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"      ) /f  /v  "HideSCAHealth"              /t REG_DWORD    /d 0x1 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"      ) /f  /v  "NoRecycleFiles"             /t REG_DWORD    /d 0x1 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"      ) /f  /v  "NoWelcomeScreen"            /t REG_DWORD    /d 0x1 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Microsoft\Windows\CurrentVersion\Policies\System"        ) /f  /v  "Wallpaper"                  /t REG_SZ       /d "." | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Policies\Microsoft\Internet Explorer\Main"               ) /f  /v  "DisableFirstRunCustomize"   /t REG_DWORD    /d 0x1 | Write-Verbose
 
-        # 'Disable Superfetch & Prefetch for SSD in Windows 8 / 7' http://www.thewindowsclub.com/disable-superfetch-prefetch-ssd
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" ) /f /v "EnableSuperfetch" /t REG_DWORD /d 0x1 | Write-Verbose
+      Write-Verbose "  Setting screensaver parameters ..."
+      & reg.exe add ( Join-Path $RegBasePath "Software\Policies\Microsoft\Windows\Control Panel\Desktop" ) /f  /v "ScreenSaveActive"    /t REG_SZ    /d 0   | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Policies\Microsoft\Windows\Control Panel\Desktop" ) /f  /v "ScreenSaverIsSecure" /t REG_SZ    /d 0   | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Policies\Microsoft\Windows\Control Panel\Desktop" ) /f  /v "ScreenSaveTimeOut"   /t REG_SZ    /d 0   | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Policies\Microsoft\Windows\Control Panel\Desktop" ) /f  /v "ScreenSaveTimeOut"   /t REG_SZ    /d 0   | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Policies\Microsoft\Windows NT\SystemRestore"      ) /f  /v "DisableSR"           /t REG_DWORD /d 0x1 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "Software\Policies\Microsoft\Windows\Sideshow"              ) /f  /v "Disabled"            /t REG_DWORD /d 0x1 | Write-Verbose
 
-        # 'The Windows Disk timeout value: Less is better - Windows Storage Team - Site Home - MSDN Blogs'
-        # http://blogs.msdn.com/b/san/archive/2011/09/01/the-windows-disk-timeout-value-understanding-why-this-should-be-set-to-a-small-value.aspx
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Services\Disk"                             )   /f  /v  "TimeOutValue"              /t REG_DWORD    /d 0xA | Write-Verbose
-      }
+      Write-Verbose "  Setting crashcontrol parameters ..."
+      & reg.exe add ( Join-Path $RegBasePath "SYSTEM\CurrentControlSet\Control\CrashControl"                      ) /f  /v "CrashDumpEnabled"          /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "SYSTEM\CurrentControlSet\Control\CrashControl"                      ) /f  /v "LogEvent"                  /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "SYSTEM\CurrentControlSet\Control\CrashControl"                      ) /f  /v "SendAlert"                 /t REG_DWORD    /d 0x0 | Write-Verbose
+      & reg.exe add ( Join-Path $RegBasePath "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" ) /f  /v "ClearPageFileAtShutdown"   /t REG_DWORD    /d 0x0 | Write-Verbose
+
+      # 'Disable Superfetch & Prefetch for SSD in Windows 8 / 7' http://www.thewindowsclub.com/disable-superfetch-prefetch-ssd
+      & reg.exe add ( Join-Path $RegBasePath "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" ) /f /v "EnableSuperfetch" /t REG_DWORD /d 0x1 | Write-Verbose
+
+      # 'The Windows Disk timeout value: Less is better - Windows Storage Team - Site Home - MSDN Blogs'
+      # http://blogs.msdn.com/b/san/archive/2011/09/01/the-windows-disk-timeout-value-understanding-why-this-should-be-set-to-a-small-value.aspx
+      & reg.exe add ( Join-Path $RegBasePath "SYSTEM\CurrentControlSet\Services\Disk"                             )   /f  /v  "TimeOutValue"              /t REG_DWORD    /d 0xA | Write-Verbose
     }
 
     & reg.exe unload  $HKUDefaultUserTemp | Write-Verbose
