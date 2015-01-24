@@ -100,7 +100,9 @@ function Set-UserPreferences {                  #M:VDIOptimizations
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "LogEvent"                  /t REG_DWORD    /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "SendAlert"                 /t REG_DWORD    /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" )   /f  /v  "ClearPageFileAtShutdown"   /t REG_DWORD    /d 0x0 | Write-Verbose
-        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" ) /f /v "EnableSuperfetch" /t REG_DWORD /d 0x0 | Write-Verbose
+
+        # 'Disable Superfetch & Prefetch for SSD in Windows 8 / 7' http://www.thewindowsclub.com/disable-superfetch-prefetch-ssd
+        & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" ) /f /v "EnableSuperfetch" /t REG_DWORD /d 0x1 | Write-Verbose
 
         # 'The Windows Disk timeout value: Less is better - Windows Storage Team - Site Home - MSDN Blogs'
         # http://blogs.msdn.com/b/san/archive/2011/09/01/the-windows-disk-timeout-value-understanding-why-this-should-be-set-to-a-small-value.aspx
