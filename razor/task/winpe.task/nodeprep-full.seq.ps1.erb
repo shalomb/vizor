@@ -18,12 +18,7 @@ $PSModuleAutoLoadingPreference  = 'None'
 Import-Module Microsoft.PowerShell.Host -ea 0 # Seems to fail import on PSv2
 Import-Module CDROM
 Import-Module GroupPolicy
-# Import-Module Locale
 Import-Module MSRT
-# Import-Module OSRegion
-# Import-Module RegistryUtils
-# Import-Module RDP
-# Import-Module Robocopy
 Import-Module SystemUtils
 Import-Module TaskUtils
 Import-Module VDIOptimizations
@@ -31,7 +26,6 @@ Import-Module WindowsActivation
 Import-Module WindowsDefender
 Import-Module WindowsUpdate
 Import-Module WinMgmt
-# Import-Module ZipUtils
 
 #Define the environment for the run
 $Env:WSUS_URL     = '<%= node.metadata["wsus_url"]    %>'
@@ -258,6 +252,7 @@ Command=ToggleDesktop
         shutdown.exe -r -t 0 -c "Restarting to update windows update agent"
       };
       pre    = {
+        $OSVersion = Get-OSVersion;
         if ( ([Double]$OSVersion.CurrentVersion) -ne 6.1 ) { Throw 'Not on Windows <= Windows 7/2008R2' }
       }
       post   = { Get-WUAVersion }; }
