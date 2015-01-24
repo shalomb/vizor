@@ -23,16 +23,16 @@ function Set-UserPreferences {                  #M:VDIOptimizations
   }
 
   if ( Test-Path ($defaultUserNTUSERDAT = ls -ErrorAction "SilentlyContinue" -Force (Join-Path $profilesRoot "Default*\NTUSER.DAT") 2> $Null | %{ $_.FullName }) ) {
-    Write-Verbose "Loading '$defaultUserNTUSERDAT' into 'HKU:\dutemp'"
 
     $HKUDefaultUserTemp = "HKU\DefaultUserTempLoad\"
+    Write-Verbose "Loading '$defaultUserNTUSERDAT' into '$HKUDefaultUserTemp'"
     & reg.exe load    $HKUDefaultUserTemp $defaultUserNTUserDat | Write-Verbose
 
     $HKUDefaultUserTemp, "HKCU\", "HKLM\" | %{
       $hive = $_
       Write-Verbose "Making changes under the '$_' hive."
 
-      if (Test-Path(Join-Path $hive "Console" )) {
+      if (Test-Path(Join-Path "$hive:" "Console" )) {
         Write-Verbose "  Setting console parameter ..."
         & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "FaceName"                   /t REG_SZ       /d "Lucida Console" | Write-Verbose
         & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "FontFamily"                 /t REG_DWORD    /d 0x36 | Write-Verbose
@@ -46,7 +46,7 @@ function Set-UserPreferences {                  #M:VDIOptimizations
         & reg.exe add ( Join-Path $hive "Console"                                                            )   /f  /v  "QuickEdit"                  /t REG_DWORD    /d 0x0 | Write-Verbose
       }
 
-      if (Test-Path (Join-Path $hive "Control Panel")) {
+      if (Test-Path (Join-Path "$hive:" "Control Panel")) {
         Write-Verbose "  Setting desktop parameters ..."
         & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "AutoEndTasks"              /t REG_SZ       /d 1    | Write-Verbose
         & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "DragFullWindows"           /t REG_SZ       /d 0    | Write-Verbose
@@ -58,13 +58,13 @@ function Set-UserPreferences {                  #M:VDIOptimizations
         & reg.exe add ( Join-Path $hive "Control Panel\Desktop"                                              )   /f  /v  "Wallpaper"                 /t REG_SZ       /d "." | Write-Verbose
       }
 
-      if (Test-Path (Join-Path $hive "Software")) {
+      if (Test-Path (Join-Path "$hive:" "Software")) {
         Write-Verbose "  Setting VM Image policy ..."
         & reg.exe add ( Join-Path $hive "Software\Image"                                                     )   /f  /v  "Revision"                  /t REG_SZ       /d 1.0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Image"                                                     )   /f  /v  "Virtual"                   /t REG_SZ       /d "Yes" | Write-Verbose
       }
 
-      if (Test-Path (Join-Path $hive "Software")) {
+      if (Test-Path (Join-Path "$hive:" "Software")) {
         Write-Verbose "  Setting desktop policy ..."
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Feeds"                                           )   /f  /v  "SyncStatus"                 /t REG_DWORD    /d 0x0  | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Microsoft\Windows\CurrentVersion\Applets\Tour"             )   /f  /v  "RunCount"                   /t REG_DWORD    /d 0x0 | Write-Verbose
@@ -84,7 +84,7 @@ function Set-UserPreferences {                  #M:VDIOptimizations
         & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Internet Explorer\Main"                 )   /f  /v  "DisableFirstRunCustomize"   /t REG_DWORD    /d 0x1 | Write-Verbose
       }
 
-      if (Test-Path (Join-Path $hive "Software")) {
+      if (Test-Path (Join-Path "$hive:" "Software")) {
         Write-Verbose "  Setting screensaver parameters ..."
         & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Control Panel\Desktop"          )   /f  /v  "ScreenSaveActive"          /t REG_SZ       /d 0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Control Panel\Desktop"          )   /f  /v  "ScreenSaverIsSecure"       /t REG_SZ       /d 0 | Write-Verbose
@@ -94,7 +94,7 @@ function Set-UserPreferences {                  #M:VDIOptimizations
         & reg.exe add ( Join-Path $hive "Software\Policies\Microsoft\Windows\Sideshow"                       )   /f  /v  "Disabled"                  /t REG_DWORD    /d 0x1 | Write-Verbose
       }
 
-      if (Test-Path (Join-Path $hive "Software")) {
+      if (Test-Path (Join-Path "$hive:" "Software")) {
         Write-Verbose "  Setting crashcontrol parameters ..."
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "CrashDumpEnabled"          /t REG_DWORD    /d 0x0 | Write-Verbose
         & reg.exe add ( Join-Path $hive "SYSTEM\CurrentControlSet\Control\CrashControl"                      )   /f  /v  "LogEvent"                  /t REG_DWORD    /d 0x0 | Write-Verbose
