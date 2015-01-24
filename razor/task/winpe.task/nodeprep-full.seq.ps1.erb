@@ -84,7 +84,7 @@ if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\S
       script = { & slmgr.vbs -skms "${Env:KMS_SERVER}:${Env:KMS_PORT}" };
       pre    = {
         if ( -not($Env:KMS_SERVER) ) { Throw "No KMS Hostname specified." }
-        if ( ([Double](Get-OSVersion).CurrentVersion) -inotmatch '5.1' ) { Throw 'On Windows XP/2003. slmgr.vbs is not available.' }
+        if ( ([Double](Get-OSVersion).CurrentVersion) -eq 5.1 ) { Throw 'On Windows XP/2003. slmgr.vbs is not available.' }
       }; post   = { 1 }; }
   @{ name    =   'activate_windows';
       script = { Invoke-WindowsActivation };
