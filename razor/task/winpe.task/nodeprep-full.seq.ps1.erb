@@ -88,7 +88,7 @@ if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\S
       }; post   = { 1 }; }
   @{ name    =   'activate_windows';
       script = { Invoke-WindowsActivation };
-      pre    = { 1 }; post   = { Get-WindowsActivationStatus }; }
+      pre    = { 1 }; post   = { Get-WindowsActivation }; }
   @{ name    =   'install_show_desktop_on_logon';
       script = {
         Install-GlobalLogonScript -Name 'ShowDesktopOnLogon' -Script 'explorer.exe "shell:::{3080F90D-D7AD-11D9-BD98-0000947B0257}"'
@@ -995,7 +995,7 @@ Command=ToggleDesktop
       post   = { (Gwmi Win32_TimeZone) -imatch "${Env:TIMEZONE}" }; }
   @{ name    =   'activate_windows_stage_1';
       script = { Invoke-WindowsActivation };
-      pre    = { 1 }; post   = { Get-WindowsActivationStatus }; }
+      pre    = { 1 }; post   = { Get-WindowsActivation }; }
   @{ name    =   'sync_ntp_time_stage_1';
       script = { Sync-W32Time };
       pre    = { 1 }; post   = { 1 }; }
