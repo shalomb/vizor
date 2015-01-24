@@ -2,19 +2,37 @@
 
 Set-StrictMode -Version 2
 
-
 function Get-DotNetFramework {
   [CmdletBinding()] Param(
-    [Switch] $System,
-    [Switch] $Environment
+    [Version] $Version,
+    [Switch]  $System,
+    [Switch]  $Environment
   )
 
-  if ( $System ) {
-    return ([System.Runtime.InteropServices.RuntimeEnvironment]::GetSystemVersion())
+  if ( $Version ) {
+    # [String]$Version = if ( $Version -imatch '^[0-9]+$' ) { '{0}.{1}' -f $Version, 0 } else { $Version }
+    if ( $Candidate = (Get-DotNetFramework | ?{ ([String]$_.Version) -imatch "^$Version" }) ) {
+      return $Candidate
+    }
+    else {
+      return
+    }
   }
 
   if ( $Environment ) {
-    return [Environment]::Version
+    if ($Ver = [Environment]::Version) {
+      return (Get-DotNetFramework -Version ('{0}.{1}' -f $Ver.Major,$Ver.Minor))
+    }
+  }
+
+  if ( $System ) {
+    if ( $Ver = ([System.Runtime.InteropServices.RuntimeEnvironment]::GetSystemVersion()) ) {
+      $Ver = ([System.Version]($Ver -replace '^v'))
+      return (Get-DotNetFramework -Version ('{0}.{1}' -f $Ver.Major,$Ver.Minor))
+    }
+    else {
+      Throw "Unable to determine determine system runtime version"
+    }
   }
 
   Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP' -Recurse |
@@ -23,18 +41,18 @@ function Get-DotNetFramework {
 
     $Result = New-Object -TypeName PSObject
 
-    $Version        = ([System.Version]($_.Version))
-    $VersionShort   = '{0}.{1}' -f ($Version.Major, $Version.Minor)
+    $Ver        = ([System.Version]($_.Version))
+    $VerShort   = '{0}.{1}' -f ($Ver.Major, $Ver.Minor)
     $ItemProperties = Get-ItemProperty $_.PSPath
 
     if ( $_.PSChildName -imatch '^v[0-9]' ) {
       $Result | Add-Member NoteProperty Name    $_.PSChildName
     }
     else {
-      $Result | Add-Member NoteProperty Name    ('v{0} {1}' -f $VersionShort, $_.PSChildName)
+      $Result | Add-Member NoteProperty Name    ('v{0} {1}' -f $VerShort, $_.PSChildName)
     }
 
-    $Result | Add-Member NoteProperty Version $Version
+    $Result | Add-Member NoteProperty Version $Ver
 
 
     $Result | Add-Member NoteProperty Installed   ($v = if ($ItemProperties.Install) { $True } else { $False })
@@ -50,7 +68,7 @@ function Get-DotNetFramework {
       $Result | Add-Member NoteProperty TargetVersion $ItemProperties.TargetVersion
     }
     else {
-      $Result | Add-Member NoteProperty TargetVersion $VersionShort
+      $Result | Add-Member NoteProperty TargetVersion $VerShort
     }
 
     $Result | Add-Member NoteProperty NDPKey  (($_.PSPath -replace '^.*?::') -replace 'HKEY_LOCAL_MACHINE', 'HKLM')
@@ -77,7 +95,7 @@ function Test-DotNetFramework {
     [System.Version] $Version = [Environment]::Version
   )
 
-  [Boolean](Get-DotNetFramework | ?{ $_.Version -imatch $Version })
+  [Boolean](Get-DotNetFramework -Version $Version)
 }
 
 function Assert-DotNetFramework {
@@ -85,10 +103,7 @@ function Assert-DotNetFramework {
     [System.Version] $Version = [Environment]::Version
   )
 
-  if ( Test-DotNetFramework -Version $Version ) {
-    return $True
-  }
-  else {
+  if ( -not(Test-DotNetFramework -Version $Version) ) {
     Throw "Microsoft.NET Framework Version $Version is not available."
   }
 }
@@ -116,4 +131,4 @@ function Install-DotNet35 {
   }
 }
 
-
+Export-ModuleMember *-*
