@@ -341,6 +341,7 @@ Command=ToggleDesktop
             }
             $ErrMsg += "Rebooting to retry."
             Write-Warning $ErrMsg
+            sleep 5
             Restart-Computer
             Throw $ErrMsg # TODO. Does this ever get reached?
           }
