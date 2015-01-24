@@ -640,7 +640,7 @@ function Install-SysInternalsTools {
 
 function Initialize-Sysinternals {
   [CmdletBinding()] Param() Write-Verbose "Accepting EULAs for SysInternals utilities."
-  "C","Contig","Coreinfo","NTFSInfo","PsInfo","SDelete" | %{
+  "BGInfo","C","Contig","Coreinfo","NTFSInfo","PsInfo","SDelete" | %{
     Write-Verbose "  '$_'"
     & reg.exe add (Join-Path "HKCU\SOFTWARE\Sysinternals" $_) /v EulaAccepted  /t REG_DWORD /d 1 /f | Write-Verbose
   }
