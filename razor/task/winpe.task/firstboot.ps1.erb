@@ -131,7 +131,7 @@ Write-Host -Fore Cyan "Resume-ImageMaintenance {0}"
 $Env:IPBootScript = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).FullName
 ImageMaintenance\Resume-ImageMaintenance -Sequence {0} -Verbose
 
-Write-Host -Fore Cyan "Resume-ImageMaintenance COMPLETE"
+Write-Host -Fore Cyan "Resume-ImageMaintenance STAGE COMPLETE"
 
 '@
 
