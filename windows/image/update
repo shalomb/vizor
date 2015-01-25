@@ -201,7 +201,7 @@ function clear_db {
     if ! ret=$( curl -sSfL -X DELETE "$url" ) ec=$?; then
       warn "Failed to delete record at $url : $ret, $ec" || true
     fi
-    printf -v logmsg "Clearning ISO install-image metadata : [%s/%s;%s] %4.2f%% " \
+    printf -v logmsg "Clearing ISO install-image metadata : [%s/%s;%s] %4.2f%% " \
         "$i" "${#records[@]}"  \
         "$(( ${#records[@]} - $i ))" $(bc <<<"scale=16; $i/${#records[@]}*100")
     log_status "$logmsg"
