@@ -10,7 +10,6 @@ function Get-DotNetFramework {
   )
 
   if ( $Version ) {
-    # [String]$Version = if ( $Version -imatch '^[0-9]+$' ) { '{0}.{1}' -f $Version, 0 } else { $Version }
     if ( $Candidate = (Get-DotNetFramework | ?{ ([String]$_.Version) -imatch "^$Version" }) ) {
       return $Candidate
     }
