@@ -13,7 +13,7 @@
    complete (the startup bat file will be continue to run at each reboot)
    or throw if an error occurs
 #>
-param(
+[CmdletBinding()] param(
   [string]$ScriptCallbackStr,# script
   [int]$RetryWait = 1, # seconds
   [int]$RetryMax = 2,
