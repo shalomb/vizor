@@ -1285,7 +1285,7 @@ Command=ToggleDesktop
   @{ name    =  'install_bginfo_desktop_startup_script';
       script = {
         $bginfo  = [String](Join-Path $Env:IPBaseDir "bin/bginfo.exe")
-        $bgifile = [String]((Resolve-Path (Join-Path $Env:IPBaseDir "conf\*.bgi")).ProviderPath)
+        $bgifile = [String]((Resolve-Path (Join-Path $Env:IPBaseDir "conf/*.bgi")).ProviderPath)
         Install-GlobalLogonScript -Name 'UpdateBgInfoOnLogon' -Script "$bginfo /nolicprompt /timer:0 $bgifile"
       };
       pre    = { 1 }; post   = { 1 }; }
