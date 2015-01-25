@@ -335,6 +335,22 @@ Command=ToggleDesktop
         }
       };
       post   = { 1 }; }
+  @{ name    =   'install_dotnet35_on_2008r2';
+      script = {
+        if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
+          Import-Module ServerManager -Verbose:$VerbosePreference;
+          Add-WindowsFeature as-net-framework -Verbose:$VerbosePreference
+          Write-Verbose "Install of .Net 3.5 feature completed. Rebooting to continue .."
+          Restart-Computer
+        }
+      };
+      pre    = {
+        if ( -not($Env:INSTALL_DOTNET35) ) { Throw "Not installing .Net3.5" }
+        $OSVersion = Get-OSVersion;
+        if ( $OSVersion.InstallationType           -ne 'Server' ) { Throw "Not a Server OS"; }
+        if ( ([Double]$OSVersion.CurrentVersion)   -ne 6.1      ) { Throw 'Not on Windows Server 2008R2' }
+      };
+      post   = { 1 }; }
   @{ name    =   "install_language_packs";
       # N.B: This must come after the installation of .Net 3.5 (if applicable)
       script = {
@@ -375,22 +391,6 @@ Command=ToggleDesktop
         }
       };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'install_dotnet35_on_2008r2';
-      script = {
-        if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
-          Import-Module ServerManager -Verbose:$VerbosePreference;
-          Add-WindowsFeature as-net-framework -Verbose:$VerbosePreference
-          Write-Verbose "Install of .Net 3.5 feature completed. Rebooting to continue .."
-          Restart-Computer
-        }
-      };
-      pre    = {
-        if ( -not($Env:INSTALL_DOTNET35) ) { Throw "Not installing .Net3.5" }
-        $OSVersion = Get-OSVersion;
-        if ( $OSVersion.InstallationType           -ne 'Server' ) { Throw "Not a Server OS"; }
-        if ( ([Double]$OSVersion.CurrentVersion)   -ne 6.1      ) { Throw 'Not on Windows Server 2008R2' }
-      };
-      post   = { 1 }; }
   @{ name    =   "applying_l18n_settings-$(Get-Date -uformat %s)";
       script = {
         # TODO, control.exe/intl.cpl does not return a meaningful/accurate error code
