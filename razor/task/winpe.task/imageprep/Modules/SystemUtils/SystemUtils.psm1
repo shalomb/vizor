@@ -637,23 +637,61 @@ function Initialize-Sysinternals {
   }
 }
 
+function Get-SMBBlockSigning {
+  [CmdletBinding()] Param(
+    [Switch] $LanManServer,
+    [Switch] $LanManWorkStation
+  )
+
+  $Paths = @()
+
+  if ( $LanManServer ) {
+    $Paths += @( "HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters" )
+  }
+
+  if ( $LanManWorkStation ) {
+    $Paths += @( "HKLM:\System\CurrentControlSet\Services\LanManWorkStation\Parameters" )
+  }
+
+  foreach ( $Path in $Paths ) {
+    gp -Path $Path | Select -Exclude PS* *
+  }
+}
+
 function Set-SMBBlockSigning {
   [CmdletBinding()] Param(
-    [Boolean]$Value
+    [Switch] $Enabled,
+    [Switch] $LanManServer,
+    [Switch] $LanManWorkStation
   )
   Write-Verbose "Disabling SMB Block Signing."
-  & reg.exe add "HKLM\System\CurrentControlSet\Services\LanManServer\Parameters\" /f /v  "EnableSecuritySignature" /t REG_DWORD $Value
-  & reg.exe add "HKLM\System\CurrentControlSet\Services\LanManServer\Parameters\" /f /v "RequireSecuritySignature" /t REG_DWORD $Value
+
+  $Paths = @()
+
+  if ( $LanManServer ) {
+    $Paths += @( "HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters" )
+  }
+
+  if ( $LanManWorkStation ) {
+    $Paths += @( "HKLM:\System\CurrentControlSet\Services\LanManWorkStation\Parameters" )
+  }
+
+  foreach ( $Path in $Paths ) {
+    sp -Path $Path -Name "EnableSecuritySignature"  `
+        -Type DWORD -Value ([Boolean]$Enabled) -Force -Verbose:$VerbosePreference
+    sp -Path $Path -Name "RequireSecuritySignature" `
+       -Type DWORD -Value ([Boolean]$Enabled) -Force -Verbose:$VerbosePreference
+  }
 }
 
 function Disable-SMBBlockSigning {
-  [CmdletBinding()] Param() Write-Verbose "Disabling SMB Block Signing."
-  Set-SMBBlockSigning -Value $False
+  [CmdletBinding()] Param()
+  Set-SMBBlockSigning -Enabled:$False -Verbose:$VerbosePreference
 }
 
 function Enable-SMBBlockSigning {
-  [CmdletBinding()] Param() Write-Verbose "Enabling SMB Block Signing."
-  Set-SMBBlockSigning -Value $True
+  [CmdletBinding()] Param()
+  Set-SMBBlockSigning -Enabled:$True -Verbose:$VerbosePreference
 }
 
 function defined {
