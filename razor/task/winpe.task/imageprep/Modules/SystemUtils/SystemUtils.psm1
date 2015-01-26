@@ -568,15 +568,6 @@ function Get-SMBBlockSigning {
   $Res
 }
 
-function Set-SMBBlockSigning {
-  [CmdletBinding()] Param(
-    [Boolean]$Value
-  )
-  Write-Verbose "Disabling SMB Block Signing."
-  & reg.exe add "HKLM\System\CurrentControlSet\Services\LanManServer\Parameters\" /f /v  "EnableSecuritySignature" /t REG_DWORD $Value
-  & reg.exe add "HKLM\System\CurrentControlSet\Services\LanManServer\Parameters\" /f /v "RequireSecuritySignature" /t REG_DWORD $Value
-}
-
 function Invoke-Robocopy {
   [CmdletBinding()] Param(
     [Parameter(Mandatory=$True,Position=1)]
@@ -644,6 +635,15 @@ function Initialize-Sysinternals {
     Write-Verbose "  '$_'"
     & reg.exe add (Join-Path "HKCU\SOFTWARE\Sysinternals" $_) /v EulaAccepted  /t REG_DWORD /d 1 /f | Write-Verbose
   }
+}
+
+function Set-SMBBlockSigning {
+  [CmdletBinding()] Param(
+    [Boolean]$Value
+  )
+  Write-Verbose "Disabling SMB Block Signing."
+  & reg.exe add "HKLM\System\CurrentControlSet\Services\LanManServer\Parameters\" /f /v  "EnableSecuritySignature" /t REG_DWORD $Value
+  & reg.exe add "HKLM\System\CurrentControlSet\Services\LanManServer\Parameters\" /f /v "RequireSecuritySignature" /t REG_DWORD $Value
 }
 
 function Disable-SMBBlockSigning {
