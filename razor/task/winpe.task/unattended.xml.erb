@@ -40,6 +40,7 @@
          product_type : <%= @product_type = node.metadata['product_type'] %>
            winpe_arch : <%= @arch = node.metadata['architecture'].to_s =~ /x86$/i ? 'x86' : 'amd64' %>
 
+                image : <%= node.metadata['id'] %>
 -->
 <!--
      callback_url : <%= stage_done_url('finished') %>
@@ -92,8 +93,9 @@
 
           <InstallFrom>
             <MetaData wcm:action="add">
-              <Key>/IMAGE/NAME</Key>
-              <Value><%= node.metadata['name'] %></Value>
+              <!-- /IMAGE/NAME == <%= node.metadata['name'] %> -->
+              <Key>/IMAGE/INDEX</Key>
+              <Value><%= node.metadata['index'] %></Value>
             </MetaData>
           </InstallFrom>
 
