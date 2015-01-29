@@ -1404,7 +1404,8 @@ Command=ToggleDesktop
         # where a simple shutdown attempt may fail
         while (1) {
           try {
-            sleep 1; shutdown.exe -a
+            sleep 1
+            try { shutdown.exe -a } catch {}  # -ea 0
             shutdown.exe -s -t 3
             sleep 3
           } catch {
