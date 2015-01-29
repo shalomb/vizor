@@ -316,8 +316,9 @@ Command=ToggleDesktop
       script = {
         if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
           $razor_metadata = . .\metadata.ps1
+          $OSVersion = Get-OSVersion
           if ( Test-Path($sxs_dir = Join-Path $razor_metadata.repo_share 'sources\sxs') ) {
-            Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $((Get-OSVersion).Version))"
+            Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $($OSVersion.Version))"
             dism.exe /English /Online /Enable-Feature /FeatureName:NetFx3 /All /Source:$sxs_dir /NoRestart | Write-Verbose
             if     ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
               Write-Verbose "Install of .Net3.5 SP1 role successful (exit_code: $LASTEXITCODE). Rebooting to continue .."
@@ -326,11 +327,65 @@ Command=ToggleDesktop
             else {
               Write-Warning "dism.exe exited with an unknown exit code '$LASTEXITCODE'. Aborting."
               Restart-Computer
-              Throw $ErrMsg # TODO. Does this ever get reached?
+              Throw $ErrMsg # TODO. Does this ever get reached? Left in to fail the task
             }
           }
           else {
-            Throw "SXS dir $sxs_dir not found or unreachable."
+            $ErrMsg = "Error, Failed installing .Net 3.5 : SXS dir $sxs_dir not found or unreachable."
+            if ( (([System.Version]($OSVersion.Version)).Major) -ge 10 ) {
+              # Don't fail this task - we'll try the fallback method next
+              Write-Warning "(Windows 10). $ErrMsg"
+            }
+            else {
+              Throw "$ErrMsg"
+            }
+          }
+        }
+      };
+      post   = { 1 }; }
+  @{ name    =   'install_dotnet35_sp1_on_win10';
+      pre    = {
+        if ( -not($Env:INSTALL_DOTNET35) )       { Throw "Not installing .Net3.5" }
+        $OSVersion = Get-OSVersion;
+        if ( (([System.Version]($OSVersion.Version)).Major) -lt 10 ) { Throw 'Not on Windows >= Windows 10' }
+      };
+      script = {
+        # TODO, code is duplicated here, refactor this task to merge with the previous
+        if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
+          $razor_metadata = . .\metadata.ps1
+          $dot_net_ondemand_pkg_file = 'microsoft-windows-netfx3-ondemand-package.cab'
+          $dot_net_ondemand_pkg_url  = '{0}/{1}/{2}' -f $razor_metadata.repo_url, 'sources/sxs', $dot_net_ondemand_pkg_file
+
+          if ( $req = [System.Net.HttpWebRequest]::Create($dot_net_ondemand_pkg_url) ) {
+            # Do a HEAD on the URL before downloading
+            $req.Method = "HEAD"
+            $response = $req.GetResponse()
+            if ( $response.StatusCode -imatch '^OK$' ) {
+              $sxs_dir = Join-Path $Env:TEMP 'sxs'
+              mkdir -Force $sxs_dir -ea 0 | Out-Null
+
+              (New-Object Net.WebClient).DownloadFile($dot_net_ondemand_pkg_url, (Join-Path $sxs_dir $dot_net_ondemand_pkg_file))
+
+              Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $((Get-OSVersion).Version))"
+              dism.exe /English /Online /Enable-Feature /FeatureName:NetFx3 /All /Source:$sxs_dir /NoRestart | Write-Verbose
+
+              if     ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
+                Write-Verbose "Install of .Net3.5 SP1 role successful (exit_code: $LASTEXITCODE). Rebooting to continue .."
+                Restart-Computer
+              }
+              else {
+                Write-Warning "dism.exe exited with an unknown exit code '$LASTEXITCODE'. Rebooting to retry .."
+                Restart-Computer
+                Throw $ErrMsg # TODO. Does this ever get reached?
+              }
+
+            }
+            else {
+              Throw "Error, .Net3.5 ondemand package not available on razor repo, url '$dot_net_ondemand_pkg_url' : $_"
+            }
+          }
+          else {
+            Throw "Error creating HTTPWebRequest while attempting HEAD request on url '$dot_net_ondemand_pkg_url' : $_"
           }
         }
       };
@@ -1311,7 +1366,7 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'report_image_id_back_to_razor';
       script = {
-        # TODO: This section is quite error prone on win7/2k8r2
+        # TODO: This section is quite error prone on win7/2k8r2 if the razor server cannot be resolved
         #       wrapped in try{}catch{} for now
         $ReportStatus = $False; $RetryCount = 0
         while ( -not($ReportStatus) -and ($RetryCount -le 10) ) {
@@ -1328,11 +1383,9 @@ Command=ToggleDesktop
             } else {
               Throw "Unable to derive ImageId"
             }
-          }
-          catch {
+          } catch {
             Write-Warning "Failed to report ImageId to Razor"
-          }
-          finally {
+          } FINALLY {
             $RetryCount++
           }
         }
@@ -1347,13 +1400,17 @@ Command=ToggleDesktop
   @{ name    =   "shutdown_for_templating-$(date -uformat %s)";
       script = {
         Write-Verbose "Imagprep Stage 2 Complete - Shutting down for templating"
-        Stop-Computer
-      };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   "shutdown_for_templating_backup-$(date -uformat %s)";
-      script = {
-        # TODO: Backup shutdown, as the above attempt sometimes fails on windows 7
-        sleep 10; Stop-Computer; while (1) { shutdown.exe -s -t 0 }
+        # This shutdown/retry loop is needed on Win7/2008R2, Windows 10
+        # where a simple shutdown attempt may fail
+        while (1) {
+          try {
+            sleep 1; shutdown.exe -a
+            shutdown.exe -s -t 3
+            sleep 3
+          } catch {
+            Write-Warning "Shutdown attempt failed : $_"
+          }
+        }
       };
       pre    = { 1 }; post   = { 1 }; }
 )
