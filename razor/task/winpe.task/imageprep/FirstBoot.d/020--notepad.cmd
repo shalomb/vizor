@@ -1,2 +1,0 @@
-hostname.exe
-notepad.exe

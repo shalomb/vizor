@@ -1,1 +1,0 @@
-This module contains functions to enhance logging capabilities of powershell.
