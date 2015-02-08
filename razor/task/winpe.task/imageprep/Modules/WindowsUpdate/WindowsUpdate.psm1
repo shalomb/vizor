@@ -184,6 +184,9 @@ function Update-WUA {
 
   $OS = Gwmi Win32_OperatingSystem
 
+  # TODO, make this future proof, use the recommendations in
+  #   'Updating Windows Update Agent (Windows)'
+  #   https://msdn.microsoft.com/en-us/library/windows/desktop/aa387285%28v=vs.85%29.aspx
   if ( ($OS.Version -imatch '^6.1') ) { # Windows 7
     $PkgUrl = Switch ( $OS.OSArchitecture ) {
       '32-bit'  {
@@ -463,9 +466,9 @@ function Invoke-WindowsUpdateDetection {
 function Search-WindowsUpdate {
   # https://msdn.microsoft.com/en-gb/library/windows/desktop/aa386526(v=vs.85).aspx
   [CmdletBinding()] Param(
-    # Default is '(IsInstalled=0 AND IsHidden=0)'
-    # IsAssigned=1 is added to select "important" updates (those meant to be deployed)
-    [String]$SearchCriteria = "(IsInstalled=0 AND IsHidden=0 AND IsAssigned=1)",
+    # "(https://msdn.microsoft.com/en-us/library/windows/desktop/aa386526(v=vs.85).aspx)",
+    #   Default is '(IsInstalled=0 AND IsHidden=0)'
+    [String]$SearchCriteria = "(IsInstalled=0 AND IsHidden=0)",
     [Switch]$IncludeAutoSelected,
     [Switch]$History
   )
@@ -533,11 +536,10 @@ function Install-WindowsUpdate {
       $SearchResult | fl *
     }
     else {
-      $IsInstalled = $SearchResult.IsInstalled
+      $IsInstalled  = $SearchResult.IsInstalled
       $IsDownloaded = $SearchResult.IsDownloaded
       Write-Verbose   " Candidate: $($SearchResult.Title)"
-      Write-Verbose   "   IsInstalled: $IsInstalled"
-      Write-Verbose   "   IsDownloaded: $IsDownloaded"
+      Write-Verbose   "   IsInstalled:  $IsInstalled, IsDownloaded: $IsDownloaded"
       if (-not($IsInstalled)) { $updatesToInstall.Add( $SearchResult ) > $Null }
     }
   }
@@ -551,16 +553,19 @@ function Install-WindowsUpdate {
     $updatesToInstall | ?{ -not($_.IsDownloaded) } | % { $Global:candidatesToDownload.Add($_) > $Null}
 
     if ($Global:candidatesToDownload.Count) {
-      $downloader         = $Global:UpdateSession.CreateUpdateDownloader()
-      $downloader.Updates = $Global:candidatesToDownload
+      $downloader          = $Global:UpdateSession.CreateUpdateDownloader()
+      $downloader.IsForced = $True
+      $downloader.Priority = 3
+      $downloader.Updates  = $Global:candidatesToDownload
+
       try {
         Write-Verbose "Downloading $($updatesToInstall.Count) updates ..."
         $downloader.Download() > $Null
         Write-Verbose "Downloads complete."
       }
       catch {
-        Write-Verbose "Problem downloading updates." $_
-        Write-Verbose " " $error[0]
+        Write-Warning "Problem downloading updates." $_
+        Write-Warning " " $error[0]
       }
     }
 
@@ -578,12 +583,17 @@ function Install-WindowsUpdate {
 
     Write-Verbose "Setting update installer preferences for automation ..."
     $installer                    = $Global:UpdateSession.CreateUpdateInstaller()
+    $installer.AllowSourcePrompts = $False
+    $installer.IsForced           = $True
+    $installer.ForceQuiet         = $True
     $installer.Updates            = $updatesToInstall
-    $installer.AllowSourcePrompts = $false
-    $installer.ForceQuiet         = $true
 
-    Write-Verbose "Installing $($updatesToInstall.Count) updates ..."
-    $installationResult = $installer.Install()
+    try {
+      Write-Verbose "Installing $($updatesToInstall.Count) updates ..."
+      $installationResult = $installer.Install()
+    } catch {
+      Write-Warning "Problem installing update: $_"
+    }
 
     Write-Verbose "Installation Result: $($installationResult.Resultcode)"
     Write-Verbose "Reboot Required: $($installationResult.RebootRequired)"
@@ -610,38 +620,41 @@ Download but do not apply windows update
 
 function Install-ImportantWindowsUpdates {
   [CmdletBinding()] Param(
-    [Switch] $RebootIfNecessary
+    [Switch] $RebootIfNecessary = $True
   )
 
   Write-Verbose "Installing important windows updates"
-  Enable-WindowsUpdate
 
   $UpdateResults = @()
   $i = 0
 
-  while ($UpdateCollection = Search-WindowsUpdate -Verbose:$VerbosePreference) {
-    if ( $UpdateResult = $UpdateCollection | Install-WindowsUpdate -Verbose:$VerbosePreference ) {
-      $UpdateResults += $UpdateResult
+  while ( $i -le 5 ) {
 
-      try {
-        # TODO. UpdateResult may not have a ResultCode Property
-        $Result = "  i: {0}, ResultCode: {1}, RebootRequired: {2}" `
-                  -f $i, $UpdateResult.ResultCode, $UpdateResult.RebootRequired
-        Write-Verbose $Result
-      }
-      catch {
-        Write-Warning "$_"
-      }
-
-      if ( (([Boolean]($UpdateResult.RebootRequired)) -and $RebootIfNecessary) -or ($i -ge 5) ) {
+    if ( Get-WindowsUpdateSystemInfo -RebootRequired ) {
+      Write-Warning "A pending reboot is required."
+      if ( $RebootIfNecessary ) {
+        Write-Warning "  Rebooting the computer .."
         Restart-Computer
       }
-
-      $i++
+      else {
+        Write-Warning "  ** WARNING, CONTINUING WITHOUT A REBOOT **"
+      }
     }
+
+    $UpdateCollection = Search-WindowsUpdate -Verbose:$VerbosePreference
+
+    if ( $UpdateResult = $UpdateCollection | Install-WindowsUpdate -Verbose:$VerbosePreference ) {
+      $UpdateResults += @( $UpdateResult )
+
+      $Result = "  i: {0}, ResultCode: {1}, RebootRequired: {2}" -f $i,
+                    ($UpdateResult | Select -Expand ResultCode -ea 0),
+                    (Get-WindowsUpdateSystemInfo -RebootRequired)
+      Write-Verbose $Result
+    }
+
+    $i++
   }
 
-  Disable-WindowsUpdate
   return $UpdateResults
 
 <#
@@ -649,12 +662,15 @@ function Install-ImportantWindowsUpdates {
 Convenience function to search for and install important windows updates.
 
 .DESCRIPTION
-Convenience function to search for and install important windows updates.
-This function effectively calls
-Search-WindowsUpdate | Install-WindowsUpdate
+This function attempts to install all important updates and tries to repeat
+the process until there are no more updates to apply.
+NOTE: If a reboot is required to continue, the computer will be rebooted and
+no attempt to resume the process after rebooting is made. This may be done
+even before any updates are applied.
 
 .PARAMETER RebootIfNecessary
-Reboot the machine any updates require a reboot to be effectively applied.
+Reboot the machine if any updates require a reboot to be effectively applied.
+If a reboot occurs, the update results collection is not returned.
 #>
 
 }
