@@ -44,20 +44,22 @@ echo.
 @echo off
 :: Define the locations of the software packages and the flags they take for an unattended install
 ::  * Include where possible, flags that show progress as these tasks take considerable time to complete
-set   dotnetfx_20sp2_x86_install_cmd=\\camautonfs01.eng.citrite.net\software\Microsoft\dotNet\2.0\NetFx20SP2_x86.exe                          /passive /norestart
-set   dotnetfx_20sp2_x64_install_cmd=\\camautonfs01.eng.citrite.net\software\Microsoft\dotNet\2.0\NetFx20SP2_x64.exe                          /passive /norestart
-set   dotnetfx_35sp1_x86_install_cmd=\\camautonfs01.eng.citrite.net\software\Microsoft\dotNet\3.5\sp1\dotnetfx35.exe                          /passive /norestart
-set   dotnetfx_35sp1_x64_install_cmd=\\camautonfs01.eng.citrite.net\software\Microsoft\dotNet\3.5\sp1\dotnetfx35.exe                          /passive /norestart
-set    powershell_xp_x86_install_cmd=\\camautonfs01.eng.citrite.net\software\Microsoft\PowerShell\XP\WindowsXP-KB968930-x86-ENG.exe           /passive /norestart
-set    powershell_xp_x64_install_cmd=\\camautonfs01.eng.citrite.net\software\Microsoft\PowerShell\XP\WindowsXP-KB968930-x64-ENG.exe           /passive /norestart
-set  powershell_2003_x64_install_cmd=\\camautonfs01.eng.citrite.net\software\Microsoft\PowerShell\W2K3\WindowsServer2003-KB968930-x64-ENG.exe /passive /norestart
-set powershell_vista_x86_install_cmd=wusa.exe \\camautonfs01.eng.citrite.net\software\Microsoft\PowerShell\Vista\Windows6.0-KB968930-x86.msu  /quiet   /norestart
+
+:: TODO, pass these in as parameters or supply a config file
+set   dotnetfx_20sp2_x86_install_cmd=software\Microsoft\dotNet\2.0\NetFx20SP2_x86.exe                          /passive /norestart
+set   dotnetfx_20sp2_x64_install_cmd=software\Microsoft\dotNet\2.0\NetFx20SP2_x64.exe                          /passive /norestart
+set   dotnetfx_35sp1_x86_install_cmd=software\Microsoft\dotNet\3.5\sp1\dotnetfx35.exe                          /passive /norestart
+set   dotnetfx_35sp1_x64_install_cmd=software\Microsoft\dotNet\3.5\sp1\dotnetfx35.exe                          /passive /norestart
+set    powershell_xp_x86_install_cmd=software\Microsoft\PowerShell\XP\WindowsXP-KB968930-x86-ENG.exe           /passive /norestart
+set    powershell_xp_x64_install_cmd=software\Microsoft\PowerShell\XP\WindowsXP-KB968930-x64-ENG.exe           /passive /norestart
+set  powershell_2003_x64_install_cmd=software\Microsoft\PowerShell\W2K3\WindowsServer2003-KB968930-x64-ENG.exe /passive /norestart
+set powershell_vista_x86_install_cmd=software\Microsoft\wusa.exe PowerShell\Vista\Windows6.0-KB968930-x86.msu  /quiet   /norestart
 :: Package Installer for Windows - Needed by WindowsUpdate.psm1
 ::   http://support.microsoft.com/kb/898461
-set         KB898461_x86_install_cmd=\\camautonfs01.eng.citrite.net\automation\software\Microsoft\Package_Installer_For_WindowsUpdate\WindowsXP-KB898461-x86-ENU.exe  /passive /norestart
-set         KB898461_x64_install_cmd=\\camautonfs01.eng.citrite.net\automation\software\Microsoft\Package_Installer_For_WindowsUpdate\WindowsXP-KB898461-x86-ENU.exe  /passive /norestart
+set         KB898461_x86_install_cmd=software\Microsoft\Package_Installer_For_WindowsUpdate\WindowsXP-KB898461-x86-ENU.exe  /passive /norestart
+set         KB898461_x64_install_cmd=software\Microsoft\Package_Installer_For_WindowsUpdate\WindowsXP-KB898461-x86-ENU.exe  /passive /norestart
 :: Robocopy for XP
-set                     robocopy_exe=\\camautonfs01.eng.citrite.net\software\Microsoft\SysInternals\robocopy.exe
+set                     robocopy_exe=software\Microsoft\SysInternals\robocopy.exe
 
 
 ver.exe | find.exe /i "5.1." >NUL
