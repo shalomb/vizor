@@ -25,9 +25,7 @@ eos
     }).join("\r\n")
 %>
 
-echo '--------------------------------------------------------------------'
 echo. Downloading firstboot bootstrap scripts from razor.
-echo '--------------------------------------------------------------------'
 start "firstboot.ps1" /realtime /b /wait !SystemRoot!\System32\WindowsPowerShell\v1.0\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -file firstboot.ps1
 
 pause
