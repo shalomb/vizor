@@ -400,8 +400,9 @@ function Add-AssemblyToNgenQueue {
 }
 
 function Start-NgenQueuedTasks {
-  [CmdletBinding()] Param ( [ValidateSet(1,2,3)]
-      [Int32[]] $PriorityLevels = 1..3,
+  [CmdletBinding()] Param ( 
+    [ValidateSet(1,2,3)]
+      [Int32[]] $PriorityLevels = (1..3 | Sort -Descending),
     [Switch]    $Update,
     [String]    $ngen = (Get-Ngen -Current)
   )
@@ -2224,11 +2225,11 @@ function Invoke-Sysprep {
 
     }
     Write-Verbose "  Invoking $sysprep $args"
-    $process = Start-Process -FilePath $sysprep -wait -PassThru -ArgumentList $args
-    if (-not $process) {
-      Throw "Could not start sysprep"
-    } else {
+    if ( $process = Start-Process -FilePath $sysprep -ArgumentList $args -PassThru ) {
       $process | Wait-Process
+      return $process.ExitCode
+    } else {
+      Throw "Sysprep did not complete successfully."
     }
   }
   else {
@@ -2609,26 +2610,20 @@ function Install-LogonScript {
   $RunKey         = if ( $RunOnce ) { "RunOnce" } else  { "Run" }
   $TargetKey      = "{0}\SOFTWARE\Microsoft\Windows\CurrentVersion\{1}" -f $RegistryScope,$RunKey
 
-  if ($Hidden) {
-    $BinDir = (Join-Path $Env:PROGRAMDATA 'bin')
-    mkdir -Force $BinDir | Out-Null
-
-    if ( -not(Test-Path($WrapperScript = Join-Path $BinDir 'Start-HiddenScript.vbs')) ) {
-      $ScriptContents = @"
+  $StartupCommand = if ($Hidden) {
+    $ScriptContents = @"
 If WScript.Arguments.Count = 1 Then
   CreateObject("Wscript.Shell").Run WScript.Arguments.Item(0), 0, True
 End If
 "@
-      $ScriptContents | Out-File -Encoding ASCII -FilePath $WrapperScript -Force
-    }
-
-    $StartupCommand = "{0} {1}" -f $WrapperScript, $Script
+    $WrapperScript = '{0}.vbs' -f $Script
+    $ScriptContents | Out-File -Encoding ASCII -FilePath $WrapperScript -Force
+    "{0} {1}" -f (Resolve-Path $WrapperScript).ProviderPath, $Script
   }
   else {
-    $StartupCommand = $Script
+    $Script
   }
 
-  Write-Verbose "Setting $Name ($StartupCommand) in $TargetKey"
   Write-Verbose "  reg.exe add '$TargetKey' /f /v $Name /t REG_SZ /d $StartupCommand"
   & reg.exe add $TargetKey /v $Name /t REG_SZ /d $StartupCommand /f | Write-Verbose
 }
@@ -2640,10 +2635,11 @@ function Install-GlobalLogonScript {            #M:UserLogon
       [String]$Script,
     [Parameter(Mandatory=$False)]
     [Alias("Description",'ValueName')]
-      [String]$Name
+      [String]$Name = $Script,
+    [Switch]$Hidden
   )
   if (-not $Name) { $Name = $Script }
-  Install-LogonScript -Script $Script -Description $Name -Global
+  Install-LogonScript -Script $Script -Description $Name -Global -Hidden:$Hidden
 }
 
 function Install-RebootTest { # TODO: Remove - this is a test case
