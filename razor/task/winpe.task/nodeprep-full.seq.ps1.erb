@@ -5,8 +5,7 @@
 #
 # Logs and transcripts are stored in %programdata%\imageprep
 
-[CmdletBinding()]
-Param()
+[CmdletBinding()] Param()
 
 Set-StrictMode -Version 2.0
 Set-PSDebug -Trace 0
@@ -14,10 +13,14 @@ Set-PSDebug -Trace 0
 $ErrorActionPreference          = 'STOP'
 $PSModuleAutoLoadingPreference  = 'None'
 
+# TODO.
+#  Windows updates installed but marked failed/cancelled on 2008R2/Win7
+#  Shutdown on windows 7
+
 # Import all modules required by tasks defined below
 Import-Module Microsoft.PowerShell.Host -ea 0 # Seems to fail import on PSv2
 Import-Module CDROM
-Import-Module GroupPolicy
+# Import-Module GroupPolicy
 Import-Module MSRT
 Import-Module SystemUtils
 Import-Module TaskUtils
@@ -43,6 +46,7 @@ $Env:L18NXML_URL  = '<%= file_url('l18n.xml') %>'
 $Env:PATH += ";$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
 if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\SysInternals;" }
 
+
 # Stage 0
 #   Prepare image
 #   Install packages/roles
@@ -52,13 +56,17 @@ if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\S
       script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_0_begins') %>') } catch{} };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'start_w32tm_service_1';
-      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic | Start-Service };
+      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic -PassThru | Start-Service };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_ntp_servers';
       script = { Set-NTPServers $Env:NTP_SERVERS -Verbose };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'sync_ntp_time_stage_0';
       script = { Sync-W32Time };
+      pre    = { 1 }; post   = { 1 }; }
+
+  @{ name    =   "uninstall_bootstrap_startup_script-$(date -uformat %s)";
+      script = { Get-StartupCommand | ?{ $_.Command -imatch 'Start-BootStrap.cmd' } | Uninstall-StartupCommand -Verbose };
       pre    = { 1 }; post   = { 1 }; }
 
   @{ name    =   'install_powershell_taskbar_shortcut';
@@ -219,9 +227,9 @@ Command=ToggleDesktop
 #        }
 #      };
 #      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'disable_device_autorun';
-      script = { Disable-AutoRun };
-      pre    = { 1 }; post   = { 1 }; }
+# @{ name    =   'disable_device_autorun';
+#     script = { Disable-AutoRun };
+#     pre    = { 1 }; post   = { 1 }; }
 
   @{ name    =   'set_powersheme_disable_hibernation';
       script = {  try { $Local:ErrorActionPreference = "CONTINUE"
@@ -264,6 +272,10 @@ Command=ToggleDesktop
 
   @{ name    =   'update_windows_update_agent';
       script = {
+        # In addition to updating the WUA, this step also resolves the issue
+        # described in 
+        # http://support.microsoft.com/kb/2533552
+        # http://support.microsoft.com/kb/976902
         Write-Warning "Update Windows Update Agent"
         Update-WUA -Verbose:$VerbosePreference
         shutdown.exe -r -t 0 -c "Restarting to update windows update agent"
@@ -446,6 +458,7 @@ Command=ToggleDesktop
         }
       };
       pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   "applying_l18n_settings-$(Get-Date -uformat %s)";
       script = {
         # TODO, control.exe/intl.cpl does not return a meaningful/accurate error code
@@ -462,11 +475,108 @@ Command=ToggleDesktop
         }
       };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'install_windows_updates';
+
+  @{ name    =  "install_vm_guest_tools-$(Get-Date -Uformat %s)"
       script = {
-        Install-ImportantWindowsUpdates -RebootIfNecessary -Verbose:$VerbosePreference
+        # Requires .Net 3.5 on Server 2008 R2
+        $PSFile = @"
+          `$Env:PSModulePath="$Env:PSModulePath"
+          # TODO, -Global is needed here, why?
+          # This also reboots the VM
+          Import-Module ModuleUtils  -Global -Force
+          Import-Module XenTools     -Global -Force
+          Import-Module HyperVIC     -Global -Force
+          Import-Module VMWareTools  -Global -Force
+          Import-Module VMGuestTools -Global -Force
+          Import-Module CDRom        -Global -Force
+          # TODO, The InstallStatus flag doesn't necessarily indicate a complete install
+          if ( -not((Get-VMGuestToolsStatus).InstallStatus) ) {
+            VMGuestTools\Install-VMGuestTools
+          }
+"@
+         $VMGTI = (join-path $Env:TEMP 'VMGuestTools.ps1')
+         $PSFile | Out-File -Encoding ASCII $VMGTI
+         # TODO, workaround scoping issues where the above imports succeed
+         #       but none of the functions can be executed.
+         #       Workaround for now, launch script in its own process space
+         # TODO, Validate the installer has successfully completed before
+         #       proceeding, even if installers force reboots.
+         try {
+           powershell.exe -executionpolicy bypass -file $VMGTI
+         } catch {
+           # If the process has failed, reboot.
+           # TODO: This may react to a false positive.
+           # - There is no clear way to discriminate failures from
+           #   the installers vs those from powershell.
+           # - This fails when there are no CD-ROM drives containing
+           #   the installer. An infinite reboot cycle is caused.
+           $ErrMsg  = "Failed to install VM Guest Tools : $_"
+           $ErrMsg += "$ErrMsg. Rebooting to retry .."
+           Write-Warning $ErrMsg
+           Restart-Computer
+         }
+         # TODO, test installation status before returning
       };
       pre    = { 1 }; post   = { 1 }; }
+
+  @{ name    =   'install_kb2697738_on_server_2008r2';
+      pre    = {
+        $OSVersion = Get-OSVersion;
+        if ( (Get-HotFix | ?{ $_.HotFixId -imatch '2697738' }) )  { Throw 'HofFix KB2697738 already installed' }
+        if ( ([Double]$OSVersion.CurrentVersion)   -ne 6.1      ) { Throw 'Not on Windows Server 2008R2' }
+        if ( $OSVersion.InstallationType           -ne 'Server' ) { Throw 'Not a Server OS'; }
+        if ( (Get-UICulture).Name -imatch 'en\-' )                { Throw 'Hotfix not applicable for locale' }
+      };
+      script = {
+        # TODO. Workaround to allow for WinRM/PSRemoting to succeed on l18n OSes
+        # http://support.microsoft.com/kb/2697738
+        $Url = 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446305_intl_x64_zip.exe'
+        $ZipFile = "$PWD\kb2697738.zip"
+        (New-Object Net.WebClient).DownloadFile($Url, $ZipFile)
+        .\unzip.exe -o -q $ZipFile -d .
+        $MsuFile = ls *KB2697738*x64*.msu | Select -Expand FullName
+        mkdir -Force "$PWD\log" | Out-Null
+        Write-Warning "Installing MSU $MsuFile"
+        Start-Process -Wait 'wusa.exe' @($MsuFile,'/quiet','/norestart','/log:log\kb2697738.log') -NoNewWindow
+      };
+      post   = { Get-HotFix | ?{ $_.HotFixId -imatch '2697738' } | fl * }; }
+
+  @{ name    =   'install_windows_updates';
+      script = {
+        if (([Double](Get-OSVersion).CurrentVersion) -eq 6.1) {
+          # TODO. Workaround for Windows 7/2008.
+          #       On Windows 7/2008R2, schedule a shutdown in advance
+          #       to avoid WU hanging indefinitely.
+          try {
+            try { shutdown.exe -a } catch { }
+            $RestartDelay = 3600
+            $RestartTime = (Get-Date).AddSeconds($RestartDelay).ToString('yyyy-MM-ddTHH:mm:ss')
+            shutdown.exe -r -t $RestartDelay -c "Windows Update in progress. A reboot is scheduled for $RestartTime."
+          } catch {
+            Write-Warning "Failed to initiate a scheduled shutdown : $_"
+          }
+        }
+
+        try {
+          Install-ImportantWindowsUpdates -RebootIfNecessary -Verbose:$VerbosePreference
+        } catch {
+          Switch -Regex ( $_ ) {
+            '8024401C|80072EE2' {
+              # HRESULT: 0x8024401C - http://windows.microsoft.com/en-US/windows-8/windows-update-error-0x8024401c
+              # HRESULT: 0x80072EE2 - http://windows.microsoft.com/en-gb/windows/windows-update-error-80072ee2
+              Write-Warning "Error contacting WU server, restarting computer to retry."
+            }
+            '8024001E' {
+              Write-Warning "Windows Update interrupted."
+            }
+          }
+          Write-Warning "$_"
+          sleep 30; Restart-Computer
+          Throw $_ # Prevent task from succeeding.
+        }
+      };
+      pre    = { 1 };
+      post   = { shutdown -a }; }
   @{ name    =   'start_windows_defender_service';
       script = { try { Get-Service WinDefend | Set-Service -StartupType Manual | Start-Service } catch {} };
       pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
@@ -514,48 +624,6 @@ Command=ToggleDesktop
       };
       pre    = { if (-not(([Double](Get-OSVersion).CurrentVersion) -imatch '6.1')) { Throw 'Not on Windows 7/2008R2' } };
       post   = { 1 }; }
-  @{ name    =  "install_vm_guest_tools-$(Get-Date -Uformat %s)"
-      script = {
-        # Requires .Net 3.5
-        $PSFile = @"
-          `$Env:PSModulePath="$Env:PSModulePath"
-          # TODO, -Global is needed here, why?
-          # This also reboots the VM
-          Import-Module ModuleUtils  -Global -Force
-          Import-Module XenTools     -Global -Force
-          Import-Module HyperVIC     -Global -Force
-          Import-Module VMWareTools  -Global -Force
-          Import-Module VMGuestTools -Global -Force
-          Import-Module CDRom        -Global -Force
-          # TODO, The InstallStatus flag doesn't necessarily indicate a complete install
-          if ( -not((Get-VMGuestToolsStatus).InstallStatus) ) {
-            VMGuestTools\Install-VMGuestTools
-          }
-"@
-         $VMGTI = (join-path $Env:TEMP 'VMGuestTools.ps1')
-         $PSFile | Out-File -Encoding ASCII $VMGTI
-         # TODO, workaround scoping issues where the above imports succeed
-         #       but none of the functions can be executed.
-         #       Workaround for now, launch script in its own process space
-         # TODO, Validate the installer has successfully completed before
-         #       proceeding, even if installers force reboots.
-         try {
-           powershell.exe -executionpolicy bypass -file $VMGTI
-         } catch {
-           # If the process has failed, reboot.
-           # TODO: This may react to a false positive.
-           # - There is no clear way to discriminate failures from
-           #   the installers vs those from powershell.
-           # - This fails when there are no CD-ROM drives containing
-           #   the installer. An infinite reboot cycle is caused.
-           $ErrMsg  = "Failed to install VM Guest Tools : $_"
-           $ErrMsg += "$ErrMsg. Rebooting to retry .."
-           Write-Warning $ErrMsg
-           Restart-Computer
-         }
-         # TODO, test installation status before returning
-      };
-      pre    = { 1 }; post   = { 1 }; }
 
 # # # Configure Service Startup
 # # # Application Layer Gateway Service
@@ -1028,13 +1096,15 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "reboot_for_stage_0-$(date -uformat %s)";
       script = {
-        Write-Verbose "Imagprep Stage 1 Complete - Rebooting to continue .."
-        & shutdown.exe -r -t 5 # Not Restart-Computer to be non-blocking
+        $ShutdownMsg = "Imagprep Stage 1 Complete - Rebooting to continue .."
+        Write-Verbose $ShutdownMsg
+        shutdown.exe -r -t 3 -c $ShutdownMsg
       };
       pre    = { 1 }; post   = { 1 }; }
 ),
 
 # Stage 1
+#   Prepare image
 #   Cleanup image
 #   Prepare for templating
 @(
@@ -1042,7 +1112,17 @@ Command=ToggleDesktop
       script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_begins') %>') } catch{} };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'start_w32tm_service_2';
-      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic | Start-Service };
+      script = {
+        $i = 0
+        while ( $i -le 10 ) {
+          if ( (Get-Service -Name W32Time).Status -eq 'Running' ) {
+            break
+          } else {
+            Get-Service -Name W32Time | Set-Service -StartupType Automatic -PassThru | Start-Service
+            sleep 3
+          }
+        }
+      };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_timezone'; # Will fail on 2008R2 without .Net3.5
       pre    = { (Gwmi Win32_TimeZone) -imatch "^${Env:TIMEZONE}$" };
@@ -1154,14 +1234,14 @@ Command=ToggleDesktop
   @{ name    =   'remove_software_distribution_download_files';
       script = {
         Get-Service *inst* | Stop-Service -Verbose:$VerbosePreference -ea 0
-        Sleep 2
+        Sleep 5
         try { rm -Force -Recurse (Join-Path $Env:WINDIR 'SoftwareDistribution\Download') } catch {}
       };
       pre    = { Test-Path (Join-Path $Env:WINDIR 'SoftwareDistribution\Download') }; post   = { 1 }; }
   @{ name    =   'remove_windows_installer_patchcache_files';
       script = {
         Get-Service *inst* | Stop-Service -Verbose:$VerbosePreference -ea 0
-        Sleep 2
+        Sleep 5
         rm -Force -Verbose:$VerbosePreference -recurse (Join-Path $Env:WINDIR 'Installer\$PatchCache$\*')  -ea 0
       };
       pre    = { Test-Path (Join-Path $Env:WINDIR 'Installer\$PatchCache$') }; post   = { 1 }; }
@@ -1339,11 +1419,11 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =  'install_bginfo_desktop_startup_script';
       script = {
-        $bginfo  = [String](Join-Path $Env:IPBaseDir "bin/bginfo.exe")
+        $bginfo  = [String]((Resolve-Path (Join-Path $Env:IPBaseDir "bin/bginfo.exe")).ProviderPath)
         $bgifile = [String]((Resolve-Path (Join-Path $Env:IPBaseDir "conf/*.bgi")).ProviderPath)
         Install-GlobalLogonScript -Name 'UpdateBgInfoOnLogon' -Script "$bginfo /nolicprompt /timer:0 $bgifile"
       };
-      pre    = { 1 }; post   = { 1 }; }
+      pre    = { 1 }; post   = { Get-StartupCommand | fl; sleep 10; }; }
   @{ name    =   "uninstall_imageprep_startup_script-$(date -uformat %s)";
       pre    = { 1 };
       script = { Get-StartupCommand | ?{ $_.Caption -imatch 'Resume-ImagePrep.cmd' } | Uninstall-StartupCommand -Verbose:$VerbosePreference }; post   = { 1 }; }
@@ -1351,10 +1431,11 @@ Command=ToggleDesktop
       script = { Install-GlobalLogonScript -ScriptPath (ls Start-BootStrap.cmd).FullName };
       pre    = { 1 }; post   = { 1 }; }
 
-  @{ name    =   "sysprep_server_os";
+  @{ name    =   "sysprep_os-$(Get-Date -Uformat %s)";
       script = { Invoke-Sysprep -Generalize -Oobe -Quit -AnswerFile 'sysprep.xml' };
-      pre    = { $OSVersion = Get-OSVersion; if ( $OSVersion.InstallationType -ne 'Server' ) { Throw "Not a Server OS"; } };
+      pre    = { 1 };
       post   = { 1 }; }
+    # pre    = { $OSVersion = Get-OSVersion; if ( $OSVersion.InstallationType -ne 'Server' ) { Throw "Not a Server OS"; } };
   @{ name    =  "clear_event_logs-$(date -uformat %s)";
       script = { Get-EventLog -LogName * | %{ Clear-EventLog -LogName $_.Log -Verbose:$VerbosePreference } };
       pre    = { 1 }; post   = { 1 }; }
@@ -1385,7 +1466,7 @@ Command=ToggleDesktop
             }
           } catch {
             Write-Warning "Failed to report ImageId to Razor"
-          } FINALLY {
+          } finally {
             $RetryCount++
           }
         }
@@ -1394,20 +1475,20 @@ Command=ToggleDesktop
   @{ name    =   'stage_1_ends';
       script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_1_ends') %>') } catch{} };
       pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'flush_dns_cache';
+  @{ name    =   "flush_dns_cache-$(Get-Date -uformat %s)";
       script = { & ipconfig.exe /flushdns };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "shutdown_for_templating-$(date -uformat %s)";
       script = {
-        Write-Verbose "Imagprep Stage 2 Complete - Shutting down for templating"
-        # This shutdown/retry loop is needed on Win7/2008R2, Windows 10
-        # where a simple shutdown attempt may fail
+        $ShutdownMsg = "Imagprep Stage 2 Complete - Shutting down for templating"
+        # TODO. This shutdown/retry loop is needed on Win7/2008R2, Windows 10
+        #       where a simple shutdown fails
         while (1) {
           try {
-            sleep 1
+            Write-Verbose $ShutdownMsg
             try { shutdown.exe -a } catch {}  # -ea 0
-            shutdown.exe -s -t 3
-            sleep 3
+            shutdown.exe -s -t 3 -c $ShutdownMsg
+            sleep 3.2  # shutdown.exe doesn't block.
           } catch {
             Write-Warning "Shutdown attempt failed : $_"
           }
