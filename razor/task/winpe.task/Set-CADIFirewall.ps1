@@ -13,9 +13,15 @@ Start the following services
 #>
 
 $ports = @{
-  '135' = '***AUTOMATION Open Port 135 For CADI bootstrap***';
-  '445' = '***AUTOMATION Open Port 445 For CADI bootstrap***';
+   '135' = '***AUTOMATION Opening Port 135 (EPMAP/RPC) for CADI bootstrap***';
+   '139' = '***AUTOMATION Opening Port 139 (NetBIOS Session Service) for CADI bootstrap***';
+   '145' = '***AUTOMATION Opening Port 145 () for CADI bootstrap***';
+   '445' = '***AUTOMATION Opening Port 445 (Microsoft SMB/DS) for CADI bootstrap***';
+  '7999' = '***AUTOMATION Opening Port 7999 for CADI bootstrap***';
+  '8000' = '***AUTOMATION Opening Port 8000 for CADI bootstrap***';
 }
+
+$ServicesToStart = @('RemoteRegistry', 'NetTcpPortSharing')
 
 # If on winxp use  netsh firewall
 if([Environment]::OSVersion.Version.Major -lt 6) {
@@ -53,16 +59,21 @@ if([Environment]::OSVersion.Version.Major -lt 6) {
       protocol='icmpv6:129,any' dir=out action=allow profile=any enable=yes
   netsh.exe advfirewall firewall show rule name='Allow ICMPv6 Echo Reply Out'
 
+}
 
-  # Start Remote Registry
-  if ( Get-Service RemoteRegistry ) {
-    # WORKAROUND, RemoteRegistry is reported to not start occasionally
-    while ( (Get-Service RemoteRegistry).Status -ne 'Running' ) {
-      Get-Service RemoteRegistry |
-        Set-Service -StartupType Automatic -Verbose -PassThru |
-        Restart-Service -Verbose -Force -PassThru
+foreach ( $Service in $ServicesToStart ) {
+  if ( Get-Service $Service ) {
+    Write-Host "Starting service '$Service' for CADI"
+    while ( (Get-Service $Service).Status -ne 'Running' ) {
+      Get-Service $Service |
+      Set-Service -StartupType Automatic -Verbose -PassThru |
+      Restart-Service -Verbose -Force -PassThru
       sleep 1
     }
   }
+  else {
+    Write-Warning "Error, service '$Service' not found while attempting to start it."
+  }
 }
+
 
