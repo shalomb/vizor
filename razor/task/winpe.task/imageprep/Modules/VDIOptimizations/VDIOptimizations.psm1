@@ -32,8 +32,6 @@ function Set-UserPreferences {                  #M:VDIOptimizations
       $RegBasePath   = $_
 
       Write-Verbose "Making changes under the '$RegBasePath' registry path."
-
-      Write-Verbose "  Setting console parameter ..."
       & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "FaceName"               /t REG_SZ    /d "Lucida Console" | Write-Verbose
       & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "FontFamily"             /t REG_DWORD /d 0x36             | Write-Verbose
       & reg.exe add ( Join-Path $RegBasePath "Console" ) /f  /v "FontSize"               /t REG_DWORD /d 0xc0000          | Write-Verbose
