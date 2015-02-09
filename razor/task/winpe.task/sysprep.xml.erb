@@ -91,9 +91,13 @@ eos
     <OEMInformation>
       <HelpCustomized>true</HelpCustomized>
     </OEMInformation>
-    <ComputerName><%=   node.hostname             || '*' %></ComputerName>
-    <RegisteredOwner><% node.metadata['owner']    || 'owner' %></RegisteredOwner>
-    <TimeZone><%=       node.metadata['windows_timezone'] || 'GMT Standard Time' %></TimeZone>
+    <ComputerName><%=    @sysprep_context == 'firstboot' ? node.hostname || '*' : '*' %></ComputerName>
+    <RegisteredOwner><%=
+      @sysprep_context == 'firstboot' ?
+        node.metadata['owner'] :
+        node.metadata['vstring'].to_s.gsub(/\W+/,"").sub(/sp\d.*/,"")[0..10]
+      %></RegisteredOwner>
+    <TimeZone><%=        node.metadata['windows_timezone'] || 'GMT Standard Time' %></TimeZone>
     <DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
   </component>
 
