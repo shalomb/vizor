@@ -1,4 +1,7 @@
-Set                       	  : <%= node.metadata['FOO'] = 'bar' %>
+This file serves as an example of how to get/set various metadata
+tags for a razor node/task.
+
+Set                               : <%= node.metadata['FOO'] = 'bar' %>
 
 # file_url                        : <%= file_url('') %>
 # file_url                        : <%= file_url('filethatdoesntexit') %>
@@ -73,3 +76,6 @@ ENV	: <%= ENV['LC_ALL'] %>
 
 drivers : <%= (node.metadata.key?('driver_paths') ? node.metadata['driver_paths'] : node.metadata.key?('driver_path') ? node.metadata['driver_path'] : '').gsub(/\W/,'_')  %>
 
+
+owner : [<%= node.metadata['owner'].nil? %>]
+owner : [<%= node.metadata['owner'].to_s.empty? %>]
