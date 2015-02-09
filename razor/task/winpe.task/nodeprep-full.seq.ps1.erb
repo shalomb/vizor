@@ -1488,7 +1488,7 @@ Command=ToggleDesktop
             Write-Verbose $ShutdownMsg
             try { shutdown.exe -a } catch {}  # -ea 0
             shutdown.exe -s -t 3 -c $ShutdownMsg
-            sleep 3.2  # shutdown.exe doesn't block.
+            sleep 15  # shutdown.exe doesn't block.
           } catch {
             Write-Warning "Shutdown attempt failed : $_"
           }
