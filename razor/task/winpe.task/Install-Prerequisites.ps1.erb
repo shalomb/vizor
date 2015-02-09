@@ -1,0 +1,118 @@
+# Powershell
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'STOP'
+$PSModuleAutoLoadingPreference='None'
+
+Import-Module Microsoft.PowerShell.Host       -ea 0
+Import-Module Microsoft.PowerShell.Management -ea 0
+Import-Module Microsoft.PowerShell.Utility    -ea 0
+
+$Script    = $MyInvocation.MyCommand.Name
+Write-Host "Script : $script"
+$ScriptDir = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).Directory.FullName
+
+cd $ScriptDir
+pwd
+
+Write-Host ''
+Write-Host -Fore Cyan ('-' * 75)
+Write-Host -Fore Cyan "Downloading firstboot files"
+Write-Host -Fore Cyan ('-' * 75)
+
+# Files to be downloaded from the razor task
+<%=
+  files = ([
+     file_url('metadata.ps1'),
+     file_url('l18n.xml'),
+     file_url('sysprep.xml'),
+     file_url('nodeprep.seq.ps1'),
+     file_url('imageprep.zip', true),
+     file_url('unzip.exe', true),
+     file_url('Start-Bootstrap.cmd', true),
+     file_url('Start-Bootstrap.ps1', true),
+     file_url('Set-CADIFirewall.ps1', true),
+     file_url('Start-AsyncAsfDiscovery.ps1', true),
+     file_url('Invoke-DefaultBootstrapScript.ps1'),
+     file_url('Install-Prerequisites.ps1'),
+
+  ].each.collect { |url| %q{'%s'} % url }).join(",\n\t")
+
+    '$files = @(
+        %s
+      );' % files
+%>
+
+foreach ($url in $files) {
+  $file = ($url -split "/")[-1]
+  rm -Force $file -ea 0
+  ($retry, $retry_count) = ($False, 0)
+  do {
+    try{
+      Write-Host -Fore Cyan "  * $url -> $file"
+      (New-Object System.Net.WebClient).DownloadFile($url, $file)
+    } catch{
+      Write-Host -Fore Red "  Failed to download $url"; # Not set to Error due to EAP
+      $retry=$True
+      $retry_count++
+      sleep 1
+    }
+  } while($retry -and ($retry_count -le 10))
+}
+
+Write-Host ''
+Write-Host -Fore Cyan ('-' * 75)
+Write-Host -Fore Cyan "Downloading language packs"
+Write-Host -Fore Cyan ('-' * 75)
+
+# Language Packs to be downloaded into language_packs/
+$language_packs = @{}
+<%=
+  if node.metadata.has_key?('language_packs')
+    '$language_packs = @{
+      %s
+    };' % (node.metadata['language_packs'].split(/\s*[;,]\s*/).each.collect {
+      |lp|
+      (locale, url) = lp.split(/=/)
+      %q{"%s"="%s";} % [locale, url]
+    }).join("\n\t")
+
+  end
+%>
+
+mkdir 'language_packs' -ea 0 | Out-Null
+foreach ($locale in $language_packs.keys) {
+  $url  = $language_packs.($locale)
+  $file = "{0}-{1}" -f $locale, (($url -split "/")[-1])
+
+  $file = Join-Path 'language_packs' $file
+  rm -Force $file -ea 0
+
+  ($retry, $retry_count) = ($False, 0)
+  do {
+    try{
+      Write-Host -Fore Cyan "  * $url -> $file"
+      (New-Object System.Net.WebClient).DownloadFile($url, $file)
+    } catch{
+      Write-Host -Fore Red "  Failed to download $url"; # Not set to Error due to EAP
+      $retry=$True
+      $retry_count++
+      sleep 1
+    }
+  } while($retry -and ($retry_count -le 10))
+}
+
+Write-Host ''
+Write-Host -Fore Cyan ('-' * 75)
+Write-Host -Fore Cyan "  Unzipping imageprep.zip"
+Write-Host -Fore Cyan ('-' * 75)
+
+if ( Test-Path imageprep.zip ) {
+  .\unzip.exe -l    imageprep.zip
+  .\unzip.exe -o -q imageprep.zip -d .
+}
+else {
+  Throw "imageprep.zip not found"
+}
+
+

@@ -1,110 +1,29 @@
 # PowerShell
 
 Set-StrictMode -Version 2.0
+Set-PSDebug -Trace 0
+
 $ErrorActionPreference = 'STOP'
 $PSModuleAutoLoadingPreference='None'
 
+# Import PoSH modules incase they may not be loaded
+# early in the first boot
 Import-Module Microsoft.PowerShell.Host       -ea 0
 Import-Module Microsoft.PowerShell.Management -ea 0
 Import-Module Microsoft.PowerShell.Utility    -ea 0
 
 $ScriptDir = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).Directory.FullName
 
-Set-PSDebug -Trace 0
 Write-Host -Fore Cyan "Begin firstboot script"
 
-# Files to be downloaded from the razor task
-<%=
-  files = ([
-     file_url('metadata.ps1'),
-     file_url('l18n.xml'),
-     file_url('sysprep.xml'),
-     file_url('nodeprep.seq.ps1'),
-     file_url('imageprep.zip', true),
-     file_url('unzip.exe', true),
-     file_url('Start-Bootstrap.cmd', true),
-     file_url('Start-Bootstrap.ps1', true),
-     file_url('Set-CADIFirewall.ps1', true),
-     file_url('Start-AsyncAsfDiscovery.ps1', true),
-     file_url('Invoke-DefaultBootstrapScript.ps1'),
-
-  ].each.collect { |url| %q{'%s'} % url }).join(",\n\t")
-
-    '$files = @(
-        %s
-      );' % files
-%>
-
-cd $ScriptDir
-
-Write-Host -Fore Cyan "Downloading firstboot files"
-foreach ($url in $files) {
-  $file = ($url -split "/")[-1]
-  rm -Force $file -ea 0
-  ($retry, $retry_count) = ($False, 0)
-  do {
-    try{
-      Write-Host -Fore Cyan "  * Download $url -> $file"
-      (New-Object System.Net.WebClient).DownloadFile($url, $file)
-    } catch{
-      Write-Host -Fore Red "  Failed to download $url"; # Not set to Warning due to EAP
-      $retry=$True
-      $retry_count++
-      sleep 1
-    }
-  } while($retry -and ($retry_count -le 10))
-}
-
-# Download Language Packs into language_packs/
-$language_packs = @{}
-<%=
-  if node.metadata.has_key?('language_packs')
-    '$language_packs = @{
-      %s
-    };' % (node.metadata['language_packs'].split(/\s*[;,]\s*/).each.collect {
-      |lp|
-      (locale, url) = lp.split(/=/)
-      %q{"%s"="%s";} % [locale, url]
-    }).join("\n\t")
-
-  end
-%>
-
-Write-Host -Fore Cyan "Downloading language packs"
-mkdir 'language_packs' -ea 0 | Out-Null
-foreach ($locale in $language_packs.keys) {
-  $url  = $language_packs.($locale)
-  $file = "{0}-{1}" -f $locale, (($url -split "/")[-1])
-
-  $file = Join-Path 'language_packs' $file
-  rm -Force $file -ea 0
-
-  ($retry, $retry_count) = ($False, 0)
-  do {
-    try{
-      Write-Host -Fore Cyan "  * Download language pack $url -> $file"
-      (New-Object System.Net.WebClient).DownloadFile($url, $file)
-    } catch{
-      Write-Host -Fore Red "  Failed to download $url"; # Not set to Warning due to EAP
-      $retry=$True
-      $retry_count++
-      sleep 1
-    }
-  } while($retry -and ($retry_count -le 10))
-}
-
-$SequenceFile = Join-Path $PWD 'nodeprep.seq.ps1'
-
-Write-Host -Fore Cyan "  Unzipping imageprep.zip"
-.\unzip.exe -o -q imageprep.zip -d .
+# Install-Prerequisites
+# Download scripts and packages from razor
+& .\Install-Prerequisites.ps1
 
 
-$Env:BootstrapScript = (ls Start-Bootstrap.cmd).FullName
-
-# reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v $BootstrapScript /t REG_SZ /d $BootstrapScript
-# Write-Host -Fore Magenta "Register StartupTasks $StartupTasks"
-
-
+# Create powershell script to set up the environment for the sequences
+# to run in. This script will be registered as a logon script so that it is
+# re-invoked after reboots.
 $PSCmdLet = @'
 # Resume-ImagePrep.ps1
 
@@ -112,7 +31,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'STOP'
 $PSModuleAutoLoadingPreference='None'
 
-Set-PSDebug -Trace 2
+Set-PSDebug -Trace 0
 
 Import-Module Microsoft.PowerShell.Host       -ea 0
 Import-Module Microsoft.PowerShell.Management -ea 0
@@ -121,28 +40,38 @@ Import-Module Microsoft.PowerShell.Utility    -ea 0
 $ScriptDir = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).Directory.FullName
 cd ($Env:IPBaseDir=$ScriptDir)
 
+$Env:Path+=";$Env:IPBASEDIR;$Env:IPBASEDIR\bin;$PWD"
 $Env:PSModulePath+=";$Env:IPBASEDIR;$Env:IPBASEDIR\Modules;$PWD;$PWD\Modules;"
 
 Import-Module SystemUtils
 Import-Module ImageMaintenance
 
-Write-Host -Fore Cyan "Resume-ImageMaintenance {0}"
+Write-Host -Fore Cyan "Resume-ImageMaintenance ({0}) STAGE START"
 
 $Env:IPBootScript = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).FullName
 ImageMaintenance\Resume-ImageMaintenance -Sequence {0} -Verbose
 
-Write-Host -Fore Cyan "Resume-ImageMaintenance STAGE COMPLETE"
+Write-Host -Fore Cyan "Resume-ImageMaintenance ({0}) STAGE END"
 
 '@
 
+$SequenceFile = Join-Path $PWD 'nodeprep.seq.ps1'
 $PSCmdLet = $PSCmdLet -f $SequenceFile
+$PsFile = Join-Path $PWD 'Resume-ImagePrep.ps1'
+$PSCmdLet | Out-File -encoding ASCII $PsFile -Force
+
+
+# Create batch file wrapper for the above powershell script.
+# This gets around powershell execution policy differences in the different
+# OSes and lets us control the properties of the console window hosting
+# the process
 
 $CmdLet = @'
 :: cmd.exe
 @echo off
 
-:: mode con:cols=112 lines=9999
-:: mode con:cols=112 lines=32766
+mode con:cols=112 lines=9999
+mode con:cols=112 lines=32766
 
 :: Resume-ImagePrep.cmd
 
@@ -165,25 +94,23 @@ cd !THISDIR!
 exit /b !ERRORLEVEL!
 '@
 
-# Create powershell script
-$PsFile = Join-Path $PWD 'Resume-ImagePrep.ps1'
-$PSCmdLet | Out-File -encoding ASCII $PsFile -Force
-
-# Create powershell runner
+# Create the runner script wrapping the above powershell script
+# and register it to run at every boot - until deleted.
 $CmdFile = Join-Path $PWD 'Resume-ImagePrep.cmd'
 $CmdLet   | Out-File -encoding ASCII $CmdFile -Force
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v $CmdFile /t REG_SZ /d $CmdFile
 
+
+# Create convenience script to enter IP shell when debugging
 "\ProgramData\firstboot\Bootstrap\Invoke-ImagePrep.cmd" | Out-File -encoding ASCII '\ip.cmd'
 
-# Register runner to run at every boot - until deleted
-reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v $CmdFile /t REG_SZ /d $CmdFile
 
 # Start runner
 try {
   & $CmdFile
 } catch {
   Write-Error "'$PSFile' : $_"
-  sleep 300
+  sleep 60
   Restart-Computer
 }
 
