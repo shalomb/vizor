@@ -1482,14 +1482,22 @@ Command=ToggleDesktop
   @{ name    =   "shutdown_for_templating-$(date -uformat %s)";
       script = {
         $ShutdownMsg = "Imagprep Stage 2 Complete - Shutting down for templating"
-        # TODO. This shutdown/retry loop is needed on Win7/2008R2, Windows 10
-        #       where a simple shutdown fails
+        # TODO. This step fails on Win7/2008R2, Windows 10. Possibly because
+        #       of a shutdown attempt in a previous step.
         while (1) {
           try {
             Write-Verbose $ShutdownMsg
             try { shutdown.exe -a } catch {}  # -ea 0
-            shutdown.exe -s -t 3 -c $ShutdownMsg
-            sleep 15  # shutdown.exe doesn't block.
+            sleep 5
+            shutdown.exe -s -c $ShutdownMsg
+            sleep 5
+            try { shutdown.exe -a } catch {}  # -ea 0
+            sleep 5
+            Stop-Computer
+            sleep 5
+            try { shutdown.exe -a } catch {}  # -ea 0
+            sleep 5
+            Stop-Computer -Force
           } catch {
             Write-Warning "Shutdown attempt failed : $_"
           }
