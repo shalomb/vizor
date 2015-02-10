@@ -644,10 +644,23 @@ function Install-ImportantWindowsUpdates {
     $UpdateCollection = Search-WindowsUpdate -Verbose:$VerbosePreference
 
     if ( $UpdateResult = $UpdateCollection | Install-WindowsUpdate -Verbose:$VerbosePreference ) {
-      $UpdateResults += @( $UpdateResult )
+      $UpdateResults    += @( $UpdateResult )
 
-      $Result = "  i: {0}, ResultCode: {1}, RebootRequired: {2}" -f $i,
-                    ($UpdateResult | Select -Expand ResultCode -ea 0),
+      $HResult    = ($UpdateResult | Select -Expand HResult -ea 0)
+      $ResultCode = ($UpdateResult | Select -Expand ResultCode -ea 0)
+      # 'OperationResultCode enumeration (Windows)'
+      #   https://msdn.microsoft.com/en-us/library/windows/desktop/aa387095(v=vs.85).aspx
+      $ResultMessage = @{
+        0 = 'NotStarted';
+        1 = 'InProgress';
+        2 = 'Succeeded';
+        3 = 'SucceededWithErrors';
+        4 = 'Failed';
+        5 = 'Aborted';
+      }
+
+      $Result = "  i: {0}, ResultCode: {1} ({2}, {3}), RebootRequired: {4}" -f $i,
+                    $ResultCode, $ResultMessage[$ResultCode], $HResult,
                     (Get-WindowsUpdateSystemInfo -RebootRequired)
       Write-Verbose $Result
     }
