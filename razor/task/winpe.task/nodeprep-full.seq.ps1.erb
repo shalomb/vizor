@@ -502,12 +502,12 @@ Command=ToggleDesktop
       script = {
         if (([Double](Get-OSVersion).CurrentVersion) -eq 6.1) {
           # TODO. Workaround for Windows 7/2008.
-          #       On Windows 7/2008R2, schedule a shutdown in advance
-          #       to avoid WU hanging indefinitely.
+          #       On Windows 7/2008R2, schedule a shutdown in advance to avoid
+          #       WU hanging indefinitely/reverting updates on next boot.
           try {
             try { shutdown.exe -a } catch { }
-            $RestartDelay = 3600
-            $RestartTime = (Get-Date).AddSeconds($RestartDelay).ToString('yyyy-MM-ddTHH:mm:ss')
+            $RestartDelay = 3600 * 1.5
+            $RestartTime  = (Get-Date).AddSeconds($RestartDelay).ToString('yyyy-MM-ddTHH:mm:ss')
             shutdown.exe -r -t $RestartDelay -c "Windows Update in progress. A reboot is scheduled for $RestartTime."
           } catch {
             Write-Warning "Failed to initiate a scheduled shutdown : $_"
