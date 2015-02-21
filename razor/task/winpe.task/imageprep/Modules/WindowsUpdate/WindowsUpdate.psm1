@@ -531,6 +531,10 @@ function Install-WindowsUpdate {
   }
 
   process {
+    if ( -not($SearchResult) ) {
+      Write-Warning "No updates found. Exiting"
+      return
+    }
     if ($SearchResult.InstallationBehavior.CanRequestUserInput) {
       Write-Host -ForegroundColor Magenta "Update requires user input: " $SearchResult.Title
       $SearchResult | fl *
@@ -546,7 +550,7 @@ function Install-WindowsUpdate {
 
   end {
     if ( -not($updatesToInstall.Count) ) {
-      Write-Verbose "$($updatesToInstall.Count) candidates to install. Exiting."
+      Write-Warning "$($updatesToInstall.Count) candidates to install. Exiting."
       return
     }
 
@@ -663,6 +667,9 @@ function Install-ImportantWindowsUpdates {
                     $ResultCode, $ResultMessage[$ResultCode], $HResult,
                     (Get-WindowsUpdateSystemInfo -RebootRequired)
       Write-Verbose $Result
+    }
+    else {
+      return $UpdateResults
     }
 
     $i++
