@@ -470,21 +470,35 @@ function Search-WindowsUpdate {
     #   Default is '(IsInstalled=0 AND IsHidden=0)'
     [String]$SearchCriteria = "(IsInstalled=0 AND IsHidden=0)",
     [Switch]$IncludeAutoSelected,
+    [String]$ClientApplicationID,
+    [Switch]$Online,
     [Switch]$History
   )
 
-  Write-Verbose $MyInvocation.MyCommand
-
+  # 'Windows Update Agent (WUA) API Reference (Windows)'
+  # https://msdn.microsoft.com/en-us/library/windows/desktop/aa387292(v=vs.85).aspx
   $Global:UpdateSession = New-Object -ComObject Microsoft.Update.Session
   $UpdateSearcher = $Global:UpdateSession.CreateUpdateSearcher()
-
-  # TODO. Define a parameter to select WSUS
-  # $UpdateSearcher.ServerSelection = 2 #ssWindowsUpdate, conflicts with WSUS
 
   if ($History) {
     Write-Verbose "Listing History ..."
     return ($UpdateSearcher.QueryHistory(1, $UpdateSearcher.GetTotalHistoryCount()))
   }
+
+  # TODO. Define a parameter to select WSUS
+  # $UpdateSearcher.ServerSelection = 2 #ssWindowsUpdate, conflicts with WSUS
+
+  if ( $ClientApplicationID ) {
+    $Global:UpdateSession.ClientApplicationID    = $ClientApplicationID
+  }
+
+  if ( $Online ) {
+    $UpdateSearcher.Online = $True
+  }
+
+  # Should one update replace another
+  $UpdateSearcher.IgnoreDownloadPriority = $False
+  $UpdateSearcher.IncludePotentiallySupersededUpdates = $False
 
   if ($IncludeAutoSelected) {
     $SearchCriteria += " OR (IsInstalled=0 AND AutoSelectOnWebSites=1)"
@@ -520,7 +534,6 @@ $AvailableUpdates | Install-WindowsUpdate
 function Install-WindowsUpdate {
   [CmdletBinding()] Param(
     [Switch]$DownloadOnly,
-    [Int32] $MaxUpdates = 50,
     [Parameter(Position=0, Mandatory=$False, ValueFromPipeline=$True)] $SearchResult
   )
 
@@ -541,11 +554,9 @@ function Install-WindowsUpdate {
       $SearchResult | fl *
     }
     else {
-      $IsInstalled  = $SearchResult.IsInstalled
-      $IsDownloaded = $SearchResult.IsDownloaded
       Write-Verbose   " Candidate: $($SearchResult.Title)"
-      Write-Verbose   "   IsInstalled:  $IsInstalled, IsDownloaded: $IsDownloaded"
-      if (-not($IsInstalled)) { $updatesToInstall.Add( $SearchResult ) > $Null }
+      Write-Verbose   "   IsInstalled:  $($SearchResult.IsInstalled), IsDownloaded: $($SearchResult.IsDownloaded)"
+      if (-not($SearchResult.IsInstalled)) { $updatesToInstall.Add( $SearchResult ) > $Null }
     }
   }
 
@@ -555,7 +566,7 @@ function Install-WindowsUpdate {
       return
     }
 
-    $updatesToInstall | ?{ -not($_.IsDownloaded) } | % { $Global:candidatesToDownload.Add($_) > $Null}
+    $updatesToInstall | ?{ -not($_.IsDownloaded) } | % { $Global:candidatesToDownload.Add($_) > $Null }
 
     if ($Global:candidatesToDownload.Count) {
       $downloader          = $Global:UpdateSession.CreateUpdateDownloader()
@@ -596,12 +607,11 @@ function Install-WindowsUpdate {
     try {
       Write-Verbose "Installing $($updatesToInstall.Count) updates ..."
       $installationResult = $installer.Install()
+      Write-Verbose "Installation Result: $($installationResult.Resultcode)"
+      Write-Verbose "Reboot Required: $($installationResult.RebootRequired)"
     } catch {
       Write-Warning "Problem installing update: $_"
     }
-
-    Write-Verbose "Installation Result: $($installationResult.Resultcode)"
-    Write-Verbose "Reboot Required: $($installationResult.RebootRequired)"
 
     return $installationResult
   }
@@ -625,7 +635,8 @@ Download but do not apply windows update
 
 function Install-ImportantWindowsUpdates {
   [CmdletBinding()] Param(
-    [Switch] $RebootIfNecessary = $True
+    [Switch] $RebootIfNecessary = $True,
+    [Int32]  $MaxUpdates = 0x40
   )
 
   Write-Verbose "Installing important windows updates"
@@ -646,13 +657,13 @@ function Install-ImportantWindowsUpdates {
       }
     }
 
-    $UpdateCollection = Search-WindowsUpdate -Verbose:$VerbosePreference
+    if ( $UpdateResult = Search-WindowsUpdate -Verbose:$VerbosePreference | Select -First $MaxUpdates |
+           Install-WindowsUpdate -Verbose:$VerbosePreference ) {
 
-    if ( $UpdateResult = $UpdateCollection | Install-WindowsUpdate -Verbose:$VerbosePreference ) {
       $UpdateResults    += @( $UpdateResult )
 
-      $HResult    = ($UpdateResult | Select -Expand HResult -ea 0)
-      $ResultCode = ($UpdateResult | Select -Expand ResultCode -ea 0)
+      $HResult    = $UpdateResult | Select -Expand HResult    -ea 0
+      $ResultCode = $UpdateResult | Select -Expand ResultCode -ea 0
       # 'OperationResultCode enumeration (Windows)'
       #   https://msdn.microsoft.com/en-us/library/windows/desktop/aa387095(v=vs.85).aspx
       $ResultMessage = @{
