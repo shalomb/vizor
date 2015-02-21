@@ -520,6 +520,7 @@ $AvailableUpdates | Install-WindowsUpdate
 function Install-WindowsUpdate {
   [CmdletBinding()] Param(
     [Switch]$DownloadOnly,
+    [Int32] $MaxUpdates = 50,
     [Parameter(Position=0, Mandatory=$False, ValueFromPipeline=$True)] $SearchResult
   )
 
@@ -550,7 +551,7 @@ function Install-WindowsUpdate {
 
   end {
     if ( -not($updatesToInstall.Count) ) {
-      Write-Warning "$($updatesToInstall.Count) candidates to install. Exiting."
+      Write-Warning "No candidates to install. Exiting."
       return
     }
 
