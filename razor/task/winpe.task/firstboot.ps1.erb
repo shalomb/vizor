@@ -51,10 +51,33 @@ Write-Host -Fore Cyan "Resume-ImageMaintenance ({0}) STAGE START"
 $Env:IPBootScript = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).FullName
 ImageMaintenance\Resume-ImageMaintenance -Sequence {0} -Verbose
 
-Write-Host -Fore Cyan "Resume-ImageMaintenance ({0}) STAGE END"
+$ErrorActionPreference = 'CONTINUE'
+
+$ShutDownMsg = "Resume-ImageMaintenance ({0}) STAGE END"
+Write-Host -Fore Cyan $ShutDownMsg
+
+# TODO, workaround for win7/2008 failing to reboot the machine
+#       as requested at the end of stage 0.
+
+sleep 30
+$ShutDownMsg = "No action after timeout, rebooting machine.."
+
+Write-Verbose $ShutdownMsg
+shutdown.exe -a
+sleep 5
+shutdown.exe -r -c $ShutdownMsg
+sleep 5
+Restart-Computer
+sleep 5
+shutdown.exe -a
+sleep 5
+Restart-Computer -Force
+Write-Warning "Shutdown attempt failed : $_"
 
 '@
 
+# TODO, The hardcoded strings here should be passed in through razor
+#       metdata.
 $SequenceFile = Join-Path $PWD 'nodeprep.seq.ps1'
 $PSCmdLet = $PSCmdLet -f $SequenceFile
 $PsFile = Join-Path $PWD 'Resume-ImagePrep.ps1'
@@ -64,7 +87,7 @@ $PSCmdLet | Out-File -encoding ASCII $PsFile -Force
 # Create batch file wrapper for the above powershell script.
 # This gets around powershell execution policy differences in the different
 # OSes and lets us control the properties of the console window hosting
-# the process
+# the image preparation process
 
 $CmdLet = @'
 :: cmd.exe
