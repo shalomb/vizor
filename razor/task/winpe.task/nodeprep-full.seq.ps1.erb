@@ -1,9 +1,26 @@
 # Powershell
 
-# This file is not to be meant to run directly but instead
-# run through one of the cmdlets in ImageMaintenance
-#
+# SYNOPSIS
+#   nodeprep.seq.ps1 - perform vm preparation tasks
+
+# DESCRIPTION
+#   This script does not run directly but simply returns an object collection
+#   down the pipeline for ImageMaintenance\Invoke-Task to act upon. The object
+#   is an array of array of hashes - each hash defining the task (command) to
+#   be run along with optional input criteria.
+
 # Logs and transcripts are stored in %programdata%\imageprep
+
+# Completion Criteria
+#   All tasks must pass, sequence aborts if any fail
+#   VM Guest/PV Tools must install
+#   Windows Update must complete
+#   Node must reboot 6 times
+
+# Crash Dump Initialization Failed
+#  'How to generate a kernel or a complete memory dump file in Windows Server 2008 and Windows Server 2008 R2'
+#  http://support.microsoft.com/kb/969028
+# Dump of Windows Updates, etc/v
 
 [CmdletBinding()] Param()
 
@@ -12,10 +29,6 @@ Set-PSDebug -Trace 0
 
 $ErrorActionPreference          = 'STOP'
 $PSModuleAutoLoadingPreference  = 'None'
-
-# TODO.
-#  Windows updates installed but marked failed/cancelled on 2008R2/Win7
-#  Shutdown on windows 7
 
 # Import all modules required by tasks defined below
 Import-Module Microsoft.PowerShell.Host -ea 0 # Seems to fail import on PSv2
@@ -29,6 +42,10 @@ Import-Module WindowsActivation
 Import-Module WindowsDefender
 Import-Module WindowsUpdate
 Import-Module WinMgmt
+Import-Module DotNetFramework
+
+Import-Module Logging    -Global
+Import-Module Assertions -Global
 
 #Define the environment for the run
 $Env:WSUS_URL     = '<%= node.metadata["wsus_url"]    %>'
@@ -36,7 +53,8 @@ $Env:KMS_SERVER   = '<%= node.metadata["kms_server"]  %>'
 $Env:KMS_PORT     = '<%= node.metadata["kms_server_port"] ||= 1688 %>'
 $Env:NTP_SERVERS  = '<%= node.metadata["ntp_server_list"] ||= 'pool.ntp.org,time.windows.com,time.nis.gov' %>'
 
-$Env:INSTALL_DOTNET35 = <%= node.metadata["install_dotnet35"] ? '$True' : '$False' %>
+$Env:INSTALL_DOTNET35       = <%= node.metadata["install_dotnet35"]       ? '$True' : '$False' %>
+$Env:INSTALL_WINDOWS_UPDATE = <%= node.metadata["install_windows_update"] ? '$True' : '$False' %>
 
 $Env:COMPUTER_DESCRIPTION = '<%= node.metadata["computer_description"] ||= node.metadata['vstring_long'] %>'
 
@@ -45,6 +63,24 @@ $Env:L18NXML_URL  = '<%= file_url('l18n.xml') %>'
 
 $Env:PATH += ";$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
 if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\SysInternals;" }
+
+$OSVersion = Get-OSVersion
+$Env:CpuArchitecture    =  [System.String](Get-Cpu -Architecture)
+$Env:CurrentBuild       =  [System.Double]$OSVersion.CurrentBuild
+$Env:CurrentVersion     =  [System.Double]$OSVersion.CurrentVersion
+$Env:InstallationType   =  [System.String]$OSVersion.InstallationType
+$Env:OSCaptionAlt       =  [System.String]$OSVersion.CaptionAlt
+$Env:OSCaption          =  [System.String]$OSVersion.Caption
+$Env:OSType             =  [System.String]$OSVersion.OSType
+$Env:OSVersionMajor     = ([System.Version]$OSVersion.Version).Major
+$Env:OSVersionMinor     = ([System.Version]$OSVersion.Version).Minor
+$Env:OSVersionString    =  [System.String]$OSVersion.VersionString
+$Env:OSVersion          =  [System.Version]$OSVersion.Version
+$Env:ProductName        =  [System.String]$OSVersion.ProductName
+$Env:PSVersion          =  [System.Version]$PSVersionTable.PSVersion
+$Env:PSVersionMajor     = ([System.Version]$PSVersionTable.PSVersion).Major
+$Env:PSVersionMinor     = ([System.Version]$PSVersionTable.PSVersion).Minor
+$Env:ServicePackVersion =  [System.Version]$OSVersion.ServicePackVersion
 
 
 # Stage 0
@@ -55,8 +91,37 @@ if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\S
   @{ name    =   "stage_0_begins-$(date -uformat %s)";
       script = { try { (New-Object Net.WebClient).DownloadString('<%= stage_done_url('stage_0_begins') %>') } catch{} };
       pre    = { 1 }; post   = { 1 }; }
+
+  @{ name    =   "increase_priority_of_image_prep_processes-$(Get-Date -UFormat %s)";
+      script = {
+        # All Windows Update related process/services are set at priority class high
+        $Pids = @()
+        $Pids += @( Get-Process -Name *mscorsvw*,*powershell*,*worker*,*inst*,*pv*,*guest*,*wu* | Select -Expand Id )
+        $Pids += @( Gwmi Win32_Service | ?{ $_.Name -imatch 'bits|clr|defrag|guest|inst|pv|trust|wu' } | Select -Expand ProcessId )
+
+        foreach ($Id in $Pids) {
+          try {
+            Set-ProcessPriority -Id $Id -Priority 'High'
+          } catch {
+            Write-Warning "Failed to set priority for process '$Id' : $_"
+          }
+        }
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   "decrease_priority_of_unnecessary_windows_processes-$(Get-Date -UFormat %s)";
+      script = {
+        Get-Process -Name *Dwm*,*Search*,*WMP*,*Logon*,*init* | %{
+          try {
+            Set-ProcessPriority -Id $_.Id -Priority 'Idle'
+          } catch {
+            Write-Warning "Failed to set priority for process : $_"
+          }
+        }
+      };
+      pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'start_w32tm_service_1';
-      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic -PassThru | Start-Service };
+      script = {  Get-Service -Name W32Time | Set-Service -StartupType Automatic -PassThru | Restart-Service };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_ntp_servers';
       script = { Set-NTPServers $Env:NTP_SERVERS -Verbose };
@@ -91,22 +156,23 @@ if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\S
   @{ name    =   'set_kms_server';
       script = { & slmgr.vbs -skms "${Env:KMS_SERVER}:${Env:KMS_PORT}" };
       pre    = {
-        if ( -not($Env:KMS_SERVER) ) { Throw "No KMS Hostname specified." }
-        if ( ([Double](Get-OSVersion).CurrentVersion) -eq 5.1 ) { Throw 'On Windows XP/2003. slmgr.vbs is not available.' }
+        Assert-IsNotNull { $Env:KMS_SERVER } 'KMS Server hostname is not defined.'
+        Assert-IsTrue    { [Double]$Env:CurrentVersion -ge 6.0 } 'OS CurrentVersion < 6.0, slmgr.vbs not available.'
       }; post   = { 1 }; }
   @{ name    =   'activate_windows';
       script = { Invoke-WindowsActivation };
       pre    = { 1 }; post   = { Get-WindowsActivation }; }
-  @{ name    =   'install_show_desktop_on_logon';
+
+  @{ name    =   'install_show_desktop_on_logon_windows_8';
       script = {
         Install-GlobalLogonScript -Name 'ShowDesktopOnLogon' -Script 'explorer.exe "shell:::{3080F90D-D7AD-11D9-BD98-0000947B0257}"'
       };
       pre    = {
-        if ( (Get-OSVersion).InstallationType -eq 'Server'  )     { Throw "Is a Server OS";     }
-        if ( ([Double](Get-OSVersion).CurrentVersion) -inotmatch '6.[23]' ) { Throw 'Not on Windows 8/8.1' }
+        Assert-IsTrue { $Env:CurrentVersion -eq 6.2 }        'OS CurrentVersion != 6.2'
+        Assert-IsTrue { $Env:InstallationType -eq 'Client' } 'OS InstallationType != Client'
       };
       post   = { 1 }; }
-  @{ name    =   'install_backup_show_desktop_on_logon';
+  @{ name    =   'install_backup_show_desktop_on_logon_windows_8';
       script = {
 $scf=@"
 [Shell]
@@ -119,8 +185,8 @@ Command=ToggleDesktop
         Install-GlobalLogonScript -Name 'ShowDesktopOnLogonBackup' -Script $showDesktopCmd
       };
       pre    = {
-        if ( (Get-OSVersion).InstallationType -eq 'Server'  )     { Throw "Is a Server OS";     }
-        if ( ([Double](Get-OSVersion).CurrentVersion) -inotmatch '6.[23]' ) { Throw 'Not on Windows 8/8.1' }
+        Assert-IsTrue { $Env:CurrentVersion -eq 6.2 }        'OS CurrentVersion != 6.2'
+        Assert-IsTrue { $Env:InstallationType -eq 'Client' } 'OS InstallationType != Client'
       };
       post   = { 1 }; }
   @{ name    =   'install_ipconfig_registerdns_on_logon';
@@ -132,6 +198,25 @@ Command=ToggleDesktop
       script = {  Set-ComputerDescription -Description $Env:COMPUTER_DESCRIPTION };
       pre    = { 1 }; post   = { 1 }; }
 
+  @{ name    =   "enable_boot_training-$(Get-Date -UFormat %s)";
+      script = {
+        # 'Windows 7 Self Optimizing Boot Process - AutoIt Consulting'
+        #   https://www.autoitconsulting.com/site/performance/windows-7-self-optimizing-boot-process/
+        reg.exe add 'HKLM\SOFTWARE\Microsoft\Dfrg\BootOptimizeFunction'            /f /v Enable           /t REG_SZ    /d Y
+        reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout' /f /v EnableAutoLayout /t REG_DWORD /d 1
+        try {
+          # This is done to get around defrag failing with
+          #   'Some registry entries were missing from the boot optimization section of the regitry. (0x89000017)'
+          reg.exe delete 'HKLM\SOFTWARE\Microsoft\Dfrg\BootOptimizeFunction' /f /v OptimizeComplete
+          reg.exe delete 'HKLM\SOFTWARE\Microsoft\Dfrg\BootOptimizeFunction' /f /v OptimizeError
+        } catch {}
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   "set_defragsvc_startuptype_automatic-$(Get-Date -UFormat %s)";
+      script = {
+        Get-Service defragsvc -ea 0 | Set-Service -StartupType Automatic -PassThru | Restart-Service -Verbose:$VerbosePreference
+      };
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'enable_crash_control_crash_dump_full';
       script = { Enable-CrashControlCrashDump -Value 1 -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
@@ -165,7 +250,9 @@ Command=ToggleDesktop
         reg.exe add 'HKLM\SOFTWARE\Microsoft\ServerManager\Oobe' /f /v DoNotOpenInitialConfigurationTasksAtLogon /t REG_DWORD /d 1
         reg.exe add 'HKLM\SOFTWARE\Microsoft\ServerManager'      /f /v DoNotOpenServerManagerAtLogon             /t REG_DWORD /d 1
       }
-      pre    = { $OSVersion = Get-OSVersion; if ( $OSVersion.InstallationType -ne 'Server' ) { Throw "Not a Server OS"; } };
+      pre    = {
+        Assert-IsTrue { $Env:InstallationType -eq 'Server' } 'OS InstallationType != Server'
+      };
       post   = { 1 }; }
   @{ name    =   'set_network_name_to_work';
       script = { Set-NetworkLocation -NetworkName 'Work' };
@@ -175,23 +262,34 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
 
   @{ name    =   'uninstall_msmsgs_startup_commands';
-      pre    = { if (-not(([Double](Get-OSVersion).CurrentVersion) -imatch '5.1')) { Throw 'Not on Windows XP/2003.' } };
+      pre    = {
+        Assert-IsTrue { $Env:CurrentVersion -eq 5.1 } 'OS CurrentVersion != 5.1'
+      };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'msmsgs' } | Uninstall-StartupCommand -Verbose:$VerbosePreference } catch {} }; post   = { 1 }; }
   @{ name    =   'uninstall_ctfmon_startup_commands';
-      pre    = { if (-not(([Double](Get-OSVersion).CurrentVersion) -imatch '5.1')) { Throw 'Not on Windows XP/2003.' } };
+      pre    = {
+        Assert-IsTrue { $Env:CurrentVersion -eq 5.1 } 'OS CurrentVersion != 5.1'
+      };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'ctfmon.exe' } | Uninstall-StartupCommand -Verbose:$VerbosePreference }catch{}}; post   = { 1 }; }
   @{ name    =   'uninstall_welcomecenter_startup_commands';
-      pre    = { $os = Get-Win32_OperatingSystem; if (-not($os.version -imatch '^(?:5\.0|6\.0)')) {} };
+      pre    = {
+        Assert-IsTrue { $Env:CurrentVersion -imatch '^(?:5\.0|6\.0)' } 'OS CurrentVersion !~ (?:5\.0|6\.0)'
+      };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'welcomecenter' } | Uninstall-StartupCommand -Verbose:$VerbosePreference }catch{}}; post   = { 1 }; }
   @{ name    =   'uninstall_sidebar_startup_commands';
-      pre    = { $os = Get-Win32_OperatingSystem; if (-not($os.version -imatch '^6\.[01]')) { Write-Warning 'Not on Windows Vista/7.' } };
+      pre    = {
+        Assert-IsTrue { $Env:CurrentVersion -imatch '^6\.[01]' } 'OS CurrentVersion !~ 6\.[01]'
+      };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'sidebar' } | Uninstall-StartupCommand -Verbose:$VerbosePreference } catch{} }; post   = { 1 }; }
   @{ name    =   'uninstall_windows_defender_startup_commands';
       pre    = { 1 };
       script = { try { Get-StartupCommand | ?{ $_.Caption -imatch 'windows defender' } | Uninstall-StartupCommand -Verbose:$VerbosePreference } catch{} }; post   = { 1 }; }
   @{ name    =   'disable_windows_sidebar';
       script = { Disable-WindowsSidebar -Verbose:$VerbosePreference };
-      pre    = { $os = Get-Win32_OperatingSystem; if (-not($os.version -imatch '^6\.0')) { Throw 'Not on Windows Vista.' } }; post   = { 1 }; }
+      pre    = {
+        Assert-IsTrue { $Env:CurrentVersion -eq 6.0 } 'OS Currentversion != 6.0'
+      };
+      post   = { 1 }; }
   @{ name    =   'disable_screensaver';
       script = { Disable-ScreenSaver -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
@@ -270,19 +368,35 @@ Command=ToggleDesktop
       } catch {} };
       pre    = { 1 }; post   = { 1 }; }
 
+  @{ name    =   'install_kb2771431_on_win_62';
+      script = {
+        # TODO. This is needed to ensure Windows Update lookups are timely and succeed.
+        # 'A servicing stack update is available for Windows 8 and Windows Server 2012'
+        #   http://support.microsoft.com/kb/2771431
+        $Url = Switch ( $Env:CpuArchitecture ) {
+          'x86' { 'http://download.microsoft.com/download/E/A/8/EA8B764E-CFED-4B27-9830-A278882F920D/Windows8-RT-KB2771431-x86.msu' }
+          'x64' { 'http://download.microsoft.com/download/4/2/A/42A19755-CBA5-4090-A6B8-8F7DA482114C/Windows8-RT-KB2771431-x64.msu' }
+        }
+        try { Install-Msu $Url } catch {} # Non-fatal as update is delivered by WU anyway.
+      };
+      pre    = {
+        Assert-IsTrue  { $Env:CurrentVersion -eq 6.2 } 'OS Currentversion != 6.2'
+      };
+      post   = { 1 }; }
+
   @{ name    =   'update_windows_update_agent';
       script = {
         # In addition to updating the WUA, this step also resolves the issue
-        # described in 
+        # described in
         # http://support.microsoft.com/kb/2533552
         # http://support.microsoft.com/kb/976902
         Write-Warning "Update Windows Update Agent"
         Update-WUA -Verbose:$VerbosePreference
-        shutdown.exe -r -t 0 -c "Restarting to update windows update agent"
+        shutdown.exe -r -t 3 -c "WUA update complete, rebooting .."
       };
       pre    = {
-        $OSVersion = Get-OSVersion;
-        if ( ([Double]$OSVersion.CurrentVersion) -ne 6.1 ) { Throw 'Not on Windows <= Windows 7/2008R2' }
+        Assert-IsTrue { $Env:CurrentVersion -eq 6.1 }           'OS Currentversion != 6.1'
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled'
       }
       post   = { Get-WUAVersion }; }
   @{ name    =   'set_wsus_server';
@@ -290,7 +404,10 @@ Command=ToggleDesktop
         Write-Warning "Setting WSUS URL to $Env:WSUS_URL"
         Set-WSUSServer -WUServer  $Env:WSUS_URL
       };
-      pre    = { if ( -not($Env:WSUS_URL) ) { Throw "No WSUS URL specified." } };
+      pre    = {
+        Assert-IsNotNull { $Env:WSUS_URL }                      'WSUS URL is not defined.'
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled.'
+      };
       post   = { 1 }; }
   @{ name    =   'set_windows_update_preferences';
       script = {
@@ -305,7 +422,9 @@ Command=ToggleDesktop
             -NoAutoUpdate:$False `
             -UseWUServer
       };
-      pre    = { 1 }; post   = { 1 }; }
+      pre    = {
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled.'
+      }; post   = { 1 }; }
   @{ name    =   'enable_windows_update';
       script = {
         $WUEnabled=$False;
@@ -321,16 +440,14 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'install_dotnet35_sp1_on_win8_or_2012';
       pre    = {
-        if ( -not($Env:INSTALL_DOTNET35) )       { Throw "Not installing .Net3.5" }
-        $OSVersion = Get-OSVersion;
-        if ( ([Double]$OSVersion.CurrentVersion) -lt 6.2 ) { Throw 'Not on Windows >= Windows 8/2012' }
+        Assert-IsTrue { $Env:INSTALL_DOTNET35 -eq $True }       'DotNet3.5 disabled.'
+        Assert-IsTrue { $Env:CurrentVersion -imatch '6\.[23]' } 'OS Version != 6\.[23]'
       };
       script = {
         if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
           $razor_metadata = . .\metadata.ps1
-          $OSVersion = Get-OSVersion
           if ( Test-Path($sxs_dir = Join-Path $razor_metadata.repo_share 'sources\sxs') ) {
-            Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $($OSVersion.Version))"
+            Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $Env:OSVersion)"
             dism.exe /English /Online /Enable-Feature /FeatureName:NetFx3 /All /Source:$sxs_dir /NoRestart | Write-Verbose
             if     ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
               Write-Verbose "Install of .Net3.5 SP1 role successful (exit_code: $LASTEXITCODE). Rebooting to continue .."
@@ -344,7 +461,7 @@ Command=ToggleDesktop
           }
           else {
             $ErrMsg = "Error, Failed installing .Net 3.5 : SXS dir $sxs_dir not found or unreachable."
-            if ( (([System.Version]($OSVersion.Version)).Major) -ge 10 ) {
+            if ( ([Double]$Env:OSVersionMajor) -ge 10 ) {
               # Don't fail this task - we'll try the fallback method next
               Write-Warning "(Windows 10). $ErrMsg"
             }
@@ -357,9 +474,8 @@ Command=ToggleDesktop
       post   = { 1 }; }
   @{ name    =   'install_dotnet35_sp1_on_win10';
       pre    = {
-        if ( -not($Env:INSTALL_DOTNET35) )       { Throw "Not installing .Net3.5" }
-        $OSVersion = Get-OSVersion;
-        if ( (([System.Version]($OSVersion.Version)).Major) -lt 10 ) { Throw 'Not on Windows >= Windows 10' }
+        Assert-IsTrue { $Env:INSTALL_DOTNET35 -eq $True } 'DotNet3.5 disabled'
+        Assert-IsTrue { [Int]$Env:OSVersionMajor -ge 10 } 'OS Version < 10'
       };
       script = {
         # TODO, code is duplicated here, refactor this task to merge with the previous
@@ -378,7 +494,7 @@ Command=ToggleDesktop
 
               (New-Object Net.WebClient).DownloadFile($dot_net_ondemand_pkg_url, (Join-Path $sxs_dir $dot_net_ondemand_pkg_file))
 
-              Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $((Get-OSVersion).Version))"
+              Write-Verbose "Installing .Net 3.5 SP1 from '$sxs_dir' (OS Version: $Env:OSVersion)"
               dism.exe /English /Online /Enable-Feature /FeatureName:NetFx3 /All /Source:$sxs_dir /NoRestart | Write-Verbose
 
               if     ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
@@ -403,6 +519,11 @@ Command=ToggleDesktop
       };
       post   = { 1 }; }
   @{ name    =   'install_dotnet35_on_2008r2';
+      pre    = {
+        Assert-IsTrue { $Env:INSTALL_DOTNET35 -ieq $True }    'DotNet3.5 disabled'
+        Assert-IsTrue { $Env:CurrentVersion   -ieq 6.1   }    'OS CurrentVersion != 6.1'
+        Assert-IsTrue { $Env:InstallationType -ieq 'Server' } 'OS InstallationType != Server'
+      };
       script = {
         if (-not(Test-Path "$Env:WINDIR\Microsoft.Net\Framework*\v3*")) {
           Import-Module ServerManager -Verbose:$VerbosePreference;
@@ -411,20 +532,13 @@ Command=ToggleDesktop
           Restart-Computer
         }
       };
-      pre    = {
-        if ( -not($Env:INSTALL_DOTNET35) ) { Throw "Not installing .Net3.5" }
-        $OSVersion = Get-OSVersion;
-        if ( $OSVersion.InstallationType           -ne 'Server' ) { Throw "Not a Server OS"; }
-        if ( ([Double]$OSVersion.CurrentVersion)   -ne 6.1      ) { Throw 'Not on Windows Server 2008R2' }
-      };
       post   = { 1 }; }
   @{ name    =   "install_language_packs";
       # N.B: This must come after the installation of .Net 3.5 (if applicable)
       script = {
         $RebootRequired = $False
-        $OSVersion = Get-OSVersion;
         foreach ($language_pack in @(ls language_packs/*.cab)) {
-          Write-Verbose "Installing language pack : $language_pack (OS Version: $($OSVersion.Version))"
+          Write-Verbose "Installing language pack : $language_pack (OS Version: $Env:OSVersion)"
           dism.exe /English /Online /Add-Package /PackagePath:$language_pack | Write-Verbose
 
           if ( $LASTEXITCODE -imatch '^(?:0|3010)$' ) {
@@ -459,7 +573,7 @@ Command=ToggleDesktop
       };
       pre    = { 1 }; post   = { 1 }; }
 
-  @{ name    =   "applying_l18n_settings-$(Get-Date -uformat %s)";
+  @{ name    =   "apply_l18n_settings-$(Get-Date -uformat %s)";
       script = {
         # TODO, control.exe/intl.cpl does not return a meaningful/accurate error code
         #       and so we may be unable to detect failures. More investigations needed.
@@ -476,37 +590,113 @@ Command=ToggleDesktop
       };
       pre    = { 1 }; post   = { 1 }; }
 
-  @{ name    =   'install_kb2697738_on_server_2008r2';
+  @{ name    =   'install_kb2697738_on_windows_7_2008r2';
       pre    = {
-        $OSVersion = Get-OSVersion;
-        if ( (Get-HotFix | ?{ $_.HotFixId -imatch '2697738' }) )  { Throw 'HofFix KB2697738 already installed' }
-        if ( ([Double]$OSVersion.CurrentVersion)   -ne 6.1      ) { Throw 'Not on Windows Server 2008R2' }
-        if ( $OSVersion.InstallationType           -ne 'Server' ) { Throw 'Not a Server OS'; }
-        if ( (Get-UICulture).Name -imatch 'en\-' )                { Throw 'Hotfix not applicable for locale' }
+        Assert-IsTrue    { $Env:CurrentVersion -eq 6.1 }                     'OS CurrentVersion != 6.1'
+        Assert-IsNotTrue { (Get-UICulture).Parent.Name -eq 'en' }            'UICulture == en'
+        Assert-IsNotTrue { Get-Hotfix | ?{ $_.HotFixId -imatch '2697738' } } 'Hotfix KB2697738 is installed'
       };
       script = {
         # TODO. Workaround to allow for WinRM/PSRemoting to succeed on l18n OSes
-        # http://support.microsoft.com/kb/2697738
-        $Url = 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446305_intl_x64_zip.exe'
-        $ZipFile = "$PWD\kb2697738.zip"
+        # '"Unable to check the status of the firewall" error message when you run the
+        #  "Enable-PSRemoting -force" PowerShell command on a Windows 7-based or 
+        #  Windows Server 2008 R2-based computer that uses Czech as the display language'
+        #  http://support.microsoft.com/kb/2697738
+        $Url = Switch -Regex ( $Env:CpuArchitecture ) {
+          'x86' { 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446309_intl_i386_zip.exe' }
+          'x64' { 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446305_intl_x64_zip.exe'  }
+          default { Throw "Unknown OS Architecture for hotfix, $Env:CpuArchitecture" }
+        }
+        $ZipFile = "$PWD\kb2697738-{0}.zip" -f $Env:CpuArchitecture
+        Write-Verbose "Downloading $Url to $ZipFile"
         (New-Object Net.WebClient).DownloadFile($Url, $ZipFile)
         .\unzip.exe -o -q $ZipFile -d .
-        $MsuFile = ls *KB2697738*x64*.msu | Select -Expand FullName
+        $MsuFile = ls *KB2697738*.msu | Select -Expand FullName
         mkdir -Force "$PWD\log" | Out-Null
         Write-Warning "Installing MSU $MsuFile"
         Start-Process -Wait 'wusa.exe' @($MsuFile,'/quiet','/norestart','/log:log\kb2697738.log') -NoNewWindow
       };
-      post   = { Get-HotFix | ?{ $_.HotFixId -imatch '2697738' } | fl * }; }
+      post   = { Get-HotFix | ?{ $_.HotFixId -imatch '2697738' } }; }
 
-  @{ name    =   'install_windows_updates';
+  @{ name    =   "add_powershell_assemblies_to_ngen_queue_pre_windows_update-$(Get-Date -UFormat %s)";
+      script = { Add-AssemblyToNgenQueue -CurrentDomainAssemblies -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   "start_ngen_queued_tasks_pre_windows_update-$(Get-Date -UFormat %Y%m%d%H)";
       script = {
-        if (([Double](Get-OSVersion).CurrentVersion) -eq 6.1) {
+        # Execute pending ngen tasks before invoking windows update
+        # 'Installing updates for the Microsoft .NET Framework 4 can take longer than expected in some scenarios'
+        #   http://support.microsoft.com/kb/2570538
+        # 'FIX: Computer stops responding when the Mscorsvw.exe process starts in the .NET Framework 4'
+        #   http://support.microsoft.com/kb/2571181
+        # 'Citrix Virtual Memory Optimization Service can lead to .NET application corruption'
+        #   http://support.microsoft.com/kb/2480607
+        # TODO. Forcing ngen to execute queued items like this is reported to take up
+        #       considerable space on Windows 2012 R2 (and other?) images.
+        #       However, not invoking it causes .Net apps/windows update to run slowly.
+        Start-NgenQueuedTasks -PriorityLevels 1 -Verbose:$VerbosePreference
+      };
+      pre    = {
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled'
+      }; post   = { 1 }; }
+  @{ name    =   "start_defrag_on_local_drives_pre_windows_update-$(Get-Date -UFormat %Y%m%d%H)";
+      script = {
+        # TODO: On PSv2 (win7/2008r2), This can fail with
+        #       'Exception calling "Invoke" with "1" arguments(s):
+        #       "Process with an Id of X is not running."
+        try {
+          if ( ([Double]$Env:CurrentVersion) -le 6.1 ) {
+            Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | %{ $_.DeviceId } | %{
+              Start-Process defrag.exe -ArgumentList @('-f','-v',$_) -wait -NoNewWindow
+            }
+          }
+          if ( ([Double]$Env:CurrentVersion) -ge 6.1 ) {
+            Start-Process defrag.exe -ArgumentList @('-c','-f','-h','-u','-v') -wait -NoNewWindow
+          }
+          if ( ([Double]$Env:CurrentVersion) -ge 6.2 ) {
+            Start-Process defrag.exe -ArgumentList @('-c','-f','-h','-u','-v','-o') -wait -NoNewWindow
+          }
+        } catch {
+          Write-Warning "Defrag failed with : $_"
+        }
+      };
+    pre    = {
+      Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled'
+    }; post   = { 1 }; }
+  @{ name    =   "start_defrag_on_local_drives_for_boot_optimization_pre_windows_update-$(Get-Date -Uformat %Y%m%d%H)";
+      script = {
+        Start-Process defrag.exe -ArgumentList @('-f','-v','-b',$Env:SystemDrive) -wait -NoNewWindow
+      };
+    pre    = { 1 }; post   = { 1 }; }
+
+  @{ name    =   "increase_priority_of_windows_modules_services-$(Get-Date -UFormat %s)";
+      script = {
+        $Pids = @()
+        $Pids += @( Get-Process -Name *TiWorker*,*TrustedInstaller* | Select -Expand Id )
+        $Pids += @( Gwmi Win32_Service | ?{ $_.Name -imatch 'trust' } | Select -Expand ProcessId )
+
+        foreach ($Id in $Pids) {
+          try {
+            Set-ProcessPriority -Id $Id -Priority 'RealTime'
+          } catch {
+            Write-Warning "Failed to set priority for process '$Id' : $_"
+          }
+        }
+      };
+      pre    = {
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled'
+      }; post   = { 1 }; }
+  @{ name    =   'install_windows_updates';
+      pre    = {
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled.'
+      };
+      script = {
+        if ( $Env:CurrentVersion -eq 6.1 ) {
           # TODO. Workaround for Windows 7/2008.
           #       On Windows 7/2008R2, schedule a shutdown in advance to avoid
           #       WU hanging indefinitely/reverting updates on next boot.
           try {
             try { shutdown.exe -a } catch { }
-            $RestartDelay = 3600 * 1.5
+            $RestartDelay = 3600 * 4
             $RestartTime  = (Get-Date).AddSeconds($RestartDelay).ToString('yyyy-MM-ddTHH:mm:ss')
             shutdown.exe -r -t $RestartDelay -c "Windows Update in progress. A reboot is scheduled for $RestartTime."
           } catch {
@@ -532,30 +722,39 @@ Command=ToggleDesktop
           Throw $_ # Prevent task from succeeding.
         }
       };
-      pre    = { 1 };
       post   = { shutdown -a }; }
   @{ name    =   'start_windows_defender_service';
-      script = { try { Get-Service WinDefend | Set-Service -StartupType Manual | Start-Service } catch {} };
-      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      script = { try { Get-Service WinDefend | Set-Service -StartupType Manual -PassThru | Restart-Service } catch {} };
+      pre    = {
+        Assert-IsTrue { Test-IsWindowsDefenderAvailable } 'Windows Defender not available'
+      };
       post   = { 1 }; }
   @{ name    =   'invoke_windows_defender_update';
       script = { try { Invoke-WindowsDefenderUpdate -Verbose:$VerbosePreference } catch {} };
-      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      pre    = {
+        Assert-IsTrue { Test-IsWindowsDefenderAvailable } 'Windows Defender not available'
+      };
       post   = { 1 }; }
   @{ name    =   'invoke_windows_defender_quick_scan';
       script = { try { Invoke-WindowsDefenderScan -Quick -Verbose:$VerbosePreference } catch {} };
-      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      pre    = {
+        Assert-IsTrue { Test-IsWindowsDefenderAvailable } 'Windows Defender not available'
+      };
       post   = { 1 }; }
   @{ name    =   'invoke_malicious_software_removal_tool_detect_scan';
       script = { try { Invoke-MSRTScan -DetectOnly -Verbose:$VerbosePreference } catch {} };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'collect_windows_defender_files';
       script = { try { Invoke-WindowsDefenderCommand -MPCmdRunArgs @('-GetFiles') -Verbose:$VerbosePreference } catch {} };
-      pre    = { if ( -not(Test-IsWindowsDefenderAvailable) ) { Throw "Windows Defender is not available" } };
+      pre    = {
+        Assert-IsTrue { Test-IsWindowsDefenderAvailable } 'Windows Defender not available'
+      };
       post   = { 1 }; }
   @{ name    =   'update_powershell_help';
       script = { Update-Help -Verbose:$VerbosePreference };
-      pre    = { if ( -not( ([Double][String]($PSVersionTable.PSversion)) -ge 3 ) ) { Throw 'Not on PowerShell >= 3.0.' } };
+      pre    = {
+        Assert-IsTrue { [Int]$Env:PSVersionMajor -ge 3 } 'PowerShell Major Version < 3'
+      };
       post   = { 1 }; }
   @{ name    =   'disable_windows_update';
       script = { Disable-WindowsUpdate };
@@ -568,7 +767,7 @@ Command=ToggleDesktop
 #                }
 #              }
 #           };
-#     pre    = { if (([Double](Get-OSVersion).CurrentVersion) -ne 6.1) { Throw "Not on Windows 7/2008" } };
+#     pre    = { if ( ($Env:CurrentVersion) -ne 6.1 ) { Throw "Not on Windows 7/2008" } };
 #     post   = { 1 }; }
   @{ name    =   'set_screen_resolution_to_1024x768';
       script = {
@@ -579,12 +778,15 @@ Command=ToggleDesktop
           }
         }
       };
-      pre    = { if (-not(([Double](Get-OSVersion).CurrentVersion) -imatch '6.1')) { Throw 'Not on Windows 7/2008R2' } };
+      pre    = {
+        Assert-IsTrue { [Double]$Env:CurrentVersion -le 6.1 } 'OS CurrentVersion > 6.1'
+        Assert-IsTrue { (Get-DotNetFrameWork -HighestVersion).Version -ge [System.Version]"3.5" } '.Net Version < 3.5'
+      };
       post   = { 1 }; }
 
   @{ name    =  "install_vm_guest_tools-$(Get-Date -Uformat %s)"
       script = {
-        # TODO. Requires .Net 3.5 on Server 2008 R2
+        # TODO. Xen PV Tools requires .Net 3.5 on Server 2008 R2
         #       And cannot be run before WU on 2008, BSOD results
         $PSFile = @"
           `$Env:PSModulePath="$Env:PSModulePath"
@@ -598,7 +800,7 @@ Command=ToggleDesktop
           Import-Module CDRom        -Global -Force
           # TODO, The InstallStatus flag doesn't necessarily indicate a complete install
           if ( -not((Get-VMGuestToolsStatus).InstallStatus) ) {
-            VMGuestTools\Install-VMGuestTools
+            VMGuestTools\Install-VMGuestTools -Verbose
           }
 "@
          $VMGTI = (join-path $Env:TEMP 'VMGuestTools.ps1')
@@ -620,9 +822,41 @@ Command=ToggleDesktop
            $ErrMsg  = "Failed to install VM Guest Tools : $_"
            $ErrMsg += "$ErrMsg. Rebooting to retry .."
            Write-Warning $ErrMsg
+           sleep 15
            Restart-Computer
          }
          # TODO, test installation status before returning
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =  'wait_for_vm_guesttools_to_succeed';
+      script = {
+        Import-Module ModuleUtils  -Global -Force
+        Import-Module XenTools     -Global -Force
+        Import-Module HyperVIC     -Global -Force
+        Import-Module VMWareTools  -Global -Force
+        Import-Module VMGuestTools -Global -Force
+        Import-Module CDRom        -Global -Force
+        $i=0; $MaxTries=30; $Sleep=8; # 240 seconds
+        do {
+          $ToolsStatus = $False
+          try {
+            # TODO. XenTools.psm1 fails on this call if tools have not completed installing
+            #       Error, 'MajorVersion' cannot be found on this object
+            if ( $VMGuestToolsStatus = Get-VMGuestToolsStatus ) {
+              if ( $ToolsStatus = $VMGuestToolsStatus.Installed ) {
+                break
+              }
+            }
+          } catch {
+            Write-Warning "VMGuestTools Status check $i/$MaxTries, $_"
+          }
+          if ( -not($ToolsStatus) -and ($i -ge 30) ) {
+            Write-Warning "VMGuestTools Status not OK after wait"
+            Restart-Computer # In the hope that Tools will continue at next boot
+          }
+          sleep $Sleep
+          $i++;
+        } while ( -not($ToolsStatus) );
       };
       pre    = { 1 }; post   = { 1 }; }
 
@@ -1061,10 +1295,10 @@ Command=ToggleDesktop
 # @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_WSRefreshBannedAppsListTask';
 #     script = { Disable-ScheduledTask "\Microsoft\Windows\WS\WSRefreshBannedAppsListTask" -ea 0; };
 #        pre = { 1 }; post = { 1 }; }
-# # Windows Store Maintenance Task
-# @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_WSTask';
-#     script = { Disable-ScheduledTask "\Microsoft\Windows\WS\WSTask" -ea 0; };
-#        pre = { 1 }; post = { 1 }; }
+  # Windows Store Maintenance Task
+  @{ name    =   'disable_scheduled_task__Microsoft_Windows_WS_WSTask';
+      script = { Disable-ScheduledTask "\Microsoft\Windows\WS\WSTask" -ea 0; };
+         pre = { 1 }; post = { 1 }; }
 # # This task uploads Customer Experience Improvement Program (CEIP) data for Portable Devices
 # @{ name    =   'disable_scheduled_task__WPD_SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-1001';
 #     script = { Disable-ScheduledTask "\WPD\SqmUpload_S-1-5-21-2937843477-3889217746-2470408325-1001" -ea 0; };
@@ -1077,7 +1311,9 @@ Command=ToggleDesktop
   # Clear and remove pagefile for defrag/sdelete in the next stage
   @{ name    =   'disable_automatic_managed_pagefile';
       script = { Disable-AutomaticManagedPagefile -Verbose:$VerbosePreference };
-      pre    = { $os = Get-Win32_OperatingSystem; if ($os.version -imatch '^5\.1') { Throw 'On Windows XP/2003.' } };
+      pre    = {
+        Assert-IsTrue { [Double]$Env:CurrentVersion -ge 6.0 } 'OS CurrentVersion < 6.0'
+      };
       post   = { 1 }; }
   @{ name    =   'enable_clear_pagefile_at_shutdown';
       script = { Enable-ClearPagefileAtShutdown -Verbose:$VerbosePreference };
@@ -1097,9 +1333,9 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   "reboot_for_stage_0-$(date -uformat %s)";
       script = {
-        $ShutdownMsg = "Imagprep Stage 1 Complete - Rebooting to continue .."
+        $ShutdownMsg = "Imagprep Stage 0 Complete - Rebooting to continue .."
         Write-Verbose $ShutdownMsg
-        shutdown.exe -r -t 3 -c $ShutdownMsg
+        shutdown.exe -r -t 5 -c $ShutdownMsg
       };
       pre    = { 1 }; post   = { 1 }; }
 ),
@@ -1119,16 +1355,15 @@ Command=ToggleDesktop
           if ( (Get-Service -Name W32Time).Status -eq 'Running' ) {
             break
           } else {
-            Get-Service -Name W32Time | Set-Service -StartupType Automatic -PassThru | Start-Service
+            Get-Service -Name W32Time | Set-Service -StartupType Automatic -PassThru | Restart-Service
             sleep 3
           }
         }
       };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_timezone'; # Will fail on 2008R2 without .Net3.5
-      pre    = { (Gwmi Win32_TimeZone) -imatch "^${Env:TIMEZONE}$" };
       script = { Get-TimeZone -TimeZoneName "${Env:TIMEZONE}" | Set-TimeZone -Verbose:$VerbosePreference };
-      post   = { (Gwmi Win32_TimeZone) -imatch "${Env:TIMEZONE}" }; }
+         pre = { 1 }; post   = { (Gwmi Win32_TimeZone) -imatch "${Env:TIMEZONE}" }; }
   @{ name    =   'activate_windows_stage_1';
       script = { Invoke-WindowsActivation };
       pre    = { 1 }; post   = { Get-WindowsActivation }; }
@@ -1157,32 +1392,49 @@ Command=ToggleDesktop
           }
       };
       pre    = { 1; }; post   = { 1 }; }
-  @{ name    =   'add_powershell_assembLies_to_ngen_queue_2';
-      script = { Add-AssemblyToNgenQueue -CurrentDomainAssemblies -Verbose:$VerbosePreference };
-      pre    = { 1 }; post   = { 1 }; }
-  # TODO. Forcing ngen to execute queued items like this is reported to take up
-  #       considerable space on Windows 2012 R2 (and other?) images.
-  #       However, not invoking it causes .Net apps to run slowly.
-  @{ name    =   'start_ngen_queued_tasks_2';
-      script = { Start-NgenQueuedTasks -Update -Verbose:$VerbosePreference };
-      pre    = { 1 }; post   = { 1 }; }
-  # NGEN Service
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319_Critical';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 Critical" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64_Critical';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64 Critical" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  # NGEN Service
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
-  @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64';
-      script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64" -ea 0; };
-         pre = { 1 }; post = { 1 }; }
+
   @{ name    =   'invoke_winmgmt_repository_reset';
       script = { try { Invoke-WinMgmt -ResetRepository }catch{} };
       pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'restart_winmgmt_service_post_reset';
+      # wimgmt/wmi is set to startuptype disabled on Win8.1 localized
+      script = { Get-Service -Name winmgmt | Set-Service -StartupType Automatic -PassThru | Restart-Service -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+
+  @{ name    =   'add_powershell_assembLies_to_ngen_queue_2';
+      script = { Add-AssemblyToNgenQueue -CurrentDomainAssemblies -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'start_ngen_queued_tasks_2';
+      script = {
+        # Execute pending ngen tasks before sealing image
+        # 'Installing updates for the Microsoft .NET Framework 4 can take longer than expected in some scenarios'
+        #   http://support.microsoft.com/kb/2570538
+        # 'FIX: Computer stops responding when the Mscorsvw.exe process starts in the .NET Framework 4'
+        #   http://support.microsoft.com/kb/2571181
+        # 'Citrix Virtual Memory Optimization Service can lead to .NET application corruption'
+        #   http://support.microsoft.com/kb/2480607
+        # TODO. Forcing ngen to execute queued items like this is reported to take up
+        #       considerable space on Windows 2012 R2 (and other?) images.
+        #       However, not invoking it causes .Net apps/windows update to run slowly.
+        Start-NgenQueuedTasks -Update -Force -Verbose:$VerbosePreference
+      };
+      pre    = { 1 }; post   = { 1 }; }
+
+  # # NGEN Service
+  # @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319_Critical';
+  #     script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 Critical" -ea 0; };
+  #        pre = { 1 }; post = { 1 }; }
+  # @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64_Critical';
+  #     script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64 Critical" -ea 0; };
+  #        pre = { 1 }; post = { 1 }; }
+  # # NGEN Service
+  # @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319';
+  #     script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319" -ea 0; };
+  #        pre = { 1 }; post = { 1 }; }
+  # @{ name    =   'disable_scheduled_task__Microsoft_Windows_.NET_Framework_.Net_Framework_NGEN_v4.0.30319 64';
+  #     script = { Disable-ScheduledTask "\Microsoft\Windows\.NET Framework\.Net Framework NGEN v4.0.30319 64" -ea 0; };
+  #        pre = { 1 }; post = { 1 }; }
+
   @{ name    =   'invoke_winmgmt_repository_verify';
       script = { try { Invoke-WinMgmt -VerifyRepository }catch{} };
       pre    = { 1 }; post   = { 1 }; }
@@ -1192,9 +1444,12 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'remove_hiberfil.sys';
       script = {
-        Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | ?{
-          Test-Path (Join-Path $_.DeviceID 'hiberfil.sys')
-        } | %{ rm -Force -Verbose:$VerbosePreference (Join-Path $_.DeviceID 'hiberfil.sys') }
+        try {
+          # TODO, fails with error HRESULT 0x80070422 on Win8.1 x86
+          Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | ?{
+            Test-Path (Join-Path $_.DeviceID 'hiberfil.sys')
+          } | %{ rm -Force -Verbose:$VerbosePreference (Join-Path $_.DeviceID 'hiberfil.sys') -ea 0 }
+        } catch {}
       };
       pre    = { 1 };
       post   = {
@@ -1238,48 +1493,63 @@ Command=ToggleDesktop
         Sleep 5
         try { rm -Force -Recurse (Join-Path $Env:WINDIR 'SoftwareDistribution\Download') } catch {}
       };
-      pre    = { Test-Path (Join-Path $Env:WINDIR 'SoftwareDistribution\Download') }; post   = { 1 }; }
+      pre    = {
+        Assert-IsTrue { Test-Path (Join-Path $Env:WINDIR 'SoftwareDistribution\Download') -ea 0 }
+      }; post   = { 1 }; }
   @{ name    =   'remove_windows_installer_patchcache_files';
       script = {
         Get-Service *inst* | Stop-Service -Verbose:$VerbosePreference -ea 0
         Sleep 5
         rm -Force -Verbose:$VerbosePreference -recurse (Join-Path $Env:WINDIR 'Installer\$PatchCache$\*')  -ea 0
       };
-      pre    = { Test-Path (Join-Path $Env:WINDIR 'Installer\$PatchCache$') }; post   = { 1 }; }
+      pre    = {
+        Assert-IsTrue { Test-Path (Join-Path $Env:WINDIR 'Installer\$PatchCache$') }
+      }; post   = { 1 }; }
 
+  @{ name    = 'setup_disk_cleanup_pre_win10_sageset_65535';
+      script = {
+        try {
+          # Setup disk cleanup (cleanmgr.exe) run so that it can be automated later.
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Compress old files'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Internet Cache Files'                           /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Office Setup Files'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Offline Files'                                  /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Remote Desktop Cache Files'                     /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System Restore'                                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Offline Files'                        /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+          reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\WebClient and WebPublisher Cache'               /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
+        } catch {}
+      }
+      pre    = {
+        Assert-IsTrue { Get-Command cleanmgr.exe }
+        Assert-IsTrue { [Double]$Env:CurrentVersion -le 6.4 } 'OS Version > 6.4'
+      };
+      post   = { 1 }; }
   @{ name    = 'setup_disk_cleanup_sageset_65535';
       script = {
         try {
           # Setup disk cleanup (cleanmgr.exe) run so that it can be automated later.
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Active Setup Temp Folders'                      /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\BranchCache'                                    /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Compress old files'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Content Indexer Cleaner'                        /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Downloaded Program Files'                       /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Internet Cache Files'                           /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Memory Dump Files'                              /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Office Setup Files'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Offline Files'                                  /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Offline Pages Files'                            /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Old ChkDsk Files'                               /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Previous Installations'                         /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Recycle Bin'                                    /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Remote Desktop Cache Files'                     /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Service Pack Cleanup'                           /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Setup Log Files'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Setup Log Files'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System error memory dump files'                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System error minidump files'                    /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System Restore'                                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Files'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Offline Files'                        /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Setup Files'                          /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Sync Files'                           /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Thumbnail Cache'                                /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Update Cleanup'                                 /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Upgrade Discarded Files'                        /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\User file versions'                             /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
-          # reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\WebClient and WebPublisher Cache'               /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Defender'                               /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Error Reporting Archive Files'          /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Error Reporting Queue Files'            /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
@@ -1289,22 +1559,29 @@ Command=ToggleDesktop
           reg.exe add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Upgrade Log Files'                      /f /v 'StateFlags65535' /t REG_DWORD /d 0x2
         } catch {}
       }
-      pre    = { gcm cleanmgr.exe -ea 1 };
+      pre    = {
+        Assert-IsTrue { Get-Command cleanmgr.exe } 'cleanmgr.exe unavailable.'
+      };
       post   = { 1 }; }
   @{ name    =   'start_disk_cleanup_sagerun_65535';
       script = { Start-Process cleanmgr.exe -ArgumentList '/sagerun:65535' -Wait -NoNewWindow };
-      pre    = { gcm cleanmgr.exe -ea 1 };
+      pre    = {
+        Assert-IsTrue { Get-Command cleanmgr.exe } 'cleanmgr.exe unavailable.'
+      };
       post   = { 1 }; }
 
   @{ name    =   'disable_indexing_on_local_drives';
       script = {
-        Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | %{
-          Get-WmiObject Win32_Volume -Filter "DriveLetter='$($_.DeviceID)'" | ?{
-            $_.IndexingEnabled
-          } | %{
-            $_ | Set-WmiInstance -Arguments @{IndexingEnabled=$False} -Verbose:$VerbosePreference
+        try {
+          # TODO, fails with error HRESULT 0x80070422 on Win8.1 x86 french
+          Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | %{
+            Get-WmiObject Win32_Volume -Filter "DriveLetter='$($_.DeviceID)'" | ?{
+              $_.IndexingEnabled
+            } | %{
+              $_ | Set-WmiInstance -Arguments @{IndexingEnabled=$False} -Verbose:$VerbosePreference
+            }
           }
-        }
+        } catch {}
       };
       pre    = { 1 }; post   = { 1 }; }
 # @{ name    =   'start_service_pack_cleanup_tool';
@@ -1313,15 +1590,18 @@ Command=ToggleDesktop
 # @{ name    =   'start_component_cleanup_tool';
 #     script = { Start-Process compcln.exe -argumentlist '/quiet' -wait -NoNewWindow };
 #     pre    = { Get-Command 'compcln.exe' -ea 1 }; post   = { 1 }; }
-# @{ name    =   'start_dism_component_cleanup_analysis';
-#     script = {
-#       try {
-#         Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/AnalyzeComponentStore' ) -wait -NoNewWindow
-#       } catch {}
-#     };
-#     pre    = { Get-Command 'dism.exe' -ea 1 }; post   = { 1 }; }
+  @{ name    =   'start_dism_component_store_cleanup_analysis';
+      script = {
+        try {
+          Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/AnalyzeComponentStore' ) -wait -NoNewWindow
+        } catch {}
+      };
+      pre    = {
+        Assert-IsTrue { Get-Command dism.exe } 'dism.exe unavailable.'
+      }; post   = { 1 }; }
 # @{ name    =   'start_dism_component_cleanup';
 #     script = {
+#       # 'Clean Up the WinSxS Folder' https://technet.microsoft.com/en-us/library/dn251565.aspx
 #       try {
 #         Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/StartComponentCleanup' ) -wait -NoNewWindow
 #       } catch {}
@@ -1336,19 +1616,44 @@ Command=ToggleDesktop
 #       } catch {}
 #     };
 #     pre    = { Get-Command 'dism.exe' -ea 1 }; post   = { 1 }; }
-# @{ name    =   'start_sfc_integrity_check';
-#     script = { try { Start-SFC -scannow -Verbose:$VerbosePreference } catch {
-#                       Write-Warning "SFC Failed to complete :$_"
-#                     }};
-#     pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'start_defrag_on_local_drives';
+  @{ name    =   'start_sfc_integrity_check';
+      script = { try { Start-SFC -scannow -Verbose:$VerbosePreference } catch {
+                        Write-Warning "SFC Failed to complete :$_"
+                      }};
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'start_defrag_on_local_drives_2';
       script = {
-        Get-Service defragsvc -ea 0 | Set-Service -StartupType Manual -PassThru | Start-Service -Verbose:$VerbosePreference
-        1..8 | %{
-          Start-Process defrag.exe -ArgumentList @('-f','-v','c:') -wait -NoNewWindow
+        if ( ([Double]$Env:CurrentVersion) -le 6.1 ) {
+          1..4 | %{
+            Gwmi Win32_LogicalDisk | ?{ $_.DriveType -eq 3 } | %{ $_.DeviceId } | %{
+              Start-Process defrag.exe -ArgumentList @('-f','-v',$_) -wait -NoNewWindow
+            }
+          }
         }
-        Get-Service defragsvc -ea 0 | Set-Service -StartupType Disabled -PassThru
-        reg.exe add 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Dfrg\BootOptimizeFunction' /f /v Enable /t REG_SZ /d N
+        if ( ([Double]$Env:CurrentVersion) -ge 6.1 ) {
+          Start-Process defrag.exe -ArgumentList @('-c','-f','-h','-u','-v') -wait -NoNewWindow
+        }
+        if ( ([Double]$Env:CurrentVersion) -ge 6.2 ) {
+          Start-Process defrag.exe -ArgumentList @('-c','-f','-h','-u','-v','-o') -wait -NoNewWindow
+        }
+      };
+    pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'start_defrag_on_local_drives_for_boot_optimization';
+      script = {
+        Start-Process defrag.exe -ArgumentList @('-f','-v','-b',$Env:SystemDrive) -wait -NoNewWindow
+      };
+    pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'set_defragsvc_startuptype_manual';
+      script = {
+        Get-Service defragsvc -ea 0 | Set-Service -StartupType Manual -PassThru | Restart-Service -Verbose:$VerbosePreference
+      };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'drain_idle_task_queue';
+      script = {
+        # Requests the system run the maintenance tasks scheduled to run when the system is idle.
+        # 'Support::ProcessIdleTasks method (Windows)'
+        #   https://msdn.microsoft.com/en-us/library/windows/desktop/hh449579%28v=vs.85%29.aspx
+        Rundll32.exe advapi32.dll,ProcessIdleTasks
       };
     pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'install_contig';
@@ -1404,7 +1709,9 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'enable_automatic_managed_pagefile';
       script = { Enable-AutomaticManagedPagefile -Verbose:$VerbosePreference };
-      pre    = { $os = Get-Win32_OperatingSystem; if ($os.version -imatch '^5\.1') { Throw 'On Windows XP/2003.' } }; post   = { 1 }; }
+      pre    = {
+        Assert-IsTrue { [Double]$Env:CurrentVersion -ge 6.0 } 'OS Version < 6'
+      }; post   = { 1 }; }
   @{ name    =   'disable_clear_pagefile_on_shutdown';
       script = { Disable-ClearPageFileAtShutdown -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
@@ -1422,21 +1729,20 @@ Command=ToggleDesktop
       script = {
         $bginfo  = [String]((Resolve-Path (Join-Path $Env:IPBaseDir "bin/bginfo.exe")).ProviderPath)
         $bgifile = [String]((Resolve-Path (Join-Path $Env:IPBaseDir "conf/*.bgi")).ProviderPath)
-        Install-GlobalLogonScript -Name 'UpdateBgInfoOnLogon' -Script "$bginfo /nolicprompt /timer:0 $bgifile"
+        Install-GlobalLogonScript -Name 'UpdateBgInfoOnLogon' -Script "$bginfo /nolicprompt /timer:0 $bgifile" -Verbose:$VerbosePreference
       };
-      pre    = { 1 }; post   = { Get-StartupCommand | fl; sleep 10; }; }
+      pre    = { 1 }; post   = { Get-StartupCommand }; }
   @{ name    =   "uninstall_imageprep_startup_script-$(date -uformat %s)";
       pre    = { 1 };
       script = { Get-StartupCommand | ?{ $_.Caption -imatch 'Resume-ImagePrep.cmd' } | Uninstall-StartupCommand -Verbose:$VerbosePreference }; post   = { 1 }; }
   @{ name    =   "install_bootstrap_startup_script-$(date -uformat %s)";
-      script = { Install-GlobalLogonScript -ScriptPath (ls Start-BootStrap.cmd).FullName };
+      script = { Install-GlobalLogonScript -ScriptPath (ls Start-BootStrap.cmd).FullName -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
 
   @{ name    =   "sysprep_os-$(Get-Date -Uformat %s)";
       script = { Invoke-Sysprep -Generalize -Oobe -Quit -AnswerFile 'sysprep.xml' };
       pre    = { 1 };
       post   = { 1 }; }
-    # pre    = { $OSVersion = Get-OSVersion; if ( $OSVersion.InstallationType -ne 'Server' ) { Throw "Not a Server OS"; } };
   @{ name    =  "clear_event_logs-$(date -uformat %s)";
       script = { Get-EventLog -LogName * | %{ Clear-EventLog -LogName $_.Log -Verbose:$VerbosePreference } };
       pre    = { 1 }; post   = { 1 }; }
@@ -1485,6 +1791,7 @@ Command=ToggleDesktop
         # TODO. This step fails on Win7/2008R2, Windows 10. Possibly because
         #       of a shutdown attempt in a previous step.
         while (1) {
+          sleep 60
           try {
             Write-Verbose $ShutdownMsg
             try { shutdown.exe -a } catch {}  # -ea 0
