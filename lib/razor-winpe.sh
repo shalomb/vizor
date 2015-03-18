@@ -23,7 +23,7 @@ RAZOR_PRODUCTION_ENV='production'
 
 RBENV_ROOT='/usr/src/rbenv'
 
-RAZOR_DB_PASSWORD='***REMOVED***'
+RAZOR_DB_PASSWORD="${RAZOR_DB_PASSWORD:-$(die "RAZOR_DB_PASSWORD is not set")}"
 
 RAZOR_ROOT='/usr/src/razor-server'
 RAZOR_WINPE_CLIENT_SCRIPT="$RAZOR_ROOT/tasks/winpe.task/razor-client.cmd"
