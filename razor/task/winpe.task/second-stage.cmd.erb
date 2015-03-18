@@ -12,6 +12,7 @@ setlocal enabledelayedexpansion
 cd !TEMP!
 
 set /a DEBUG=<%= node.metadata['debug_level'] || 0 %>
+set /a DEBUG=1
 
 :: TODO. Determine the razor_share in a better way.
 
@@ -38,6 +39,8 @@ set                repo=<%= repo_url.split('/').last %>
 set           installer=\\!server!\!share!\!repo!\setup.exe
 set      answerfile_src=<%= file_url('unattended.xml') %>
 set          answerfile=<%= file_url('unattended.xml').split('/').last %>
+set diskpart_script_src=<%= file_url('winpe_diskpart.txt') %>
+set     diskpart_script=<%= file_url('winpe_diskpart.txt').split('/').last %>
 set       log_url_debug=<%= log_url('', 'debug').gsub(/msg=[^&]*&?/, '') %>
 set       log_url_error=<%= log_url('', 'error').gsub(/msg=[^&]*&?/, '') %>
 set               DEBUG=<%= node.metadata['debug_level'] || 0 %>
@@ -69,6 +72,14 @@ if !net_use_exit_code! NEQ 0 (
   goto net_use
 )
 
+@echo.Fetching diskpart script : !diskpart_script_src!
+curl -s -S -L -X GET !diskpart_script_src! -o !diskpart_script!
+
+@echo.Partitioning disks using diskpart ...
+diskpart.exe /s winpe_diskpart.txt"
+
+@echo.Formatting volumes ...
+echo y | format.com c: /q /x /fs:ntfs /s:enable /v:Windows
 
 @echo.Fetching answerfile : !answerfile_src!
 curl -s -S -L -X GET !answerfile_src! -o !answerfile!
