@@ -12,16 +12,28 @@ Start the following services
   * Remote Registry
 #>
 
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'CONTINUE'
+Set-PSDebug -Tr 0
+
 $ports = @{
-   '135' = '***AUTOMATION Opening Port 135 (EPMAP/RPC) for CADI bootstrap***';
-   '139' = '***AUTOMATION Opening Port 139 (NetBIOS Session Service) for CADI bootstrap***';
-   '145' = '***AUTOMATION Opening Port 145 () for CADI bootstrap***';
-   '445' = '***AUTOMATION Opening Port 445 (Microsoft SMB/DS) for CADI bootstrap***';
-  '7999' = '***AUTOMATION Opening Port 7999 for CADI bootstrap***';
-  '8000' = '***AUTOMATION Opening Port 8000 for CADI bootstrap***';
+   '135' = '***AUTOMATION Opening Port  135 (EPMAP/RPC) for CADI bootstrap***';
+   '139' = '***AUTOMATION Opening Port  139 (NetBIOS Session Service) for CADI bootstrap***';
+   '145' = '***AUTOMATION Opening Port  145 (???) for CADI bootstrap***';
+   '445' = '***AUTOMATION Opening Port  445 (Microsoft SMB/DS) for CADI bootstrap***';
+  '7999' = '***AUTOMATION Opening Port 7999 (AMI) for CADI bootstrap***';
+  '8000' = '***AUTOMATION Opening Port 8000 (AMI) for CADI bootstrap***';
 }
 
-$ServicesToStart = @('RemoteRegistry', 'NetTcpPortSharing')
+$ServicesToStart           = @('RemoteRegistry', 'NetTcpPortSharing')
+$PowerShellExecutionPolicy = 'bypass'
+
+# Set the powershell execution policy
+foreach ( $SysProvider in @('System32', 'SysWOW64', 'Sysnative') ) {
+  $PowerShell = "$Env:SystemRoot\$SysProvider\WindowsPowerShell\v1.0\powershell.exe"
+  Write-Host -Fore Cyan "Setting PowerShell execution policy to '$PowerShellExecutionPolicy' for '$PowerShell'"
+  & $PowerShell "Set-ExecutionPolicy $PowerShellExecutionPolicy -Scope LocalMachine -Force -Verbose -ea 0"
+}
 
 # If on winxp use  netsh firewall
 if([Environment]::OSVersion.Version.Major -lt 6) {
@@ -31,7 +43,8 @@ if([Environment]::OSVersion.Version.Major -lt 6) {
   netsh.exe firewall show portopening
 
   netsh.exe firewall set icmpsetting 8 enable
-} else {
+}
+else {
   netsh.exe advfirewall reset
 
   $ports.Keys | % {
@@ -63,17 +76,18 @@ if([Environment]::OSVersion.Version.Major -lt 6) {
 
 foreach ( $Service in $ServicesToStart ) {
   if ( Get-Service $Service ) {
+    $i=0
     Write-Host "Starting service '$Service' for CADI"
     while ( (Get-Service $Service).Status -ne 'Running' ) {
       Get-Service $Service |
-      Set-Service -StartupType Automatic -Verbose -PassThru |
-      Restart-Service -Verbose -Force -PassThru
+        Set-Service -StartupType Automatic -Verbose -PassThru |
+        Restart-Service -Verbose -Force -PassThru
       sleep 1
+      $i++; if ( $i -ge 30 ) { break }
     }
   }
   else {
     Write-Warning "Error, service '$Service' not found while attempting to start it."
   }
 }
-
 
