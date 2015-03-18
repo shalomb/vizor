@@ -22,6 +22,7 @@ esac
 service elasticsearch status || service elasticsearch restart | tr -d '\n'
 
 c=0
+echo ''
 while ! curl -s 'http://localhost:9200/'; do
   fuser -n tcp 9200 || true
   printf '.' >&2 && sleep 2
