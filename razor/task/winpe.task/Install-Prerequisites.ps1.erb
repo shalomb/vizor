@@ -8,16 +8,11 @@ Import-Module Microsoft.PowerShell.Host       -ea 0
 Import-Module Microsoft.PowerShell.Management -ea 0
 Import-Module Microsoft.PowerShell.Utility    -ea 0
 
-$Script    = $MyInvocation.MyCommand.Name
-Write-Host "Script : $script"
-$ScriptDir = ([IO.FileInfo]($MyInvocation.MyCommand.Name)).Directory.FullName
-
-cd $ScriptDir
-pwd
+$ScriptDir = $PWD
 
 Write-Host ''
 Write-Host -Fore Cyan ('-' * 75)
-Write-Host -Fore Cyan "Downloading firstboot files"
+Write-Host -Fore Cyan "Downloading firstboot files to $ScriptDir"
 Write-Host -Fore Cyan ('-' * 75)
 
 # Files to be downloaded from the razor task
@@ -44,8 +39,8 @@ Write-Host -Fore Cyan ('-' * 75)
 %>
 
 foreach ($url in $files) {
-  $file = ($url -split "/")[-1]
-  rm -Force $file -ea 0
+  $file = Join-Path $ScriptDir ($url -split "/")[-1]
+  rm -Force $file -ea 0 -Verbose:$True
   ($retry, $retry_count) = ($False, 0)
   do {
     try{
@@ -62,7 +57,7 @@ foreach ($url in $files) {
 
 Write-Host ''
 Write-Host -Fore Cyan ('-' * 75)
-Write-Host -Fore Cyan "Downloading language packs"
+Write-Host -Fore Cyan "Downloading language packs to $ScriptDir\language_packs"
 Write-Host -Fore Cyan ('-' * 75)
 
 # Language Packs to be downloaded into language_packs/
@@ -104,7 +99,7 @@ foreach ($locale in $language_packs.keys) {
 
 Write-Host ''
 Write-Host -Fore Cyan ('-' * 75)
-Write-Host -Fore Cyan "  Unzipping imageprep.zip"
+Write-Host -Fore Cyan "  Unzipping imageprep.zip to $ScriptDir"
 Write-Host -Fore Cyan ('-' * 75)
 
 if ( Test-Path imageprep.zip ) {
