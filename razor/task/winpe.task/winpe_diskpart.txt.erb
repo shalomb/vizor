@@ -1,5 +1,23 @@
+rem
+rem SYNOPSIS
+rem   winpe_diskpart.txt - partition disks
+
+rem 'Walkthrough: Boot Windows PE from a BIOS-based Hard Disk'
+rem   https://technet.microsoft.com/en-us/library/dd799294(v=ws.10).aspx
+
 list disk
+
+rem Wipe all partitions on disk
 select disk 0
-online disk
+rem online disk
 clean
-clean all
+detail disk
+
+rem Create partition that occupies the full disk
+create partition primary
+select partition 1
+assign letter=c:
+active
+detail partition
+
+exit
