@@ -4,7 +4,7 @@ pkgs_to_install=()
 
 for pkg in \
   build-essential binutils make zlib1g-dev binutils-dev git \
-  syslinux syslinux-common genisoimage \
+  syslinux syslinux-common genisoimage liblzma-dev \
  ; do
   if ! dpkg -s "$pkg" &> /dev/null; then
     pkgs_to_install+=( "$pkg" )
