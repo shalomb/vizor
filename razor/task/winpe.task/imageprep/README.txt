@@ -3,20 +3,20 @@ Use Case #1 - Complete preparation of a vanilla image
 
 Requirements
 ------------
-You will need a sequence file modelled in the fashion of 
-  \\nyx.eng.citrite.net\ip\Sequences\StandardAsfImagePrep.ps1
+You will need a sequence file modelled in the fashion of
+  \\razor\ip\Sequences\StandardAsfImagePrep.ps1
 
 Invocation Example
 ------------------
   * From the machine to be prepared, invoke the bootstrap script.
 
-    PS> \\nyx.eng.citrite.net\ip\BootStrap\Invoke-ImagePrep.cmd
+    PS> \\razor\ip\BootStrap\Invoke-ImagePrep.cmd
 
   * In the ImagePrep shell, invoke your sequence.
 
     PS> Resume-ImageMaintenance -Sequence \\path\to\your\seq.ps1
 
-    # Or 
+    # Or
 
     PS> cd \\path\to\your\imageprep;
     PS> # do something
@@ -27,7 +27,7 @@ Invocation Example
 
     PS> Resume-ImageMaintenance -Sequence Sequences\StandardAsfImagePrep.ps1
 
-  * Resume imagemaintenance to progress to the next stage 
+  * Resume imagemaintenance to progress to the next stage
     (e.g. after an intermediate reboot)
 
     PS> Resume-ImageMaintenance
@@ -37,7 +37,7 @@ Invocation Example
   * Repeat the process until you've completed all stages.
 
   * Logs are kept in %SystemRoot%:\imageprep\ and can be shown with
-  
+
     PS> Show-ImagePrepTranscript
 
 
@@ -50,8 +50,8 @@ inject a new bootstrap script, etc.
 
 Requirements
 ------------
-You will need a sequence file modelled in the fashion of 
-  \\nyx.eng.citrite.net\ip\Sequences\StandardAsfImagePrep.ps1
+You will need a sequence file modelled in the fashion of
+  \\razor\ip\Sequences\StandardAsfImagePrep.ps1
 
 Invocation Example
 ------------------
@@ -62,9 +62,9 @@ Invocation Example
           -Stage 0 -filter 'windows.*update'
 
   * Run the tasks
-    
+
     PS> $MyTasks | Invoke-Task
 
   * Logs are kept in %SystemRoot%:\imageprep\ and can be shown with
-  
+
     PS> Show-ImagePrepTranscript

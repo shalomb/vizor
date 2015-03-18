@@ -188,25 +188,50 @@ function Update-WUA {
   #   'Updating Windows Update Agent (Windows)'
   #   https://msdn.microsoft.com/en-us/library/windows/desktop/aa387285%28v=vs.85%29.aspx
   if ( ($OS.Version -imatch '^6.1') ) { # Windows 7
-    $PkgUrl = Switch ( $OS.OSArchitecture ) {
-      '32-bit'  {
-        'http://download.windowsupdate.com/windowsupdate/redist/standalone/7.6.7600.320/WindowsUpdateAgent-7.6-x86.exe'
-      }
-      '64-bit' {
-        'http://download.windowsupdate.com/windowsupdate/redist/standalone/7.6.7600.320/WindowsUpdateAgent-7.6-x64.exe'
-      }
+    $PkgUrl = Switch -Regex ( $OS.OSArchitecture ) {
+      '32-bit' { 'http://download.windowsupdate.com/windowsupdate/redist/standalone/7.6.7600.320/WindowsUpdateAgent-7.6-x86.exe' }
+      '64-bit' { 'http://download.windowsupdate.com/windowsupdate/redist/standalone/7.6.7600.320/WindowsUpdateAgent-7.6-x64.exe' }
     }
 
-    if ( -not( Test-Path ($PkgFile = Join-Path $Env:TEMP (($PkgUrl -split '/')[-1])) ) ) {
+    Install-Msu $PkgUrl -NoLog
+  }
+  elseif ( $OSVersion -imatch '6.2' ) {
+    $PkgUrl = Switch -Regex ( $OS.Architecture ) {
+      '32-bit' { 'http://download.microsoft.com/download/6/7/0/670287B4-32F0-458E-83AE-4316B0B1D0B8/Windows8-RT-KB2937636-x86.msu' }
+      '64-bit' { 'http://download.microsoft.com/download/A/A/8/AA842D3A-D5B0-4307-89F1-3485D88A1853/Windows8-RT-KB2937636-x64.msu' }
+    }
+    Install-Msu $PkgUrl
+  }
+}
+
+function Install-MSU {
+  [CmdletBinding()] Param(
+    [String] $Url,
+    [String] $File,
+    [String] $LogFile,
+    [Switch] $NoLog
+  )
+
+  if ( $Url ) {
+    if ( -not( Test-Path ($File = Join-Path $Env:TEMP (($Url -split '/')[-1])) ) ) {
       try {
-        (New-Object Net.WebClient).DownloadFile($PkgUrl, $PkgFile)
+        (New-Object Net.WebClient).DownloadFile($Url, $File)
       } catch {
-        Write-Warning "$_"
-        return
+        Throw "Failed to download '$Url' to '$File'"
       }
     }
+  }
 
-    $Process = Start-Process -FilePath $PkgFile -ArgumentList @('/quiet', '/norestart') -Wait -PassThru
+  if ( Test-Path ($File = (ls (Resolve-Path $File).Path)) ) {
+    $Args = @($File, '/quiet', '/norestart')
+    $LogFile = if ($LogFile) { $LogFile } else { Join-Path $Env:TEMP "$File.wusa.install.log" }
+    if ( -not($NoLog) ) { $Args+=("/log:$LogFile") }
+
+    Write-Verbose "Installing '$File' $Args"
+    $Process = Start-Process 'wusa.exe' -ArgumentList $Args -NoNewWindow -Wait
+  }
+  else {
+    Throw "File '$File' does not exist"
   }
 }
 
@@ -534,21 +559,15 @@ $AvailableUpdates | Install-WindowsUpdate
 function Install-WindowsUpdate {
   [CmdletBinding()] Param(
     [Switch]$DownloadOnly,
-    [Parameter(Position=0, Mandatory=$False, ValueFromPipeline=$True)] $SearchResult
+    [Parameter(Position=0, Mandatory=$True, ValueFromPipeline=$True)] $SearchResult
   )
 
   begin {
-    Write-Verbose $MyInvocation.MyCommand
-    Write-Verbose "  -DownloadOnly  : $DownloadOnly"
     $updatesToInstall  = New-Object -ComObject Microsoft.Update.UpdateColl
-    $Global:candidatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
+    $Global:updatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
   }
 
   process {
-    if ( -not($SearchResult) ) {
-      Write-Warning "No updates found. Exiting"
-      return
-    }
     if ($SearchResult.InstallationBehavior.CanRequestUserInput) {
       Write-Host -ForegroundColor Magenta "Update requires user input: " $SearchResult.Title
       $SearchResult | fl *
@@ -561,18 +580,13 @@ function Install-WindowsUpdate {
   }
 
   end {
-    if ( -not($updatesToInstall.Count) ) {
-      Write-Warning "No candidates to install. Exiting."
-      return
-    }
+    $updatesToInstall | ?{ -not($_.IsDownloaded) } | % { $Global:updatesToDownload.Add($_) > $Null }
 
-    $updatesToInstall | ?{ -not($_.IsDownloaded) } | % { $Global:candidatesToDownload.Add($_) > $Null }
-
-    if ($Global:candidatesToDownload.Count) {
+    if ($Global:updatesToDownload.Count) {
       $downloader          = $Global:UpdateSession.CreateUpdateDownloader()
       $downloader.IsForced = $True
       $downloader.Priority = 3
-      $downloader.Updates  = $Global:candidatesToDownload
+      $downloader.Updates  = $Global:updatesToDownload
 
       try {
         Write-Verbose "Downloading $($updatesToInstall.Count) updates ..."
@@ -590,30 +604,30 @@ function Install-WindowsUpdate {
       return $updatesToDownload
     }
 
+    Write-Verbose "Candidate updates to install: $($updatesToInstall.Count)"
+    if ( $updatesToInstall.Count ) {
+      $i=0; $updatesToInstall | %{
+        Write-Verbose "  * $($i++) $($_.Title)";
+        $_.AcceptEula()
+      }
 
-    Write-Verbose "Candidates to install: $($updatesToInstall.Count)"
-    $i=0; $updatesToInstall | %{
-      Write-Verbose "  * $($i++) $($_.Title)";
-      $_.AcceptEula()
+      Write-Verbose "Setting update installer preferences for automation ..."
+      $installer                    = $Global:UpdateSession.CreateUpdateInstaller()
+      $installer.AllowSourcePrompts = $False
+      $installer.IsForced           = $True
+      $installer.ForceQuiet         = $True
+      $installer.Updates            = $updatesToInstall
+
+      try {
+        Write-Verbose "Installing $($updatesToInstall.Count) updates ..."
+        $installationResult = $installer.Install()
+        Write-Verbose "Installation Result: $($installationResult.Resultcode)"
+        Write-Verbose "Reboot Required: $($installationResult.RebootRequired)"
+        return $installationResult
+      } catch {
+        Write-Warning "Problem installing update: $_"
+      }
     }
-
-    Write-Verbose "Setting update installer preferences for automation ..."
-    $installer                    = $Global:UpdateSession.CreateUpdateInstaller()
-    $installer.AllowSourcePrompts = $False
-    $installer.IsForced           = $True
-    $installer.ForceQuiet         = $True
-    $installer.Updates            = $updatesToInstall
-
-    try {
-      Write-Verbose "Installing $($updatesToInstall.Count) updates ..."
-      $installationResult = $installer.Install()
-      Write-Verbose "Installation Result: $($installationResult.Resultcode)"
-      Write-Verbose "Reboot Required: $($installationResult.RebootRequired)"
-    } catch {
-      Write-Warning "Problem installing update: $_"
-    }
-
-    return $installationResult
   }
 
 <#
@@ -635,16 +649,16 @@ Download but do not apply windows update
 
 function Install-ImportantWindowsUpdates {
   [CmdletBinding()] Param(
-    [Switch] $RebootIfNecessary = $True,
-    [Int32]  $MaxUpdates = 0x40
+    [Int32]  $WorkingSetSize    = 0x30,
+    [Int32]  $NumberOfRounds    = 0x04,
+    [Switch] $RebootIfNecessary = $True
   )
 
   Write-Verbose "Installing important windows updates"
 
   $UpdateResults = @()
-  $i = 0
 
-  while ( $i -le 5 ) {
+  $i = 0; while ( $i -le $NumberOfRounds ) {
 
     if ( Get-WindowsUpdateSystemInfo -RebootRequired ) {
       Write-Warning "A pending reboot is required."
@@ -657,13 +671,21 @@ function Install-ImportantWindowsUpdates {
       }
     }
 
-    if ( $UpdateResult = Search-WindowsUpdate -Verbose:$VerbosePreference | Select -First $MaxUpdates |
-           Install-WindowsUpdate -Verbose:$VerbosePreference ) {
+    $UpdateResult = Search-WindowsUpdate -Verbose:$VerbosePreference | Select -First $WorkingSetSize |
+           Install-WindowsUpdate -Verbose:$VerbosePreference
 
-      $UpdateResults    += @( $UpdateResult )
+    if ( $UpdateResult -is [System.Object[]] ) {
+      # TODO, this is a hack. Search-WindowsUpdate/Install-WindowsUpdate require refactoring.
+      Write-Warning "Install-WindowsUpdate did not return an expected type. Aborting .."
+      return $UpdateResults
+    }
 
-      $HResult    = $UpdateResult | Select -Expand HResult    -ea 0
-      $ResultCode = $UpdateResult | Select -Expand ResultCode -ea 0
+    if ( $UpdateResult ) {
+
+      $UpdateResults += @( $UpdateResult )
+
+      $HResult    = $UpdateResult.HResult
+      $ResultCode = $UpdateResult.ResultCode
       # 'OperationResultCode enumeration (Windows)'
       #   https://msdn.microsoft.com/en-us/library/windows/desktop/aa387095(v=vs.85).aspx
       $ResultMessage = @{
@@ -701,8 +723,16 @@ no attempt to resume the process after rebooting is made. This may be done
 even before any updates are applied.
 
 .PARAMETER RebootIfNecessary
-Reboot the machine if any updates require a reboot to be effectively applied.
+Reboot the machine if the Windows Update Agent (WUA) has a pending reboot.
+This check is performed before updates are searched for or installed in a
+round of applying updates.
 If a reboot occurs, the update results collection is not returned.
+
+.PARAMETER WorkingSetSize
+Maximum number of updates to consider when installing updates.
+
+.PARAMETER NumberOfRounds
+Number of times to search for and install updates if no reboots are needed.
 #>
 
 }
