@@ -10,7 +10,7 @@ source defaults.sh
 # wget "http://sourceforge.net/projects/wimlib/files/wimlib-1.4.2.tar.gz"
 # src_url="http://sourceforge.net/projects/wimlib/files/wimlib-1.6.1.tar.gz"
 # src_url="${1:-http://sourceforge.net/projects/wimlib/files/wimlib-1.6.2.tar.gz}"
-src_url="${1:-http://sourceforge.net/projects/wimlib/files/wimlib-1.7.2.tar.gz}"
+src_url="${1:-http://sourceforge.net/projects/wimlib/files/wimlib-1.7.4.tar.gz}"
 
 required_version="${src_url##*/}"
 required_version="${required_version#*-}"
@@ -26,7 +26,6 @@ case "$distro" in
   ;;
 esac
 
-set -xv
 cd "${WORKING_DIR:-/usr/src}"
 
 filename="${src_url##*/}"
@@ -44,7 +43,7 @@ make clean
 make
 make check
 
-sudo checkinstall -D --install=no -y 
+sudo checkinstall -D --install=no -y
 
 sudo dpkg -i wimlib*.deb
 
