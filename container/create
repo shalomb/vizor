@@ -3,9 +3,12 @@
 source defaults.sh
 source utils.sh
 
+# SYNOPSIS
+#   Create container for boxes to be built in.
+
 declare type=
 
-while getopts "t:" opt 2>/dev/null; do
+while getopts ":ht:" opt 2>/dev/null; do
   case $opt in
     t) type="$OPTARG"
       ;;
