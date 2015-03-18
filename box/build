@@ -89,7 +89,8 @@ fi
 
 [[ -z $hostname ]]      && hostname=$( jq -r '.hostname // empty' <<<"$instance_metadata" )
 if [[ -z $hostname ]]; then
-  hostname="${instance_name##*-}-$(< /proc/sys/kernel/random/uuid)"
+  hostname=$( perl -le 'print join "-", pop =~ /([[:xdigit:]]{6,})/g;' "$instance_name" )
+  hostname="$hostname-$(< /proc/sys/kernel/random/uuid)"
   case "$box_type" in
     windows)
         hostname="${hostname:0:15}"
@@ -218,7 +219,7 @@ case "$container_type" in
     boot_iso_def=$(
       vizor cloudstack iso register -b -B \
         -a "$os_architecture"             \
-        -n "$vstring"                     \
+        -n "vizor-ipxe-$vstring"          \
         -O "$os_name"                     \
         -o "$os_type_id"                  \
         -u "$ipxe_iso_url"                \
@@ -339,7 +340,7 @@ case "$container_type" in
     if ! vm_start_def=$( vizor cloudstack vm start -i "$instance_id" ) ec=$?; then
       die "Failed to start vm : $ec"
     else
-      vm_start_def=$( jq -e 'del(.jobresult.virtualmachine)' <<<"$vm_start_def" )
+      vm_start_def=$( jq -e '.[] | del(.jobresult.virtualmachine)' <<<"$vm_start_def" )
     fi
   ;;
 
