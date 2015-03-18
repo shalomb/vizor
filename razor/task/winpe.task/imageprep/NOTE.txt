@@ -4,4 +4,4 @@ This is a development environment and the functionality here is
 in a state of flux. Please take due care.
 
 This directory may be accessed through explorer at 
-  \\nyx.eng.citrite.net\ip
+  \\razor\ip
