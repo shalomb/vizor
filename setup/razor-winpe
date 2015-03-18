@@ -193,8 +193,6 @@ EOF
 
 done
 
-sleep 10
-
 log "Building ipxe formats"
 time {
   rm -f "$OUTPUT_DIR_IPXE/bootstrap.ipxe" || true
