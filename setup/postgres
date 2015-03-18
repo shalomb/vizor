@@ -18,8 +18,10 @@ esac
 
 cd $( getent passwd postgres | awk -F':' '{print $6}' ) || true
 
+RAZOR_DB_PASSWORD="${RAZOR_DB_PASSWORD:-$(die "RAZOR_DB_PASSWORD is not set")}"
+
 # sudo -u postgres createuser -P -SDR razor
-sudo -u postgres psql template1 <<<"CREATE USER razor WITH PASSWORD '***REMOVED***';"
+sudo -u postgres psql template1 <<<"CREATE USER razor WITH PASSWORD '$RAZOR_DB_PASSWORD';"
 sudo -u postgres psql template1 <<<"CREATE DATABASE razor;"
 
 # sudo -u postgres psql template1 <<<"CREATE DATABASE razor_dev;"
