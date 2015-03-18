@@ -42,8 +42,14 @@
 
                 image : <%= node.metadata['id'] %>
 -->
+
 <!--
      callback_url : <%= stage_done_url('finished') %>
+-->
+
+<!--
+  'How Windows Setup Works'            https://technet.microsoft.com/en-us/library/cc749046(v=ws.10).aspx
+  'Windows Setup Configuration Passes' https://technet.microsoft.com/en-us/library/cc766245(v=ws.10).aspx
 -->
 
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
@@ -62,9 +68,10 @@
       <DiskConfiguration>
         <WillShowUI>OnError</WillShowUI>
 
+      <!--
         <Disk wcm:action="add">
           <DiskID>0</DiskID>
-          <WillWipeDisk>true</WillWipeDisk>
+          <WillWipeDisk>false</WillWipeDisk>
 
           <CreatePartitions>
             <CreatePartition wcm:action="add">
@@ -86,6 +93,8 @@
           </ModifyPartitions>
 
         </Disk>
+      -->
+
       </DiskConfiguration>
 
       <ImageInstall>
@@ -145,6 +154,7 @@ eos
  %>
     </component>
 
+    <!-- https://technet.microsoft.com/en-gb/library/cc766181(v=ws.10).aspx -->
     <component  name="Microsoft-Windows-International-Core-WinPE" language="neutral" processorArchitecture="<%= @arch %>" publicKeyToken="31bf3856ad364e35" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <SetupUILanguage>
         <WillShowUI>OnError</WillShowUI>
