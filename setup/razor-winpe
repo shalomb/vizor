@@ -10,6 +10,9 @@ source mount.utils.sh
 source apache.sh
 
 TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
+winpe_3_mode=0
+winpe_x86_wim="${WINPE_X86_WIM-}"
+winpe_x86_64_wim="${WINPE_X86_64_WIM-}"
 WORKING_DIR='/usr/src'
 OUTPUT_DIR="$DOCUMENT_ROOT"
 OUTPUT_DIR_IPXE="$DOCUMENT_ROOT/ipxe"; mkdir -p "$OUTPUT_DIR_IPXE"
@@ -18,9 +21,15 @@ DEBUG="${DEBUG:-}"
 VERSION=$(date +%F%X%N | tr -d '[\-:]')
 wimlib_version=$(dpkg-query -W -f='${Version}\n' wimlib || true)
 
-while getopts ":i:w:o:d:s:" opt; do
+while getopts ":3:6:i:lw:o:d:s:" opt; do
   case $opt in
+    3) winpe_x86_wim="$OPTARG"
+      ;;
+    6) winpe_x86_64_wim="$OPTARG"
+      ;;
     i) kb3aik_en_iso="$OPTARG"
+      ;;
+    l) winpe_3_mode=1
       ;;
     w) WORKING_DIR="$OPTARG"
       ;;
@@ -42,6 +51,13 @@ case "$distro" in
     die "Unsupported distribution '$distro'"
   ;;
 esac
+
+if (( winpe_3_mode == 0 )); then
+  [[ -e $winpe_x86_wim ]]    || die "No winpe-x86.wim (-3) file specified or no WINPE_X86_WIM variable defined."
+  [[ -e $winpe_x86_64_wim ]] || die "No winpe-x86_64.wim (-6) file specified or no WINPE_X86_64_WIM variable defined."
+  winpe_x86_wim=$(readlink -f "$winpe_x86_wim")
+  winpe_x86_64_wim=$(readlink -f "$winpe_x86_64_wim")
+fi
 
 for task in "$DIR/../razor/task"/winpe.task/; do
   task_name="${task%/}"
@@ -79,12 +95,14 @@ time { vizor setup wimboot        "$wimboot_url"               ; }
 log "Getting wimlib"
 time { vizor setup wimlib         "$wimlib_url"                ; }
 
-log "Getting KB3AIK_EN.iso."
-time { vizor setup kb3aik_en_iso  "$kb3aik_en_iso_url"         ; }
+if (( winpe_3_mode == 1 )); then
+  log "Getting KB3AIK_EN.iso."
+  time { vizor setup kb3aik_en_iso  "$kb3aik_en_iso_url"         ; }
 
-log "Mounting KB3AIK_EN.iso" >&2
-mount_iso "/usr/src/KB3AIK_EN.iso"
-waik_dir=( $( mount-point -k device -v KB3AIK_EN.iso -f directory ) )
+  log "Mounting KB3AIK_EN.iso" >&2
+  mount_iso "/usr/src/KB3AIK_EN.iso"
+  waik_dir=( $( mount-point -k device -v KB3AIK_EN.iso -f directory ) )
+fi
 
 # TODO: It'd be nice not to have to create an image per architecture
 #       But for some reason the x86 winpe can't start 64-bit installers
@@ -111,10 +129,12 @@ for arch in 'x86_64' 'x86'; do
     x86)
         curl_dir="${curl_x86_url##*/}"
         wimlib_arch="x86"
+        wim_file="$winpe_x86_wim"
       ;;
     x86_64)
         curl_dir="${curl_x86_64_url##*/}"
         wimlib_arch="amd64"
+        wim_file="$winpe_x86_64_wim"
       ;;
     *)  warn "Unsupported arch '$arch' .. skipping." >&2 || true
         continue
@@ -127,7 +147,7 @@ for arch in 'x86_64' 'x86'; do
     "$curl_src"/bin/curl.exe  \
     "$curl_src"/dlls/*.dll    \
     ; do
-    cp -a "$files" "$overlay_dir/$arch/Windows/System32/"
+    cp -va "$files" "$overlay_dir/$arch/Windows/System32/"
   done
 
   # Patch the razor client script
@@ -143,24 +163,46 @@ for arch in 'x86_64' 'x86'; do
       printf "%16s : %s\n" "$key" "$value" >&2
       sed -r -i 's/\[%'"${key}"'%\]/'"${value}"'/' "$winpe_bootstrap_script"
   done
+  cp -a "$winpe_bootstrap_script" "$overlay_dir/$arch/"
 
-  # Generate the WinPE image
-  time mkwinpeimg  --only-wim --arch="${wimlib_arch:-amd64}" \
-                   --waik-dir="$waik_dir"                    \
-                   --overlay="$overlay_dir/$arch/"           \
-                   --start-script="$winpe_bootstrap_script"  \
-                   "$winpe_wim"
+  winpe_shl_ini="/tmp/winpeshl.ini"
+  cat <<EOF > "$winpe_shl_ini"
+[LaunchApps]
+%SystemDrive%\razor-client.cmd
+EOF
+
+  sed -i -r 's/$/\r/' "$winpe_shl_ini"
+  cp -a "$winpe_shl_ini" "$overlay_dir/$arch/Windows/System32"
+
+  if (( winpe_3_mode )); then
+    # Generate the WinPE image
+    time mkwinpeimg  --only-wim --arch="${wimlib_arch:-amd64}" \
+                     --waik-dir="$waik_dir"                    \
+                     --overlay="$overlay_dir/$arch/"           \
+                     --start-script="$winpe_bootstrap_script"  \
+                     "$winpe_wim"
+  else
+    # Patch an existing .wim file
+    mp=$(mktemp -d)
+    wimlib-imagex mountrw "$wim_file" "$mp" --check
+    rsync -rtvP "$overlay_dir/$arch/" "$mp/" || true
+    wimlib-imagex unmount "$mp" --commit --check --rebuild
+    cp -av "$wim_file" "$winpe_wim"
+    rmdir "$mp"
+  fi
 
 done
 
+sleep 10
+
 log "Building ipxe formats"
 time {
-  rm -f "$OUTPUT_DIR_IPXE/bootstrap.ipxe"
+  rm -f "$OUTPUT_DIR_IPXE/bootstrap.ipxe" || true
   wget  -q "http://$RAZOR_SERVER:8080/api/microkernel/bootstrap" \
         -O "$OUTPUT_DIR_IPXE/bootstrap.ipxe"
   vizor setup ipxe -b "$OUTPUT_DIR_IPXE/bootstrap.ipxe" -o "$OUTPUT_DIR_IPXE"
 }
 
-umount -f "$waik_dir"
+[[ -d ${waik_dir:-} ]] && umount -f "$waik_dir"
 popd &>/dev/null
 
