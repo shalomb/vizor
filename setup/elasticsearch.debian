@@ -25,9 +25,9 @@ if (( ${#pkgs_to_install[@]} > 0 )); then
   cmd="aptitude install -y -t stable --without-recommends ${pkgs_to_install[@]}"
   if whoami | grep -iq root; then
     aptitude update
-    $cmd; exit $?
+    $cmd
   else
-    $cmd; exit $?
+    $cmd
   fi
 
   update-rc.d elasticsearch defaults 95 10
