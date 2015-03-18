@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   List Templates on a XenServer host/pool
+
+declare host="${HOST:-$XENSERVER_HOST}"
+
+source defaults.sh
+source utils.sh
+
+declare name_regex= do_shutdown= instant_templates=
+
+while getopts ":H:hin:s" opt; do
+  case $opt in
+    H) host="$OPTARG"
+      ;;
+    i) instant_templates=1
+      ;;
+    n) name_regex="$OPTARG"
+      ;;
+    h) show_help; exit 3;
+      ;;
+    *) die "Unrecognized/unimplemented option $OPTARG"
+      ;;
+  esac
+done
+
+[[ $host ]] || die "No host (-H) specified."
+
+{
+  echo 'uuid,name-label,power-state,install-time,memory-static-max,vcpus-max,pv-drivers-up-to-date'
+  "$host" instant_templates="$instant_templates" '
+    {
+      if (( instant_templates == 1 )); then
+        xe template-list is-a-template=true other-config:instant=true params=
+      else
+        xe template-list is-a-template=true is-a-snapshot=false params=
+      fi
+    } |
+        xe_grep "print join q[,], uuid,name_label,power_state,install_time,memory_static_max,VCPUs_max,PV_drivers_up_to_date if name_label =~ /'"$name_regex"'/"
+    '
+} | csv_to_table
