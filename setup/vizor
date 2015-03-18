@@ -52,10 +52,9 @@ if (( $# == 0 )); then
   dev_env=1
 fi
 
-
 if [[ $dev_env ]]; then
   export DEBIAN_FRONTEND=noninteractive
-  
+
   log "Installing cpanm"
   time { "$DIR"/cpanm; }
   log "Setting up loop devices"
