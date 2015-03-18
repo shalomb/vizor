@@ -1,13 +1,19 @@
 #!/bin/bash
 
+# SYNOPSIS
+#   Create cloudstack templates from instances.
+
 source defaults.sh
 source utils.sh
 
-declare instance_id= template_name= is_featured=false is_public=false snapshot_id= volume_id=
+declare instance_name= template_name= is_featured=false is_public=false 
+        snapshot_id= volume_id= description=
 
-while getopts ":fhi:n:p" opt; do
+while getopts ":d:fhi:n:p" opt; do
   case $opt in
-    i) instance_id="$OPTARG"
+    d) description="$OPTARG"
+      ;;
+    i) instance_name="$OPTARG"
       ;;
     n) template_name="$OPTARG"
       ;;
@@ -20,34 +26,40 @@ while getopts ":fhi:n:p" opt; do
   esac
 done
 
-[[ -z $instance_id ]] && die "No instance id (-i) specified."
+[[ -z $instance_name ]] && die "No instance id (-i) specified."
 
-instance_url="http://localhost:5984/instance/$instance_id"
-instance_def=$( curl -fsSLX GET "$instance_url" )
+instance_url="http://localhost:5984/instance/$instance_name"
+if ! instance_def=$( curl -fsSLX GET "$instance_url" ) ec=$?; then
+  die "Unable to locate record for instance '$instance_name' at '$instance_url' : $ec"
+fi
 container_type=$( jq -c -e -r '.container.type' <<<"$instance_def" )
 
-log "Creating $container_type template '$template_name' (instance '$instance_id')"
+if [[ -z $description ]]; then
+  description="Created on $(date) on $(hostname -f) from $instance_name."
+fi
 
 case "$container_type" in
   cloudstack)
     os_type_id=$( jq -c -e -r '.vm.jobresult.virtualmachine.guestosid' <<<"$instance_def" )
          vm_id=$( jq -c -e -r '.vm.jobresult.virtualmachine.id'        <<<"$instance_def" )
       is_ds_vm=$( jq -c -e -r '.vm.jobresult.virtualmachine.isdynamicallyscalable // "false"' <<<"$instance_def" )
-    template_name="${template_name:-$instance_id}"
+    template_name="${template_name:-$instance_name}"
     template_name="${template_name:0:32}" # TODO, this truncation is not what the user would prefer
+
+    log "Creating $container_type template '$template_name' (instance '$instance_name')"
 
     # TODO, template from snapshot case not implemented.
     if [[ -z $snapshot_id ]]; then
       volumes_def=$( cloudmonkey list volumes virtualmachineid="$vm_id" )
       if (( $(jq -e '.count' <<<"$volumes_def") > 1 )); then
-        die "VM has multiple volumes"
+        die "VM has multiple volumes, cannot proceed."
       else
         volume_id=$( jq -c -e -r '.volume[0].id' <<<"$volumes_def" )
       fi
 
      template_def=$(
        cloudmonkey create template \
-         displaytext="$template_name"      \
+         displaytext="${description:-$template_name}" \
          isdynamicallyscalable="$is_ds_vm" \
          isfeatured="$is_featured"         \
          ispublic="$is_public"             \
@@ -58,7 +70,7 @@ case "$container_type" in
      )
 
      if grep -iq 'Error' <<<"$template_def"; then
-       die "Error creating template for '$instance_id' (${#instance_id}) : '$template_def'"
+       die "Error creating template for '$instance_name' (${#instance_name}) : '$template_def'"
      fi
 
      # TODO, Cloudmonkey's progress output taints record
@@ -71,7 +83,7 @@ esac
 # TODO, refactor for multiple hypervisor types
 
 template_doc=$( jq -s '.[] | {template:.jobresult.template}' <<<"$template_def" )
-  master_doc=$( jq '.name = "'"$template_name"'" | .type = "'"$container_type"'" | .instance = "'"$instance_id"'"' <<<'{}' )
+  master_doc=$( jq '.name = "'"$template_name"'" | .type = "'"$container_type"'" | .instance = "'"$instance_name"'"' <<<'{}' )
   master_doc=$( jq -s '.[0] * .[1]' <(echo "$master_doc") <(echo "$template_doc") )
 
 _rev=$( curl -sS -f "http://localhost:5984/template/$template_name?revs_info=true" 2>/dev/null |
