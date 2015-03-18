@@ -95,7 +95,7 @@ eos
     <RegisteredOwner><%=
       @sysprep_context == 'firstboot' ?
         node.metadata['owner'] :
-        node.metadata['vstring'].to_s.gsub(/\W+/,"").sub(/sp\d.*/,"")[0..10]
+        node.metadata['vstring'].to_s.gsub(/\W+/,"").sub(/sp\d.*/,"")[0..10].gsub(/_/,"")
       %></RegisteredOwner>
     <TimeZone><%=        node.metadata['windows_timezone'] || 'GMT Standard Time' %></TimeZone>
     <DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
@@ -173,6 +173,8 @@ eos
   if @product_version >= 6.1
   <<-eos
     <RegisteredOrganization>#{  node.metadata['organization'] || 'organization' }</RegisteredOrganization>
+    <TimeZone>#{                node.metadata['windows_timezone'] || 'GMT Standard Time' }</TimeZone>
+    <DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
 
     <OEMInformation>
       <HelpCustomized>true</HelpCustomized>
