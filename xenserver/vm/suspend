@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SYNOPSIS
-#   Shutdown running VMs on a XenServer host/pool
+#   Manage VMs on a XenServer host/pool
 
 declare vm_action="${0##*/}"
 declare host="${HOST:-$XENSERVER_HOST}"
@@ -38,16 +38,16 @@ set -xv
         echo "xe vm-$vm_action uuid=$uuid force=$force # name-label=$name" >&2
         case "$vm_action" in
           shutdown)
-              echo xe vm-shutdown uuid="$uuid" force="$force"
+              xe vm-shutdown uuid="$uuid" force="$force"
             ;;
           reboot)
-              echo xe vm-reboot uuid="$uuid" force="$force"
+              xe vm-reboot uuid="$uuid" force="$force"
             ;;
           suspend)
-              echo xe vm-suspend uuid="$uuid" force="$force"
+              xe vm-suspend uuid="$uuid" force="$force"
             ;;
           template)
-              echo xe vm-param-set uuid="$uuid" is-a-template=true
+              xe vm-param-set uuid="$uuid" is-a-template=true
             ;;
           *)
               echo "Unrecognized/unimplemented option $vm_action" >&2
