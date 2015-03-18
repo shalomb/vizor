@@ -16,7 +16,7 @@ function Get-VMType {
   }
   elseif (VMWareTools\Test-IsVMWareVM) {
     $VMType | Add-Member NoteProperty VMType "VMWare"
-  } 
+  }
   elseif (HyperVIC\Test-IsHypervVM) {
     $VMType | Add-Member NoteProperty VMType "HyperV"
   }
@@ -60,18 +60,19 @@ function Install-VMGuestTools {
   Param(
     [Switch] $NoRestart
   )
+
   Switch -Regex ( (Get-VMType).VMType ) {
-    'Xen'     { 
+    'Xen'     {
       Write-Verbose "Detected as being a Xen VM"
       XenTools\Install-XenTools -NoRestart:$NoRestart -Verbose:$VerbosePreference
       return $?
     }
-    'VMWare'  { 
+    'VMWare'  {
       Write-Verbose "Detected as being a VMWare VM"
       VMWareTools\Install-VMWareTools -NoRestart:$NoRestart -Verbose:$VerbosePreference
       return $?
     }
-    'HyperV'  { 
+    'HyperV'  {
       Write-Verbose "Detected as being a Hyper-V VM ($VerbosePreference)"
       HyperVIC\Install-HyperVIntegrationServices -NoRestart:$NoRestart -Verbose:$VerbosePreference
       return $?
@@ -80,7 +81,7 @@ function Install-VMGuestTools {
       Write-Warning "VMType is unknown"
       return $?
     }
-  } 
+  }
 }
 
 
