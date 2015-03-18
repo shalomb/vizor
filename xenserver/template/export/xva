@@ -43,7 +43,7 @@ done
 
 [[ $host ]]            || die "No host (-H) specified."
 [[ $name_regex ]]      || die "No name regex (-n) specified"
-[[ $destination_dir ]] || die "No destination directory (-d) specified."
+[[ $destination_dir ]] || die "No destination directory (-o) specified."
 
 "$host" destination_dir="$destination_dir" include_vms="$include_vms" \
   export_metadata="$export_metadata" export_vhd="$export_vhd" '
