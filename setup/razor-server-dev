@@ -4,6 +4,7 @@
 #   Build puppetlabs/razor-server from source.
 
 source defaults.sh
+source razor-winpe.sh # Needed for RAZOR_DB_PASSWORD
 
 distro=$(lsb_release -is | tr 'A-Z' 'a-z')
 case "$distro" in
@@ -38,7 +39,8 @@ adduser razor --home /var/lib/razor --shell /bin/false --system || true
 adduser razor src
 
 # Test Database access
-echo "localhost:5432:razor:razor:***REMOVED***" > /var/lib/razor/.pgpass
+RAZOR_DB_PASSWORD="${RAZOR_DB_PASSWORD:-$(die "RAZOR_DB_PASSWORD is not set")}"
+echo "localhost:5432:razor:razor:$RAZOR_DB_PASSWORD" > /var/lib/razor/.pgpass
 chmod 0600 /var/lib/razor/.pgpass
 sudo -u razor psql -U razor razor -w -l
 
