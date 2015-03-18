@@ -5,8 +5,8 @@ declare size=
 size="$1"
 
 {
-  echo 'instance_id,box_id,created,box type,container type'
-  curl -sS 'http://localhost:9200/instance/instance/_search?sort=ctime:desc&from=0&size='"${size:-50}" |
-    jq -S -r -c '.hits.hits[]._source | [._id,.box._id,.ctime,.box.type,.container.type]' |
+  echo 'instance_id,box_id,created,box type,container type,image'
+  curl -sS 'http://localhost:9200/instance/instance/_search?sort=ctime:desc&from=0&size='"${size:-10000}" |
+    jq -S -r -c '.hits.hits[]._source | [._id,.box._id,.ctime,.box.type,.container.type,.image.id]' |
     sed -r 's/^\[|\]$//g'
 } | csv_to_table
