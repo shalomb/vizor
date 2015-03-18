@@ -280,6 +280,7 @@ function Invoke-Task {
       # Write-Host -Fore DarkGray "$(Get-Date -Uformat '%Y%m%dT%H%M%S%Z') : Invoke-Task $($task.name)"
       # $_ | Out-String | Write-Host -Fore DarkGray
 
+      $TaskName  = $Task.Name
       $TaskState = New-Object -TypeName PSObject
       $TaskState = Add-Member -InputObject $TaskState -PassThru -Force -MemberType NoteProperty -Name "task" -Value $task.Name
       $StateFile = Join-Path $IPLogDir $Task.Name
@@ -302,6 +303,7 @@ function Invoke-Task {
           }
           else {
             if (Test-Member -InputObject $task -Name $SubName) {
+              $Host.UI.RawUI.WindowTitle = $TaskName
               try {
                 [String]$ScriptOutput = $task.$SubName.Invoke()
               }
@@ -318,6 +320,7 @@ function Invoke-Task {
 
         }
         catch [Exception] {
+          Write-Warning "  $TaskName/$SubName : $_"
           if ( $NoStrict -or ($SubName -imatch '^(?:pre|post)$') ) {
             $SubState = Add-Member -InputObject $SubState -PassThru -Force -MemberType NoteProperty -Name "status" -Value $False
             $SubState = Add-Member -InputObject $SubState -PassThru -Force -MemberType NoteProperty -Name "exception" -Value $_
@@ -331,7 +334,7 @@ function Invoke-Task {
               $Local:ErrorActionPreference = "SilentlyContinue"
               $_ | Out-String | Write-Host -Fore Red
               $Local:ErrorActionPreference = "STOP"
-              Stop-Transcript
+              try { Stop-Transcript } catch {}
               Throw $_
             }
           }
