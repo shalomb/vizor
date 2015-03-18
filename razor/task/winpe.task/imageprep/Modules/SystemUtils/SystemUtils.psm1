@@ -352,17 +352,15 @@ function Install-DotNet35 {
 }
 
 function Get-Ngen {
-  [CmdletBinding()] Param ( [Switch] $Current
+  [CmdletBinding()] Param (
+    [Switch] $Current
   )
 
-  if ( $Current ) {
-    ls (Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'ngen.exe')
-  }
-  else {
-   ls (Join-Path $Env:WinDir 'Microsoft.NET\Framework*') | %{
-      ls (Join-Path $_.FullName '*\ngen.exe')
-    }
-  }
+  $CurrentNgen = ls (Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'ngen.exe')
+
+  if ( $Current ) { return $CurrentNgen }
+
+  ls ((Join-Path $Env:WinDir 'Microsoft.NET\Framework*\*\ngen.exe'), $CurrentNgen) | Get-Unique
 <#
 .SYNOPSIS
 Get the versions of ngen available for the installed .NET frameworks
@@ -392,49 +390,68 @@ function Add-AssemblyToNgenQueue {
   }
 
   $Assemblies | %{
-    #if ( $Force -or -not([System.Runtime.InteropServices.RuntimeEnvironment]::FromGlobalAccessCache($_)) ) {
-      Write-Verbose "$ngen install $_ /queue"
-      & $ngen install $_ /queue | Write-Verbose
-      #}
+    Write-Verbose "$ngen install $_ /queue"
+    & $ngen install $_ /queue | Write-Verbose
   }
 }
 
 function Start-NgenQueuedTasks {
-  [CmdletBinding()] Param ( 
+  [CmdletBinding()] Param (
     [ValidateSet(1,2,3)]
       [Int32[]] $PriorityLevels = (1..3 | Sort -Descending),
-    [Switch]    $Update,
-    [String]    $ngen = (Get-Ngen -Current)
+    [Switch]    $Update = $True,
+    [Switch]    $Force,
+    [String[]]  $ngen
   )
 
-  if ( $Update ) {
-    Write-Verbose "$ngen update /queue"
-    & $ngen update   /queue /nologo | Write-Verbose
-  }
+  # Not set in parameter due to PS coercing array into string
+  $ngen = if ( -not($ngen) ) { Get-Ngen }
 
-  $PriorityLevels | %{
-    Write-Verbose "$ngen ExecuteQueuedItems $_"
-    & $ngen ExecuteQueuedItems $_ /nologo | Write-Verbose
-  }
+  # https://msdn.microsoft.com/en-us/magazine/cc163808.aspx
 
-  Write-Verbose "$ngen queue continue"
-  & $ngen queue continue /nologo  | Write-Verbose
+  foreach ($ngenexe in $ngen) {
+    Write-Verbose "Starting tasks using ngen '$ngenexe'"
+
+    if ( $Update ) {
+      Write-Verbose "$ngenexe update /queue /nologo # $Force"
+      if ( $Force ) {
+        & $ngenexe update /queue /nologo /force | Write-Verbose
+      }
+      else {
+        & $ngenexe update /queue /nologo | Write-Verbose
+      }
+    }
+
+    $PriorityLevels | %{
+      Write-Verbose "$ngenexe ExecuteQueuedItems $_"
+      & $ngenexe ExecuteQueuedItems $_ /nologo | Write-Verbose
+    }
+
+    Write-Verbose "$ngenexe queue continue"
+    & $ngenexe queue continue /nologo  | Write-Verbose
+  }
 }
 
 function Get-NgenService {
   [CmdletBinding()] Param(
     [Switch] $Name,
-    [String] $ngen = (Get-Ngen -Current)
+    [String[]] $ngen
   )
-  Write-Verbose "$ngen queue status"
-  $clr = & $ngen queue status /nologo    | ?{ $_ -imatch 'clr' }
-  $SvcName = $clr | %{
-    [String]([Regex]::Match($_,':\s*(\S.*)\s*')).Groups[1].Captures[0]
-  }
-  if ( $Name ) {
-    $SvcName
-  } else {
-    Get-Service -Name $SvcName
+
+  # Not set in parameter due to PS coercing array into string
+  $ngen = if ( -not($ngen) ) { Get-Ngen }
+
+  foreach ($ngenexe in $ngen) {
+    Write-VerboSe "$ngenexe queue status"
+    $clr = & $ngenexe queue status /nologo    | ?{ $_ -imatch 'clr' }
+    $SvcName = $clr | %{
+      [String]([Regex]::Match($_,':\s*(\S.*)\s*')).Groups[1].Captures[0]
+    }
+    if ( $Name ) {
+      $SvcName
+    } else {
+      Get-Service -Name $SvcName
+    }
   }
 }
 
@@ -732,7 +749,7 @@ function Get-ObjectQuery {
           if ( $Dereference ) {
             $FlattenedResult += @( $ThisObject.($_) )
           } else {
-            $Result | Add-Member NoteProperty $_ ($ThisObject.($_))
+            $Result | Add-Member NoteProperty $_ ($ThisObject.($_)) -Force
           }
         }
       }
@@ -837,6 +854,33 @@ function Get-OS {
   Get-WMIQuery @PSBoundParameters -Class Win32_OperatingSystem
 }
 
+Function Get-OSArchitecture {
+  param(
+    [Switch] $Bitness,
+    [Switch] $Short,
+    [Switch] $Long
+  )
+
+  $OSArchitecture = (Gwmi -NameSpace "root\cimv2" -Class Win32_OperatingSystem).OSArchitecture
+  $BitnessValue   = [Int32][String]([Regex]::Match( $OSArchitecture, '(\d+)' )).Groups[1]
+
+  if ( $Bitness ) {
+    $BitnessValue
+  }
+  elseif ( $Short ) {
+    Switch ( $BitnessValue ) {
+      64 { 'x64' }
+      32 { 'x86' }
+    }
+  }
+  elseif ( $Long ) {
+    Switch ( $BitnessValue ) {
+      64 { 'x86_64' }
+      32 { 'x86' }
+    }
+  }
+}
+
 function Get-Cpu {
   [CmdletBinding()] Param(
     [Parameter(ParameterSetName='default',Mandatory=$True,Position=1)]
@@ -858,19 +902,21 @@ function Get-Cpu {
       [Switch] $Bitness
   )
 
-  if ( $Architecture ) {
-    switch -regex ( (Get-Win32_Processor)[0].Architecture ) {
-      0 { 'x86'     ; break; }
-      1 { 'MIPS'    ; break; }
-      2 { 'Alpha'   ; break; }
-      3 { 'PowerPC' ; break; }
-      4 { 'ARM'     ; break; }
-      6 { 'IA64'    ; break; }
-      9 { 'x64'     ; break; }
+  if ( $PSCmdLet.ParameterSetName -eq 'convenience' ) {
+    if ( $Architecture ) {
+      switch -regex ( (Get-Win32_Processor)[0].Architecture ) {
+        0 { 'x86'     ; break; }
+        1 { 'MIPS'    ; break; }
+        2 { 'Alpha'   ; break; }
+        3 { 'PowerPC' ; break; }
+        4 { 'ARM'     ; break; }
+        6 { 'IA64'    ; break; }
+        9 { 'x64'     ; break; }
+      }
     }
-  }
-  elseif ( $Bitness ) {
-    (Get-Win32_Processor)[0].AddressWidth
+    elseif ( $Bitness ) {
+      (Get-Win32_Processor)[0].AddressWidth
+    }
   }
   else {
     Get-WMIQuery @PSBoundParameters -Class Win32_Processor
@@ -908,13 +954,13 @@ function Invoke-SystemAudit {
   net.exe use   > "$logDir\net+use.log"
 
   Write-Verbose "Gathering information about disk drives."
-  gwmi Win32_DiskDrive    | fl * > "$LogDir\gwmi+Win32_DiskDrive.log"
-  gwmi Win32_LogicalDrive -ea 0 | fl * > "$LogDir\gwmi+Win32_LogicalDrive.log"
-  gwmi Win32_DiskQuota    | fl * > "$LogDir\gwmi+Win32_DiskQuota.log"
+  gwmi Win32_DiskDrive                | fl * > "$LogDir\gwmi+Win32_DiskDrive.log"
+  gwmi Win32_LogicalDrive -ea 0       | fl * > "$LogDir\gwmi+Win32_LogicalDrive.log"
+  gwmi Win32_DiskQuota                | fl * > "$LogDir\gwmi+Win32_DiskQuota.log"
   gwmi Win32_MappedLogicalDrive -ea 0 | fl * > "$LogDir\gwmi+Win32_MappedLogicalDrive.log"
-  gwmi Win32_CDROMDrive   | fl * > "$LogDir\gwmi+Win32_CDROMDrive.log"
-  chkntfs.exe "$Env:SystemDrive" > "$LogDir\chkntfs.exe+$($Env:SystemDrive -replace ':').log"
-  Show-DiskUtilization -Factor 1GB  | fl * > "$LogDir\Show-DiskUtilization+-Factor+1GB.log"
+  gwmi Win32_CDROMDrive               | fl * > "$LogDir\gwmi+Win32_CDROMDrive.log"
+  chkntfs.exe "$Env:SystemDrive"             > "$LogDir\chkntfs.exe+$($Env:SystemDrive -replace ':').log"
+  Show-DiskUtilization -Factor 1GB    | fl * > "$LogDir\Show-DiskUtilization+-Factor+1GB.log"
 
   Write-Verbose "Gathering information about the operating system"
   (Get-Win32_OperatingSystem) | fl * > "$logDir\gwmi+Win32_OperatingSystem.log"
@@ -924,8 +970,15 @@ function Invoke-SystemAudit {
   Get-Uptime                 | fl * > "$logDir\Get-Uptime.log"
 
   Write-Verbose "Gathering information about the System Enclosure/BIOS"
-  Get-Win32_Bios              | fl * > "$logDir\gwmi+Win32_BIOS.log"
-  gwmi Win32_SystemEnclosure  | fl * > "$logDir\gwmi+Win32_SystemEnclosure.log"
+  Get-Win32_Bios              | fl * > "$logDir\Get-Win32_BIOS.log"
+  Get-Win32_SystemEnclosure   | fl * > "$logDir\Get-Win32_SystemEnclosure.log"
+  Get-Win32_Processor         | fl * > "$logDir\Get-Win32_Processor.log"
+  Gwmi Win32_PhysicalMemory   | fl * > "$logDir\Gwmi+Win32_PhysicalMemory.log"
+
+  Write-Verbose "Gathering information about running processes"
+  Get-TaskList                | fl * > "$logDir\Get-TaskList.log"
+  Get-TaskList -Service       | fl * > "$logDir\Get-TaskList+-Service.log"
+  Get-TaskList -ByModule      | fl * > "$logDir\Get-TaskList+-ByModule.log"
 
   Write-Verbose "Gathering information about drivers"
   Get-Driver -Extended        | fl * > "$logDir\Get-Driver+-Extended.log"
@@ -944,6 +997,10 @@ function Invoke-SystemAudit {
 
   Write-Verbose "Collecting SystemInfo"
   systeminfo.exe 2>&1 > "$logDir\systeminfo.exe.log"
+  Get-Sid           | fl * > "$logDir\Get-Sid.log"
+  Get-MachineId     | fl * > "$logDir\Get-MachineId.log"
+  Get-CurrentDomain | fl * > "$logDir\Get-CurrentDomain.log"
+  Get-CurrentUser   | fl * > "$logDir\Get-CurrentUser.log"
 
   Write-Verbose "Running SysInternals log gathering tools"
   Initialize-SysInternals
@@ -951,6 +1008,10 @@ function Invoke-SystemAudit {
     & CoreInfo.exe           > "$logDir\CoreInfo.txt"
   } else {
     Write-Warning "SysInternals CoreInfo.exe not available."
+  }
+  if ( gcm PsList.exe -ea 0 ) {
+    & PsList.exe -x          > "$logDir\PsList+-x.txt"
+    & PsList.exe -t          > "$logDir\PsList+-t.txt"
   }
   if ( gcm PsInfo.exe -ea 0 ) {
     & PsInfo.exe   -h -s -d  > "$logDir\PsInfo.txt"
@@ -962,16 +1023,26 @@ function Invoke-SystemAudit {
   } else {
     Write-Warning "SysInternals NTFSInfo.exe not available."
   }
+  if ( gcm ListDlls.exe -ea 0 ) {
+    & ListDlls.exe -r        > "$logDir\ListDlls.exe+-r.log"
+  }
+  if ( gcm autorunsc.exe -ea 0 ) {
+    & autorunsc.exe          > "$logDir\autorunsc.exe.log"
+  }
 
   Write-Verbose "Gathering information about Installed Products and Hotfixes"
   gwmi Win32_Product | sort InstallDate -Descending > "$logDir\gwmi+Win32_Product.log"
   ls -R -Force "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" | fl * > "$logDir\AddRemoveProgramsUninstallInfo.log"
-  Get-HotFix | fl * > "$logDir\Get-HotFix.log"
-  Get-DotNetVersion | fl * > "$logDir\Get-DotNetVersion.log"
+  Get-HotFix | fl *            > "$logDir\Get-HotFix.log"
+  Search-WindowsUpdate -History | fl * > "$logDir\Search-WindowsUpdate+-History.log"
+
+  if ( gcm Get-DotNetFramework -ea 0 ) {
+    Get-DotNetFramework | fl * > "$logDir\NTFSInfo.txt"
+  }
 
   Write-Verbose "Gathering Windows and Network Services information"
   gwmi Win32_Service | fl *   > "$logDir\gwmi+Win32_Service.log"
-  & netstat -bona             > "$logDir\netstat+-bona.log"
+  & netstat.exe -bona         > "$logDir\netstat+-bona.log"
 
   Write-Verbose "Gathering information about running processes"
   Get-Process | fl * > "$logDir\Get-Process.log"
@@ -981,17 +1052,24 @@ function Invoke-SystemAudit {
     Get-WindowsFeature | fl * > "$logDir\Get-WindowsFeature.log"
   }
 
-  try {
-    # Fixme : This is really slow
-    Write-Verbose "Gathering Windows Event Logs"
-      gwmi Win32_NTLogEvent > "$logDir\Gwmi+Win32_NTLogEvent.log"
-    #Get-EventLog -list | %{
-      # Get-WinEvent -LogName $_.Log -ea 0 2> $null | fl * > "$logDir\Get-WinEvent.log"
-      #}
-  } catch [Exception] {}
+  # try {
+  #   # Fixme : This is really slow
+  #   Write-Verbose "Gathering Windows Event Logs"
+  #     gwmi Win32_NTLogEvent > "$logDir\Gwmi+Win32_NTLogEvent.log"
+  #   #Get-EventLog -list | %{
+  #     # Get-WinEvent -LogName $_.Log -ea 0 2> $null | fl * > "$logDir\Get-WinEvent.log"
+  #     #}
+  # } catch [Exception] {}
 
   Write-Verbose "Gathering information about scheduled tasks"
   Get-ScheduledTask | fl * > "$logDir\Get-ScheduledTask.log"
+
+  Write-Verbose "Gather information about roles and features"
+  dism.exe -english -online -get-features >  "$logdir\dism.exe+-english+-online+-get-features.log"
+  if ( gmo -ListAvailable ServerManager ) {
+    ipmo ServerManager
+    Get-WindowsFeatures | fl *            >  "$logDir\Get-WindowsFeatures.log"
+  }
 
   Write-Verbose "Gathering information about PowerShell Drives"
   Get-PSDrive | fl * > "$logDir\Get-PSDrive.log"
@@ -1018,38 +1096,38 @@ function Invoke-SystemAudit {
   }
 
   Write-Verbose "Gathering netsh information"
-  & netsh advfirewall consec show rule name=all > "$logDir\netsh+advfirewall+consec+show+rule+name=all.log"
-  & netsh advfirewall dump            > "$logDir\netsh+advfirewall+dump.log"
-  & netsh advfirewall export            "$logDir\netsh+advfirewall+export.log" # the missing redirect is intentional
-  & netsh advfirewall firewall dump   > "$logDir\netsh+advfirewall+firewall+dump.log"
-  & netsh advfirewall firewall show rule name=all > "$logDir\netsh+advfirewall+firewall+show+rule+name=all.log"
-  & netsh advfirewall monitor dump    > "$logDir\netsh+advfirewall+monitor.log"
-  & netsh advfirewall show all        > "$logDir\netsh+advfirewall+show+all.log"
-  & netsh advfirewall show global     > "$logDir\netsh+advfirewall+show+global.log"
-  & netsh bridge dump                 > "$logDir\netsh+bridge+dump.log"
-  & netsh dump                        > "$logDir\netsh+dump.log"
-  & netsh firewall show state         > "$logDir\netsh+firewall+show+state.log"
-  & netsh http dump                   > "$logDir\netsh+http+dump.log"
-  & netsh interface dump              > "$logDir\netsh+interface+dump.log"
-  & netsh ipsec dump                  > "$logDir\netsh+ipsec+dump.log"
-  & netsh lan show interfaces         > "$logDir\netsh+lan+show+interfaces.log"
-  & netsh lan show interfaces         > "$logDir\netsh+lan+show+interfaces.log"
-  & netsh lan show profiles           > "$logDir\netsh+lan+show+profiles.log"
-  & netsh lan show settings           > "$logDir\netsh+lan+show+settings.log"
-  & netsh nap dump                    > "$logDir\netsh+nap+dump.log"
-  & netsh netio dump                  > "$logDir\netsh+netio+dump.log"
-  & netsh rpc dump                    > "$logDir\netsh+rpc+dump.log"
-  & netsh winhttp dump                > "$logDir\netsh+winhttp+dump.log"
-  & netsh winsock dump                > "$logDir\netsh+winsock+dump.log"
-  & netsh interface ipv6 show /? | ?{ $_ -imatch "^show" } | %{
+  & netsh.exe advfirewall consec show rule name=all > "$logDir\netsh+advfirewall+consec+show+rule+name=all.log"
+  & netsh.exe advfirewall dump            > "$logDir\netsh.exe+advfirewall+dump.log"
+  & netsh.exe advfirewall export            "$logDir\netsh.exe+advfirewall+export.log" # the missing redirect is intentional
+  & netsh.exe advfirewall firewall dump   > "$logDir\netsh.exe+advfirewall+firewall+dump.log"
+  & netsh.exe advfirewall firewall show rule name=all > "$logDir\netsh.exe+advfirewall+firewall+show+rule+name=all.log"
+  & netsh.exe advfirewall monitor dump    > "$logDir\netsh.exe+advfirewall+monitor.log"
+  & netsh.exe advfirewall show all        > "$logDir\netsh.exe+advfirewall+show+all.log"
+  & netsh.exe advfirewall show global     > "$logDir\netsh.exe+advfirewall+show+global.log"
+  & netsh.exe bridge dump                 > "$logDir\netsh.exe+bridge+dump.log"
+  & netsh.exe dump                        > "$logDir\netsh.exe+dump.log"
+  & netsh.exe firewall show state         > "$logDir\netsh.exe+firewall+show+state.log"
+  & netsh.exe http dump                   > "$logDir\netsh.exe+http+dump.log"
+  & netsh.exe interface dump              > "$logDir\netsh.exe+interface+dump.log"
+  & netsh.exe ipsec dump                  > "$logDir\netsh.exe+ipsec+dump.log"
+  & netsh.exe lan show interfaces         > "$logDir\netsh.exe+lan+show+interfaces.log"
+  & netsh.exe lan show interfaces         > "$logDir\netsh.exe+lan+show+interfaces.log"
+  & netsh.exe lan show profiles           > "$logDir\netsh.exe+lan+show+profiles.log"
+  & netsh.exe lan show settings           > "$logDir\netsh.exe+lan+show+settings.log"
+  & netsh.exe nap dump                    > "$logDir\netsh.exe+nap+dump.log"
+  & netsh.exe netio dump                  > "$logDir\netsh.exe+netio+dump.log"
+  & netsh.exe rpc dump                    > "$logDir\netsh.exe+rpc+dump.log"
+  & netsh.exe winhttp dump                > "$logDir\netsh.exe+winhttp+dump.log"
+  & netsh.exe winsock dump                > "$logDir\netsh.exe+winsock+dump.log"
+  & netsh.exe interface ipv6 show /? | ?{ $_ -imatch "^show" } | %{
     $command = ($_ -split '\s')[1]
     $filename = ((echo netsh interface ipv6 show $command) -join "+") + ".log"
-    & netsh interface ipv6 show $command > "$logDir\$filename"
+    & netsh.exe interface ipv6 show $command > "$logDir\$filename"
   }
   & netsh interface ipv4 show /? | ?{ $_ -imatch "^show" } | %{
     $command = ($_ -split '\s')[1]
     $filename = ((echo netsh interface ipv4 show $command) -join "+") + ".log"
-    & netsh interface ipv4 show $command > "$logDir\$filename"
+    & netsh.exe interfac ipv4 show $command > "$logDir\$filename"
   }
 
   Write-Verbose "Gathering IPGlobal Properties"
@@ -1063,20 +1141,22 @@ function Invoke-SystemAudit {
   Get-UserProfile                 | fl * > "$logDir\Get-UserProfile.log"
   Get-User                        | fl * > "$logDir\Get-User.log"
   Get-Group                       | fl * > "$logDir\Get-Group.log"
-  net accounts                           > "$logDir\net+accounts.log"
-  net user                               > "$logDir\net+user.log"
-  net group                              > "$logDir\net+group.log"
-  net config                             > "$logDir\net+config.log"
-  net file                               > "$logDir\net+file.log"
-  net localgroup                         > "$logDir\net+localgroup.log"
-  net session                            > "$logDir\net+session.log"
-  net share                              > "$logDir\net+share.log"
-  net statistics                         > "$logDir\net+statistics.log"
-  net time                               > "$logDir\net+time.log"
-  net use                                > "$logDir\net+use.log"
-  net user                               > "$logDir\net+user.log"
-  net view                               > "$logDir\net+view.log"
+  net.exe accounts                       > "$logDir\net.exe+accounts.log"
+  net.exe user                           > "$logDir\net.exe+user.log"
+  net.exe group                          > "$logDir\net.exe+group.log"
+  net.exe config                         > "$logDir\net.exe+config.log"
+  net.exe file                           > "$logDir\net.exe+file.log"
+  net.exe localgroup                     > "$logDir\net.exe+localgroup.log"
+  net.exe session                        > "$logDir\net.exe+session.log"
+  net.exe share                          > "$logDir\net.exe+share.log"
+  net.exe statistics                     > "$logDir\net.exe+statistics.log"
+  net.exe time                           > "$logDir\net.exe+time.log"
+  net.exe use                            > "$logDir\net.exe+use.log"
+  net.exe user                           > "$logDir\net.exe+user.log"
+  net.exe view                           > "$logDir\net.exe+view.log"
   getmac.exe                             > "$logDir\getmac.exe.log"
+  netstat -ban                           > "$logDir\netstat.exe+-ban.log"
+  arp.exe -an                            > "$logDir\arp.exe+-an.log"
 
   Write-Verbose "Gathering Information about powershell"
   $PSVersionTable                 | fl * > "$logDir\PSVersionTable.log"
@@ -2201,7 +2281,6 @@ function Invoke-Sysprep {
   )
   # TODO - Look at reusing the unattend.xml files
   # Support modes
-  Write-Verbose "Enabling sysprep-based OS Generalizations."
 
   if (Test-Path($sysprep = ls (Join-Path $Env:SystemRoot "System32\Sysprep\sysprep.exe") | %{$_.FullName})) {
     if ( (Get-Win32_OperatingSystem).Version -lt 6 ) { # xp
@@ -2624,8 +2703,10 @@ End If
     $Script
   }
 
-  Write-Verbose "  reg.exe add '$TargetKey' /f /v $Name /t REG_SZ /d $StartupCommand"
-  & reg.exe add $TargetKey /v $Name /t REG_SZ /d $StartupCommand /f | Write-Verbose
+  Set-ItemProperty -Path "Registry::$TargetKey" -Name $Name -Value $StartupCommand `
+                   -Type String -Verbose:$VerbosePreference -ea 1
+  # Write-Verbose "  reg.exe add '$TargetKey' /f /v $Name /t REG_SZ /d $StartupCommand"
+  # & reg.exe add $TargetKey /v $Name /t REG_SZ /d $StartupCommand /f | Write-Verbose
 }
 
 function Install-GlobalLogonScript {            #M:UserLogon
@@ -2948,8 +3029,10 @@ function Uninstall-StartupCommand {             #M:UserLogon
       }
     }
     elseif ( $_.Location -imatch '^HK' ) {
-      Write-Verbose "  reg.exe delete $($Command.Location) /v $($Command.Name) /f"
-      reg.exe delete "$($Command.Location)" /v "$($Command.Name)" /f  | Write-Verbose
+      Remove-ItemProperty -Path "Registry::$($Command.Location)" -Name $Command.Name `
+                          -Verbose:$VerbosePreference -ea 1
+      #Write-Verbose "  reg.exe delete $($Command.Location) /v $($Command.Name) /f"
+      #reg.exe delete "$($Command.Location)" /v "$($Command.Name)" /f  | Write-Verbose
     }
     else {
       Write-Warning "Uninstall not implemented for location '$($Command.Location)' ($($Command.Command))"
@@ -3328,6 +3411,44 @@ function Get-ISO8601TimeStamp {                 #M:TimeUtils
   return ($_ = if ( $Compact ) { $Result -replace '[-:]','' } else { $Result })
 }
 
+function Enable-WinRM {
+  [CmdletBinding()] Param(
+  )
+
+  winrm quickconfig -q
+  winrm quickconfig -transport:http
+
+  winrm set winrm/config              '@{MaxTimeoutms="1800000"}'
+  winrm set winrm/config/winrs        '@{MaxMemoryPerShellMB="300"}'
+  winrm set winrm/config/service      '@{AllowUnencrypted="true"}'
+  winrm set winrm/config/service/auth '@{Basic="true"}'
+  winrm set winrm/config/client/auth  '@{Basic="true"}'
+  winrm set winrm/config/listener?Address=*+Transport=HTTP '@{Port="5985"}'
+
+  netsh advfirewall firewall set rule group="remote administration" new enable=yes
+  netsh firewall add portopening TCP 5985 "Port 5985"
+
+  Get-Service winrm | Set-Service -StartupType Manual -PassThru | Restart-Service
+}
+
+function Set-ProcessPriority {
+  [CmdletBinding()] Param(
+    [Int32] $Id,
+    [System.Diagnostics.ProcessPriorityClass] $Priority
+  )
+  Get-Process -Id $Id | %{ $_.PriorityClass = $Priority }
+  Gwmi Win32_Process -Filter "ProcessId = '$Id'" | %{ $_.SetPriority( $Priority.Value__ ) }
+}
+
+function Find-String {
+  [CmdletBinding()] Param(
+    [Regex]       $Pattern,
+    [IO.FileInfo] $File
+  )
+  cat $File | ?{ $_ -imatch $Pattern }
+}
+
+Set-Alias grep      Find-String
 Set-Alias reboot    Restart-Computer
 Set-Alias poweroff  Stop-Computer
 
