@@ -24,7 +24,7 @@ declare                 \
   zone=                 \
   zone_id=
 
-while getopts "d:D:g:h:i:k:N:n:o:s:T:t:z:" opt; do
+while getopts "d:D:g:hH:i:k:N:n:o:s:T:t:z:" opt; do
   case $opt in
     d) disk_offering="$OPTARG"
       ;;
@@ -32,7 +32,9 @@ while getopts "d:D:g:h:i:k:N:n:o:s:T:t:z:" opt; do
       ;;
     g) group="$OPTARG"
       ;;
-    h) hypervisor="$OPTARG"
+    H) hypervisor="$OPTARG"
+      ;;
+    h) show_help; exit 3;
       ;;
     i) iso="$OPTARG"
       ;;
