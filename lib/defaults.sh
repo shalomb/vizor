@@ -19,8 +19,12 @@ if [[ -z ${CMDLINE-} ]] ; then
   export CMDLINE="$CMD ${ARGS[@]-}"
 fi
 
-DIR=$( cd "${BASH_SOURCE[1]%/*}" && pwd )
-SCRIPT="$DIR/${BASH_SOURCE[1]##*/}"
+if [[ ${BASH_SOURCE[1]-} ]]; then
+  DIR=$( cd "${BASH_SOURCE[1]%/*}" && pwd )
+  SCRIPT="$DIR/${BASH_SOURCE[1]##*/}"
+else
+  DIR="$PWD"
+fi
 
 PATH="$PATH:$DIR"
 
