@@ -32,6 +32,7 @@ while getopts ":w:u:p:" opt; do
 done
 
 RAZOR_ROOT="$working_dir/razor-server-0.15.0"
+[[ ! -e $RAZOR_ROOT ]] && ln -s "${RAZOR_ROOT}/" "${RAZOR_ROOT%-[0-9]*}/"
 cd "$RAZOR_ROOT"
 
 [[ -e config.yaml ]] || cp -a config.yaml.sample config.yaml
@@ -77,13 +78,20 @@ done
 jruby -S torquebox deploy --env production
 service razor-server restart
 
+printf 'Waiting on razor-server API access ... '
 declare max_tries=60 try=0
-while ! curl 'http://localhost:8080/api' | jq -c -r -e '.version.server' 2>/dev/null; do
-  printf '.'
-  sleep 1
+while ! api_def=$( curl -sSL 'http://localhost:8080/api' 2>/dev/null ) ec=$? || [[ -z $api_def ]]; do
+  printf "$ec "
+  sleep 5
   (( try++ )) || true
   if (( try > max_tries )); then
     die "Razor API server not responding after $max_tries"
   fi
 done
+
+echo ''
+jq -S '.' <<<"$api_def"
+server_version=$( jq -c -r '.version.server // empty' <<<"$api_def" )
+echo ''
+echo -e "API server functional, razor server version : $server_version"
 
