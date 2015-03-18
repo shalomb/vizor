@@ -82,8 +82,8 @@ results=$( curl -s -X GET 'http://localhost:9200/'"$database"'/'"$database"'/_se
 
 
 if   (( display_list )); then
-  { echo 'image,create time,vstring,vstring_long,mount_point'
-    jq -S -r -c -e ' . | [.id,.creation_time,.vstring,.vstring_long,.mount_point] ' <<<"$results" |
+  { echo 'image,create time,vstring,display_name,vstring_long,mount_point'
+    jq -S -r -c -e ' . | [.id,.creation_time,.vstring,.display_name,.vstring_long,.mount_point] ' <<<"$results" |
       sed -r 's/^\[|\]$//g'
   } | csv_to_table
 
