@@ -370,6 +370,25 @@ Get the ngen for the current (process) .NET runtime
 #>
 }
 
+function Get-NgenTask {
+  [CmdletBinding()] Param (
+    [Switch] $Current
+  )
+
+  $CurrentNgen = ls (Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'ngentask.exe')
+
+  if ( $Current ) { return $CurrentNgen }
+
+  ls ((Join-Path $Env:WinDir 'Microsoft.NET\Framework*\*\ngentask.exe'), $CurrentNgen) | ?{ Test-Path $_ } | Get-Unique
+<#
+.SYNOPSIS
+Get the versions of ngen available for the installed .NET frameworks
+
+.PARAMETER Current
+Get the ngen for the current (process) .NET runtime
+#>
+}
+
 function Add-AssemblyToNgenQueue {
   [CmdletBinding()] Param(
     [String[]]  $Assemblies = @(),
@@ -442,7 +461,7 @@ function Get-NgenService {
   $ngen = if ( -not($ngen) ) { Get-Ngen }
 
   foreach ($ngenexe in $ngen) {
-    Write-VerboSe "$ngenexe queue status"
+    Write-Verbose "$ngenexe queue status"
     $clr = & $ngenexe queue status /nologo    | ?{ $_ -imatch 'clr' }
     $SvcName = $clr | %{
       [String]([Regex]::Match($_,':\s*(\S.*)\s*')).Groups[1].Captures[0]
@@ -2283,7 +2302,7 @@ function Invoke-Sysprep {
   # Support modes
 
   if (Test-Path($sysprep = ls (Join-Path $Env:SystemRoot "System32\Sysprep\sysprep.exe") | %{$_.FullName})) {
-    if ( (Get-Win32_OperatingSystem).Version -lt 6 ) { # xp
+    if ( [Double](Get-OSVersion).CurrentVersion -lt 6 ) { # xp
     # $args = ('-reseal', '-activated', '-mini',  '-noreboot')
       $args = ('-audit',  '-quiet')
     }
@@ -2301,8 +2320,8 @@ function Invoke-Sysprep {
       if ( -not( $args.count ) ) {
         $args = ('-oobe', '-generalize', '-quit')
       }
-
     }
+
     Write-Verbose "  Invoking $sysprep $args"
     if ( $process = Start-Process -FilePath $sysprep -ArgumentList $args -PassThru ) {
       $process | Wait-Process
@@ -2620,10 +2639,10 @@ function Get-AutoAdminLogon {                   #M:UserLogon
 
 function Set-AutoAdminLogon {                   #M:UserLogon
   [CmdletBinding()] Param(
-    [Parameter(Mandatory=$False)] [System.Boolean] $AutoAdminLogon      = $True,
-    [Parameter(Mandatory=$False)] [System.String]  $DefaultDomainName,
-    [Parameter(Mandatory=$False)] [System.String]  $DefaultUserName     = $Env:USERNAME,
-    [Parameter(Mandatory=$False)] [System.String]  $DefaultPassword     = '-'
+    [Parameter(Mandatory=$False)] [String]  $DefaultUserName     = $Env:USERNAME,
+    [Parameter(Mandatory=$False)] [String]  $DefaultPassword     = '-',
+    [Parameter(Mandatory=$False)] [String]  $DefaultDomainName,
+    [Parameter(Mandatory=$False)] [Switch]  $AutoAdminLogon      = $True
   )
 
   $DefaultDomainName = if ( ($local:gwmi = (Get-Win32_ComputerSystem)).PartOfDomain ) {
@@ -2634,7 +2653,7 @@ function Set-AutoAdminLogon {                   #M:UserLogon
     # $gwmi.DNSHostName # This fails on XP ??
   }
 
-  & reg.exe add "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" /f   /v AutoAdminLogon      /t REG_SZ     /d ([int]$AutoAdminLogon) | Write-Verbose
+  & reg.exe add "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" /f   /v AutoAdminLogon      /t REG_SZ     /d ([Int][Boolean]$AutoAdminLogon) | Write-Verbose
   & reg.exe add "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" /f   /v DefaultDomainName   /t REG_SZ     /d $DefaultDomainName | Write-Verbose
   & reg.exe add "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" /f   /v DefaultUserName     /t REG_SZ     /d $DefaultUserName | Write-Verbose
   & reg.exe add "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" /f   /v DefaultPassword     /t REG_SZ     /d $DefaultPassword | Write-Verbose
@@ -3097,16 +3116,26 @@ function Get-StartupCommand {                   #M:UserLogon
   }
 }
 
-function Disable-FirstLogonAnimations {         #M:UserLogon
-  [CmdletBinding()] Param()
-  Write-Verbose "Disabling First Logon Animations"
-  if ( (Get-Win32_OperatingSystem).Version -ge 6.2 ) { # Windows 8
-    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"  /v "EnableFirstLogonAnimation" /t REG_DWORD  /d 0x0 /f | Write-Verbose
-    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"      /v "EnableFirstLogonAnimation" /t REG_DWORD  /d 0x0 /f | Write-Verbose
+function Set-FirstLogonAnimations {         #M:UserLogon
+  [CmdletBinding()] Param(
+    [Switch] $Enable
+  )
+  Write-Verbose "Setting First Logon Animations ($Enable)"
+  if ( (Get-Win32_OperatingSystem).Version -ge 6.2 ) { # > Windows 8
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"  /v "EnableFirstLogonAnimation" /t REG_DWORD  /d ([Int][Boolean]$Enable) /f | Write-Verbose
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"      /v "EnableFirstLogonAnimation" /t REG_DWORD  /d ([Int][Boolean]$Enable) /f | Write-Verbose
   }
   elseif ( (Get-Win32_OperatingSystem).Version -le 5.1 ) { # Windows XP
-    & reg.exe add "HKLM\Software\Microsoft\Windows NT\Current Version\WinLogon" /v  "LogonType" /t REG_DWORD  /d 0x0 /f | Write-Verbose
+    & reg.exe add "HKLM\Software\Microsoft\Windows NT\Current Version\WinLogon" /v  "LogonType" /t REG_DWORD  /d ([Int][Boolean]$Enable) /f | Write-Verbose
   }
+}
+
+function Enable-FirstLogonAnimations {         #M:UserLogon
+  [CmdletBinding()] Param() Set-FirstLogonAnimations -Enable
+}
+
+function Disable-FirstLogonAnimations {         #M:UserLogon
+  [CmdletBinding()] Param() Set-FirstLogonAnimations -Enable:$False
 }
 
 function Disable-ScreenSaver {                  #M:DesktopUtils
@@ -3201,7 +3230,9 @@ function Install-DesktopShortcut {              #M:DesktopUtils
       Write-Verbose "  $linkPath"
       $WSShell                = New-Object -ComObject WScript.Shell
       $link                   = $WSShell.CreateShortcut($linkPath)
-      $link.WorkingDirectory  = $WSShell.ExpandEnvironmentStrings('%USERPROFILE%')
+      # This is a literal and not expanded as it is to be installed in the all-users dir
+      # $link.WorkingDirectory  = $WSShell.ExpandEnvironmentStrings('%USERPROFILE%')
+      $link.WorkingDirectory  = '%USERPROFILE%'
       $link.WindowStyle       = 1
       $link.Description       = $Label
       $link.TargetPath        = $Command
@@ -3225,7 +3256,7 @@ function Disable-ServerManager {                #M:DesktopUtils
   Write-Verbose "Disabling Server Manager"
   if (Test-Path "HKLM:\SOFTWARE\Microsoft\ServerManager") {
     & reg.exe add "HKLM\SOFTWARE\Microsoft\ServerManager" /f  /v  "DoNotOpenServerManagerAtLogon" /t REG_DWORD  /d 0x1 | Write-Verbose
-    & reg.exe add "HKCU\Software\Microsoft\ServerManager" /f  /v  "CheckedUnattendLaunchSetting"  /t REG_DWORD  /d 0x0 | Write-Verbosooe
+    & reg.exe add "HKCU\Software\Microsoft\ServerManager" /f  /v  "CheckedUnattendLaunchSetting"  /t REG_DWORD  /d 0x0 | Write-Verbose
   }
 }
 
