@@ -1,0 +1,129 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#installing-vizor">Installing vizor</a><ul>
+<li><a href="#preparation">Preparation</a><ul>
+<li><a href="#requirements-for-the-vizor-host">Requirements for the vizor host</a></li>
+<li><a href="#infrastructure-requirements">Infrastructure Requirements</a></li>
+<li><a href="#optional-infrastructure-requirements">Optional Infrastructure Requirements</a></li>
+<li><a href="#pre-setup-tests">Pre-setup tests</a></li>
+<li><a href="#building-winpe-.wim-images">Building WinPE (.wim) images</a></li>
+</ul></li>
+<li><a href="#installation">Installation</a></li>
+</ul></li>
+<li><a href="#known-issues-and-mitigations">Known Issues and Mitigations</a><ul>
+<li><a href="#ipxe-does-not-successfully-hand-off-to-razor-on-xenserver-6.5">iPXE does not successfully hand-off to razor on XenServer 6.5</a></li>
+<li><a href="#razor-client-uses-incorrect-port-when-communicating-with-server-api">razor client uses incorrect port when communicating with server API</a></li>
+</ul></li>
+</ul>
+</div>
+<h1 id="installing-vizor">Installing vizor</h1>
+<h2 id="preparation">Preparation</h2>
+<h3 id="requirements-for-the-vizor-host">Requirements for the vizor host</h3>
+<p>A host or VM with the following requirements</p>
+<ul>
+<li>Debian &quot;wheezy&quot; 7.x vanilla installation</li>
+<li>4 GB RAM (8 GB recommended if building &gt; 20 VMs concurrently)</li>
+<li>2 vCPUs (4 vCPUs recommended if building &gt; 20 VMs concurrently)</li>
+<li>8 GB disk space for root volume</li>
+<li>1 Gbps link to network directory hosting install ISOs.</li>
+</ul>
+<blockquote>
+<p>If performing installs for a large number of VMs, it is advisable to ensure sufficient bandwidth between the vizor host and the ISO repositories otherwise the build times of all VMs is affected adverself.</p>
+</blockquote>
+<blockquote>
+<p>Partitioning network traffic across separate links may also be needed to ensure that vizor's access to the ISO repository is kept on a separate network segment to the distribution of the install images to VMs being built.</p>
+</blockquote>
+<blockquote>
+<p>If ISOs are copied to the vizor host for it to use as a local repository sufficient disk space is needed to store those.</p>
+</blockquote>
+<p>Additionally these configurations are needed to the vizor host</p>
+<ul>
+<li><a href="http://www.debianhelp.co.uk/hostname.htm">Hostname set</a></li>
+<li><a href="http://www.tomshardware.co.uk/faq/id-1954305/adding-dns-host-record-windows-server-2012-dns-server.html">Hostname/FQDN registered in DNS</a></li>
+</ul>
+<h3 id="infrastructure-requirements">Infrastructure Requirements</h3>
+<ul>
+<li>DHCP Services to address VMs being built</li>
+<li>DNS resolution of the vizor host</li>
+<li>A fully setup cloudstack or xenserver pool</li>
+</ul>
+<h3 id="optional-infrastructure-requirements">Optional Infrastructure Requirements</h3>
+<ul>
+<li>A WSUS Server URL with appropriate WSUS profiles to speed up/control windows updates.</li>
+<li>A KMS Server if nodes do not derive this from DNS service records.</li>
+<li>An NTP/sNTP Server for time services if not handled by DHCP.</li>
+</ul>
+<h3 id="pre-setup-tests">Pre-setup tests</h3>
+<h4 id="hostname-resolution">Hostname resolution</h4>
+<pre><code>hostname      # hostname
+hostname -s   # short hostname
+hostname -f   # FQDN</code></pre>
+<h4 id="dns-resolution-of-the-vizor-hosts-fqdn">DNS resolution of the vizor host's FQDN</h4>
+<pre><code>nslookup vizor.example.com dnsserver.example.com</code></pre>
+<h4 id="test-mount-the-network-share-containing-isos">Test mount the network share containing ISOs</h4>
+<pre><code>mount -t cifs //mycifserver.example.com/isos /mnt/isos \
+  -o username=accessuser,password=S3cr3t,domain=example.com
+
+find /mnt/isos</code></pre>
+<h3 id="building-winpe-.wim-images">Building WinPE (.wim) images</h3>
+<p>The following steps require a machine running Windows 8.1 or Windows Server 2012 R2 with about 1GiB of space.</p>
+<p>Download the <a href="https://www.microsoft.com/en-gb/download/details.aspx?id=39982">Windows Assessment and Deployment Kit (Windows ADK) for Windows 8.1</a> and install the WinPE components using this powershell command.</p>
+<pre><code>mkdir -force c:\programdata\adk
+adksetup.exe /quiet /installpath c:\programdata\adk `
+  /features OptionId.WindowsPreinstallationEnvironment `
+            OptionId.DeploymentTools `
+  /norestart /log c:\ProgramData\adk\setup.log</code></pre>
+<p>Two WinPE images are generated under <code>c:\programdata\adk\*\*.wim</code>, a 32 and 64 bit image. These should be <a href="http://winscp.net/eng/docs/task_upload">copied</a> into the vizor host (/usr/src recommended) as these are required by the <code>setup</code> commands in the next steps.</p>
+<h2 id="installation">Installation</h2>
+<blockquote>
+<p>When using Perfoce, ensure the workspace is set for <a href="http://answers.perforce.com/articles/KB/3096">unix-style line endings</a> to ensure that the setup scripts are untainted and can be executed successfuly.</p>
+</blockquote>
+<p>Sync down the vizor source on to a suitable workspace and then mirror the directory to <code>/usr/src/vizor</code> on the vizor host and then invoke the setup.</p>
+<pre><code>source /usr/src/vizor/lib/completion.sh
+vizor setup vizor -w -c</code></pre>
+<p>The script prompts for data about razor passwords, locations to WinPE images, etc and will manage the installation and configuration of all the components needed by vizor. This process takes about ~20 minutes.</p>
+<p>Upon successful completion, vizor is ready to begin building VMs. Please refer to the <a href="building_vms.html">Building VMs</a> document for a guide and how-to.</p>
+<h1 id="known-issues-and-mitigations">Known Issues and Mitigations</h1>
+<h2 id="ipxe-does-not-successfully-hand-off-to-razor-on-xenserver-6.5">iPXE does not successfully hand-off to razor on XenServer 6.5</h2>
+<p>On XenServer 6.5 (this includes XenServer when used as a manager hypervisor under CloudStack/CloudPlatform, etc), iPXE isos built by vizor may not boot and hand-off provisioning to razor. This is a known upstream issue and a fix is expected in a future XenServer 6.5 hotfix or ipxe revision.</p>
+<p>To work around the issue, build the iPXE iso using the XenServer iPXE repository.</p>
+<pre><code>cd /usr/src
+aptitude install build-essential
+git clone git://hg.uk.xensource.com/carbon/creedence/ipxe.git
+cd ipxe/src
+wget -q &quot;http://myvizor.dns.domain:8080/api/microkernel/bootstrap&quot; -O bootstrap.ipxe
+make clean
+make
+make bin/ipxe.iso EMBED=&quot;$PWD&quot;/bootstrap.ipxe
+cp -a bin/ipxe.iso /var/www/ipxe/</code></pre>
+<h2 id="razor-client-uses-incorrect-port-when-communicating-with-server-api">razor client uses incorrect port when communicating with server API</h2>
+<p>To work around several issues in the past and keep the razor client up to date, it is installed directly from the master branch upstream. A breaking change means that the client now talks to the razor-server on port 8081 or similar while razor-server's API is set to listen on TCP port 8080.</p>
+<p>Several vizor build scripts are affected and yield unexpected results.</p>
+<p>To verify if the client needs to be updated, test it with</p>
+<pre><code>unset RAZOR_API
+
+root@stage-vizor:~# razor -d nodes
+Error: Could not connect to the server at http://localhost:8081/api
+       Connection refused - Connection refused</code></pre>
+<p>The workaround until a fix can be introduced is to set the RAZOR_API environment variable to use port 8080.</p>
+<pre><code>export RAZOR_API=&#39;http://localhost:8080/api&#39;
+
+root@stage-vizor:~# RAZOR_API=http://localhost:8080/api
+root@stage-vizor:~# razor -d nodes
+GET http://localhost:8080/api
+...</code></pre>
+<p>This can be made permanent across all future shells with an addition to <code>~/.bashrc</code>.</p>
+<pre><code>echo &quot;export RAZOR_API=&#39;http://localhost:8080/api&#39;&quot; &gt;&gt; ~/.bashrc</code></pre>
+</body>
+</html>

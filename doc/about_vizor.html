@@ -1,0 +1,58 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#about-vizor">About vizor</a><ul>
+<li><a href="#objectives">Objectives</a></li>
+<li><a href="#implementation">Implementation</a></li>
+<li><a href="#components">Components</a></li>
+</ul></li>
+</ul>
+</div>
+<h1 id="about-vizor">About vizor</h1>
+<p>vizor is a tool to perform unattended OS installs for VM provisioning and VM template preparation activities.</p>
+<h2 id="objectives">Objectives</h2>
+<p>vizor sets out to accomplish these (amongst other) objectives</p>
+<ul>
+<li>Address the need to build VM (and possibly physical) templates against a specification in code and avoid the overhead/problems of manual OS installations and associated post-install preparations.</li>
+<li>Manage the localization and custom needs of users in various geographical regions (geographic locations, timezones, system and input locales, licensing).</li>
+<li>Build and distribute VM templates for various hypervizor and cloud providers (e.g. XenServer, CloudPlatform, Hyper-v Generation 1 &amp; 2, VMWare ESX and possibly others) from few authoritative definitions of the VM deliverables (i.e. the VMs built on XenServer should exactly mirror those built on CloudStack for e.g. while only the platform provider changes).</li>
+<li>Reuse vanilla ISOs to avoid the overhead/problems of remastering them to facilitate automated installs. This is an important consideration when having to build a large number of VMs, periodically and across various geographical sites for different requirements.</li>
+<li>Address the need to perform consistent methods of installation across various virtual and physical machine providers in a standard, platform agnostic manner (by performing network-based unattended OS installations using standard PXE/iPXE).</li>
+<li>Provide an API surface that allows integrations with build systems, orchestration platforms, etc to trigger the build of VM template sets.</li>
+<li>Provide assistive automation to users to build templates to differing requirements or specifications.</li>
+</ul>
+<h2 id="implementation">Implementation</h2>
+<p>vizor builds on top of the PuppetLabs <a href="https://puppetlabs.com/solutions/next-generation-provisioning">Razor baremetal provisioner</a> by implementing a series of commands in a scripting layer that interface with</p>
+<ul>
+<li>Hypervizor/Cloud providers (currently XenServer and CloudStack) to manage virtual machine and associated lifecycle</li>
+<li>The razor web service to manage node-VM relationships, install repos, tasks, tags and policies to drive unattended installs within nodes.</li>
+<li>ISO and install image catalogs (currently windows ISOs) to manage razor repos.</li>
+</ul>
+<p>The commands are implemented as a series of (mainly bash) scripts intending to provide a VM/VM template build, provisioning and distribution workflow.</p>
+<h2 id="components">Components</h2>
+<p>vizor's component stack is the assembly of following technologies on the Debian platform.</p>
+<ul>
+<li><a href="https://github.com/puppetlabs/razor-server">razor-server</a> - REST webservice to provide policy based baremetal provisioning.</li>
+<li><a href="https://github.com/puppetlabs/razor-client">razor-client</a> - REST client to the razor-server.</li>
+<li><a href="https://github.com/puppetlabs/razor-server/wiki/Installing-windows">samba3</a> - File server to host razor repos of ISO files (razor-server requirement)</li>
+<li><a href="http://couchdb.apache.org/">Apache CouchDB</a> - REST-based document (Schema Free, JSON based) database for the data-layer.</li>
+<li><a href="https://www.elastic.co/products/elasticsearch">elasticsearch</a> - REST api to use query-based search of data in the data-layer.</li>
+<li><a href="http://httpd.apache.org/">apache2 httpd</a> - Web service to host files via HTTP to nodes being provisioned.</li>
+<li><a href="http://curl.haxx.se/">curl</a> - HTTP/HTTPS webclient/CLI to interface with the data-layer.</li>
+<li><a href="http://stedolan.github.io/jq/">jq</a> - JSON processor/generator/validator for data in the data-layer (using curl/HTTP as the transport).</li>
+<li><a href="https://pypi.python.org/pypi/cloudmonkey/">cloudmonkey</a> - REST client/CLI for the CloudStack web API.</li>
+<li><a href="http://wiki.xen.org/wiki/XAPI_Command_Line_Interface">xe</a> - XML-RPC client/CLI for XenServer XAPI (remotely via SSH/PKI)</li>
+<li>Various other standard tools like bash, awk, sed, perl, ruby in scripts.</li>
+</ul>
+</body>
+</html>

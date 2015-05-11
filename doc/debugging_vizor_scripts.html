@@ -1,0 +1,92 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#debugging-vizor-scripts">Debugging vizor scripts</a></li>
+<li><a href="#debugging-bash-script">Debugging bash script</a><ul>
+<li><a href="#enabling-extended-tracing.">Enabling extended tracing.</a></li>
+<li><a href="#stepping-through-a-bash-script">Stepping through a bash script</a></li>
+<li><a href="#additional-extended-debugging-tips">Additional extended debugging tips</a></li>
+</ul></li>
+<li><a href="#debugging-razor-server">Debugging razor-server</a><ul>
+<li><a href="#references">References</a></li>
+</ul></li>
+<li><a href="#debugging-couchdb">Debugging couchdb</a><ul>
+<li><a href="#references-1">References</a></li>
+</ul></li>
+<li><a href="#debugging-elasticsearch">Debugging elasticsearch</a><ul>
+<li><a href="#references-2">References</a></li>
+</ul></li>
+</ul>
+</div>
+<h1 id="debugging-vizor-scripts">Debugging vizor scripts</h1>
+<blockquote>
+<p>This section is a work-in-progress.</p>
+</blockquote>
+<p>Most vizor scripts make use of the CLI components to interface with the REST APIs of razor, apache, couchdb, etc and use bash as the interpreter to tie interactions together.</p>
+<p>As it may be necessary to debug scripts on failure or unexpected behaviour, the following tips are provided to better expose the tracing in a script and so faciliate debugging.</p>
+<h1 id="debugging-bash-script">Debugging bash script</h1>
+<h2 id="enabling-extended-tracing.">Enabling extended tracing.</h2>
+<p>Often it is useful to have a bash script emit extra information about commands being executed, the state of variables, the sections of a script where errors are emitted, etc as the script is being evaluated by the interpreter.</p>
+<p>Some vizor scripts honour the DEBUG environment variable, so setting this before running a vizor command may generate additional verbose/tracing output</p>
+<pre><code>DEBUG=1 vizor box build ...</code></pre>
+<p>It may be necessary to have tracing explicitly enabled for the scripts execution, this is done by placing the following commands before appropriate sections of a script (or at the top of the script as a catch-all).</p>
+<pre><code>set -x      # Enable xtrace (extended tracing)
+set -v      # Enable verbose output</code></pre>
+<h2 id="stepping-through-a-bash-script">Stepping through a bash script</h2>
+<p>It may be necessary to step through a bash script and have it pause while other parts of the system/infrastructure can be examined.</p>
+<p>As per <a href="http://stackoverflow.com/a/9080645/742600">How to execute a bash script line by line?</a>, place the following before an appropriate section in the script (or at the very top as a catch-all).</p>
+<pre><code>set -xv          # enable xtrace and verbose output
+trap read debug</code></pre>
+<p>This casues bash to evaluate every line, emitting extended output about evaluations and then pausing exeuction until the <code>return</code> key is pressed.</p>
+<h2 id="additional-extended-debugging-tips">Additional extended debugging tips</h2>
+<ul>
+<li><a href="http://mywiki.wooledge.org/BashGuide/Practices#Debugging">BashGuide/Practices#Debugging - Greg's Wiki</a></li>
+<li><a href="http://wiki.bash-hackers.org/scripting/debuggingtips">Debugging Bash Tips - Bash Hackers Wiki</a></li>
+<li><a href="http://tldp.org/LDP/Bash-Beginners-Guide/html/sect_02_03.html">Debugging Bash scripts - TLDP Bash Beginners Guide</a></li>
+</ul>
+<h1 id="debugging-razor-server">Debugging razor-server</h1>
+<p>vizor's razor-server interaction is done through the razor-client which uses HTTP as a transport.</p>
+<pre><code>razor -d nodes   # as an example of debugging HTTP interactions</code></pre>
+<p>Alternatively, curl can be used to work with razor-server at its API end-point, and the returned JSON can be passed to <code>jq(1)</code> to prettify/validate the output.</p>
+<pre><code>curl -v -XGET &#39;http://localhost:8080/api/collections/nodes/node14&#39; | jq -S &#39;.&#39;</code></pre>
+<p>vizor's implementation of razor-server stores its logs under <code>/var/log/torquebox/razor-server.log</code> and so this can be tailed.</p>
+<pre><code>tail -f /var/log/torquebox/razor-server.log</code></pre>
+<h2 id="references">References</h2>
+<ul>
+<li><a href="https://github.com/puppetlabs/razor-server/blob/master/doc/api.md">razor-server/api.md at master · puppetlabs/razor-server</a></li>
+<li><a href="https://github.com/puppetlabs/razor-server/wiki">puppetlabs/razor-server Wiki</a></li>
+<li><a href="https://github.com/puppetlabs/razor-server/wiki/Installing-windows">Installing windows · puppetlabs/razor-server Wiki</a></li>
+</ul>
+<h1 id="debugging-couchdb">Debugging couchdb</h1>
+<p>vizor's CouchDB interaction is done through curl and HTTP as a transport. Data is stored in CouchDB documents under named indexes at known HTTP URLs and so curl can be used to interrogate CouchDB and jq used to validate/prettify the returned JSON for readable output.</p>
+<p>e.g.</p>
+<pre><code>curl -vfsSL -X GET &#39;http://vizor.example.com:5984/box/document&#39; | jq -S &#39;.&#39;</code></pre>
+<p>CouchDB's logs are stored in <code>/var/log/couchdb/*.log</code> and so these can be tailed.</p>
+<pre><code>tail -f /var/log/couchdb/*.log</code></pre>
+<h2 id="references-1">References</h2>
+<ul>
+<li><a href="http://docs.couchdb.org/en/latest/intro/curl.html">1.8. curl: Your Command Line Friend — Apache CouchDB 2.0.0 Documentation</a></li>
+<li><a href="https://github.com/jwood/couchdb_demo">jwood/couchdb_demo</a></li>
+</ul>
+<h1 id="debugging-elasticsearch">Debugging elasticsearch</h1>
+<p>vizor's elasticsearch interaction is done through curl using HTTP as a transport. Querying elasticsearch is done by formulating a query in the GET query-string and then requesting elasticsearch end-point.</p>
+<p>elasticsearch's logs are storef in <code>/var/log/elasticsearch/*.log</code> and so these can be tailed.</p>
+<pre><code>tail -f /var/log/elasticsearch/*.log</code></pre>
+<h2 id="references-2">References</h2>
+<ul>
+<li><a href="http://www.elastic.co/guide/en/elasticsearch/reference/1.x/search-search.html">elasticsearch Search API</a></li>
+<li><a href="http://www.elastic.co/guide/en/elasticsearch/reference/1.x/query-dsl-query-string-query.html">Query String Query</a></li>
+<li><a href="http://exploringelasticsearch.com/searching_data.html">Exploring Elasticsearch</a></li>
+</ul>
+</body>
+</html>
