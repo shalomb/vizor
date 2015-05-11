@@ -1,0 +1,70 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#debugging-the-winpe-task">Debugging the WinPE Task</a></li>
+<li><a href="#debugging-the-razor-ruby-.erb-templates">Debugging the razor ruby (.erb) templates</a></li>
+<li><a href="#debugging-nodeprep.seq.ps1">Debugging nodeprep.seq.ps1</a><ul>
+<li><a href="#entering-the-imageprep-shell">Entering the imageprep shell</a></li>
+<li><a href="#viewing-the-powershell-transcript-of-nodeprep.seq.ps1">Viewing the powershell transcript of <code>nodeprep.seq.ps1</code></a></li>
+<li><a href="#running-a-single-task-from-the-sequence">Running a single task from the sequence</a></li>
+</ul></li>
+</ul>
+</div>
+<h1 id="debugging-the-winpe-task">Debugging the WinPE Task</h1>
+<p>The WinPE task is set up to download a set of scripts and dependencies for the main powershell sequence to be run. All configuration of the node to requirements is currently done by a single sequence (i.e. <code>nodeprep.seq.ps1</code>)</p>
+<h1 id="debugging-the-razor-ruby-.erb-templates">Debugging the razor ruby (.erb) templates</h1>
+<p>To deliver per-node customizations to the <code>nodeprep.seq.ps1</code> sequence, a set of ruby templates is contained in the <code>winpe.task</code> razor task. These templates are evaluated by the ruby (<a href="http://www.stuartellis.eu/articles/erb/">ERB</a>) templating engine which interpolates the JSON metadata blob passed in via the vizor build scripts (i.e. <code>vizor box build</code>, <code>vizor batch build</code>, etc)</p>
+<p>Since the ruby templates (.erb) used by razor expand metadata key/values (e.g. <code>node.metadata['key']</code>) supplied by the user, templates can fail to render against valid syntax or can be rendered in a way that enclosed data is not valid for the applications that use the output. Example of these processes are the Windows Installer, Localization, Windows Sysprep, nodeprep.seq.ps1, etc.</p>
+<p>e.g To ensure <code>unattended.xml.erb</code> renders appropriately for the various <a href="https://technet.microsoft.com/en-gb/library/cc749307(v=ws.10).aspx">stages of windows setup</a></p>
+<p>First determine the node ID using <code>razor nodes</code> or making note of the ID from the log output of the <code>vizor box build</code> command, then request the template from razor using any standard web client.</p>
+<pre><code># 1332 in this example is the id of the razor node
+curl -ssfL &#39;http://vizor.example.com:8080/svc/file/1332/unattended.xml&#39;</code></pre>
+<p>For this example, the output here has to be valid XML that the windows installer can use. An XML validator can be used to validate the XML.</p>
+<pre><code>xmllint --format unattended.xml  # must output valid XML and not error out</code></pre>
+<p>As each of these templates are inputs for different purposes during post-install phase, their output (and validity) matters to the use/context.</p>
+<p>i.e.</p>
+<ul>
+<li>nodeprep.seq.ps1.erb must render to valid <a href="about_sequences.html">powershell object</a></li>
+<li>l18n.xml.erb must render to valid <a href="http://support.microsoft.com/kb/2764405">XML for localization/globalization</a></li>
+<li>unattended.xml.erb must render to valid XML for <a href="https://technet.microsoft.com/en-us/library/cc766245(v=ws.10).aspx">Windows Setup</a></li>
+<li>sysprep.xml.erb must render to valid XML for <a href="https://technet.microsoft.com/en-gb/library/hh824849.aspx">Windows sysprep</a></li>
+</ul>
+<p>and so on.</p>
+<h1 id="debugging-nodeprep.seq.ps1">Debugging nodeprep.seq.ps1</h1>
+<p>Refer to <a href="about_sequences.html">About Post-Install Sequences</a> for</p>
+<p>The sequence of configuration tasks in <code>nodeprep.seq.ps1</code> is currently driven by the cmdlets in the <code>ImageMaintenance</code> powershell module which execute these tasks as individual powershell scriptblocks.</p>
+<p>Tasks in the sequence may fail on any unexpected/error conditions which in turn cause the entire sequence to fail. If the sequence fails to complete, execution of the sequence is aborted to allow for inspection of the VM state and for rectifications to be made before resuming (this requires manual intervention).</p>
+<p>The error/exception output on the console pertains the last task run and would be the first thing to examine to determine cause of failure. Given the way the sequence is set to <code>STOP</code> on first failure, this should be the only failure encountered.</p>
+<h2 id="entering-the-imageprep-shell">Entering the imageprep shell</h2>
+<p>The ImagePrep shell is a powershell environment set up with the appropriate <code>$Env:PATH</code> and <code>$Env:PSModulePath</code> variables to make it easier to debug or develop sequences.</p>
+<p>Start the image prep shell by running the following command in a cmd/powershell window</p>
+<pre><code>c:\programdata\firstboot\Bootstrap\Invoke-Imageprep.cmd</code></pre>
+<p>an alias for the same script is provided at</p>
+<pre><code>\ip.cmd</code></pre>
+<h2 id="viewing-the-powershell-transcript-of-nodeprep.seq.ps1">Viewing the powershell transcript of <code>nodeprep.seq.ps1</code></h2>
+<p>The output of every run of <code>nodeprep.seq.ps1</code> is logged in a powershell transcript (logged under <code>%ProgramData%\imageprep\log</code>). To view the transcripts available</p>
+<pre><code>Show-Transcript  # and select the last transcript (default)</code></pre>
+<p>The contents of the bottom of the file highlight the last problem encountered, i.e. towards the bottom of the transcript.</p>
+<p>If the resolution involves no code-fix the sequence can be rerun to continue from the last failed task by simply running</p>
+<pre><code>Resume-ImageMaintenance  # Simply rerun the sequence</code></pre>
+<p>or if edits have been made to the code or sequences, then the code needs to be pushed to vizor and razor. Refer to the <a href="extending_postinstall_tasks.html">Extending Post-Install Tasks</a> document on how to prepare vizor and the razor <code>winpe.task</code> for this.</p>
+<pre><code>.\firstboot.cmd    # Downloads all files fresh run the razor server
+                   # and starts Resume-ImageMaintenance</code></pre>
+<h2 id="running-a-single-task-from-the-sequence">Running a single task from the sequence</h2>
+<p>This is useful if the objective is to run a subset of the tasks from the entire sequence e.g. rerunning a particular task or developing a new task to incorporate into the sequence.</p>
+<p>E.g. to run only those tasks that have windows_update in their name.</p>
+<pre><code>$Tasks = Get-Task -Sequence nodeprep.seq.ps1 -stage 0 -filter &#39;windows_update&#39;
+$Tasks | fl *
+$Tasks | Invoke-Task -Verbose  # -Force is needed if the task was previously run.</code></pre>
+</body>
+</html>

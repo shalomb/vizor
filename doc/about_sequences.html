@@ -1,0 +1,110 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#about-.seq.ps1-files">About .seq.ps1 files</a></li>
+<li><a href="#example-of-a-minimal-sequence">Example of a minimal sequence</a></li>
+<li><a href="#anatomy-of-a-sequence">Anatomy of a sequence</a></li>
+<li><a href="#rationale-of-sequence-breakdown">Rationale of sequence breakdown</a></li>
+<li><a href="#known-issues">Known issues</a></li>
+</ul>
+</div>
+<h1 id="about-.seq.ps1-files">About .seq.ps1 files</h1>
+<p>A <code>seq.ps1</code> file is simply a powershell script that codifies an array of array of hashtables. Invoking it in a powershell process simply returns this datastructure down the steppable pipeline.</p>
+<p>Conceptually, a sequence represents a collection of atomic image preparation objectives grouped into individual stages which are a collection of individual tasks. Achieving the systems desired state is accomplished by successfully executing all the stages in a sequence.</p>
+<p>A sequence is NOT to be invoked directly but rather through the <code>ImageMaintenance\Get-Task</code> and <code>ImageMaintenance\Invoke-Task</code> function. Please refer to the help of the ImageMaintenance module (<code>Get-Help about_ImageMaintenance</code>) for more details on how sequences or smaller subsets of them can be run.</p>
+<blockquote>
+<p>Several minor issues exist, please refer to the ISSUES/NOTES section below for details.</p>
+</blockquote>
+<h1 id="example-of-a-minimal-sequence">Example of a minimal sequence</h1>
+<pre><code># Stage 1 - Hello World and Install DotNet 3.5
+@(
+  @{ name     = &#39;HelloWorld&#39;;
+      script  = { Write-Host &quot;Hello world!&quot; };
+      pre = 1; post = 1; },
+  @{ name = &#39;HelloWorld Only If On Win7/2008R2 or greater&#39;;
+      script = { Write-Host &quot;Hello world from a newer OS!&quot; };
+      pre = { (Gwmi Win32_OperatingSystem).Version -ge 6.1 };
+      post = 1; },
+  @{ name = &#39;Install AD Certificate Service Only If On 2012 And WINS Not Installed&#39;;
+      pre = {
+        $Test1 = ((Gwmi Win32_OperatingSystem).Caption -ilike &quot;2012&quot;)
+        $Test2 = -not((Get-WindowsFeature WINS).Installed)
+        $Test1 -and $Test2                # test conditions to decide if &#39;script&#39; can be run
+      };
+      script = {
+        # Is a regular powershell script block
+        # any code executable by powershell can go here.
+        ipmo ServerManager; Add-WindowsFeature AD-Certificate 
+      };
+      post={ rm -Force &quot;$Env:TEMP\*&quot; };   # Failures here are not fatal
+  }
+  @{ name=&#39;InstallDotNet35andCleanup&#39;;
+      script={ Import-Module ServerManager; Add-WindowsFeature NET-Framework-Features };
+      pre=1;
+      post= { rm -Force &quot;$Env:TEMP\*&quot; }; }
+  @{ name=&#39;RebootToEnterStage2&#39;;
+      script={ &amp; shutdown.exe -r }; pre=1; post=1; },
+),
+
+# Stage 2 - Install some software
+@(
+  @{ name=&#39;Sync Windows Time&#39;;
+      script={ &amp; w32tm.exe /resync }; pre=1; post=1; },
+  @{ name=&#39;InstallSoftwareOffANetworkShare&#39;;
+      script={ \\example.com\share\software\someinstaller.exe -args };
+      pre={ &amp; ipconfig.exe /flushdns };  # This may fail but is harmless
+      post=1;
+   }
+  @{ name=&#39;RebootToEnterStage3&#39;; script={ &amp; shutdown.exe -r }; pre=1; post=1; },
+),
+
+# Stage 3 - ClearLogs and shutdown
+@(
+  @{ name=&#39;ClearEventViewerEvents&#39;;
+      script = { Get-EventLog -LogName * | %{ Clear-EventLog -LogName $_.Log } };
+      pre = 1; post = 1; }
+  @{ name=&#39;ShutDownComputerToPrepareForDeployment&#39;;
+      script={ &amp; shutdown.exe -s }; pre=1; post=1; }
+)</code></pre>
+<h1 id="anatomy-of-a-sequence">Anatomy of a sequence</h1>
+<p>A sequence is expected to return a powershell object to the caller and not execute code to change the state of the system itself.</p>
+<p>The engine to consume these sequences is usually <code>ImageMaintenance\Get-Task</code> but can be any powershell construct that understands the datastructure.</p>
+<p>The runner is <code>ImageMaintenanace\Invoke-Task</code> which takes a pipelined object from <code>Get-Task</code>.</p>
+<p>A sequence is defined as a collection of stages. It is represented as an array of arrays (stages).</p>
+<p>A stage is defined as a collection of tasks. It is represented as an array of hashes (tasks).</p>
+<p>A task is defined as an atomic activity. It is represented as a hash table with powershell scriptblocks for values.</p>
+<p>As a whole, the sequence is represented as an array of arrays of hashes.</p>
+<p>This datastructure allows for the script to contain a set of stages, each of which has a collection of tasks to be run in that stage. This datastructure also allows for filtering on tasks to be run.</p>
+<p>All tasks within a stage must pass for a stage to completed.</p>
+<p>All stages must pass for the sequence to be complete (and so for the image preparation to be complete).</p>
+<p>A task is represented here hash with a 'script' key contain the powershell scriptblock which contains the powershell cmdlets that will carry out the task - and so effect change in the system. A 'script' should fail if it cannot successfully execute the enclosing scriptblock - and so cause the sequence to fail early.</p>
+<p>A task also has other keys 'pre' and 'post' which are also scriptblocks which control code executed before/after the 'script' key is invoked.</p>
+<p>Code in the 'pre' block act as conditionals to the 'script' block i.e. to allow or deny a 'script' block execution. If the 'pre' scriptblock fails or throws an error, the 'script' scriptblock is not executed but the sequence continues.</p>
+<p>'post' encloses a scriptlet used to carry out clean-up tasks or seal the state of the system - also in a failsafe fashion. Failures are not fatal to sequence exeuction.</p>
+<p>'pre' and 'post' are currently required to be defined and must have a minimum value of $True or 1. They cannot be ommitted as optionals.</p>
+<h1 id="rationale-of-sequence-breakdown">Rationale of sequence breakdown</h1>
+<p>A collection of tasks can be written as a simple powershell script that has the powershell interpreter step through the script and invoke the tasks but this approach has a number of problems and limitations.</p>
+<ul>
+<li><p>It is necessary to accommodate for interruptions (reboots) or failures in executing (often long-running) tasks in a sequence and ensure that sequence execution resumes from the appropriate point (next task to be run) in the sequence. (i.e. supporting this in a traditional powershell script involves repeated complexity).</p></li>
+<li><p>It is hard to report on the state/status of individual tasks without wrapping each task up in a reporting function.</p></li>
+<li><p>Ensuring idempotency of a task hard to guarantee when the script is rerun. A subsequent invocation of a task can be unsafe or dangerous. i.e. Tasks determined to have previously run can be filtered out.</p></li>
+<li><p>Building logic in the script to filter out tasks for a particular objective or invocation becomes quite complex.</p></li>
+</ul>
+<p>As the datastructure in a sequence such as this is just a collection of objects, an orthogonal mechanism such as a task processor can be used to process an object collection to easily address/mitigate the above problems.</p>
+<blockquote>
+<p>TODO: The objectives of post-install sequences overlaps with objectives of desired state configuration management systems such as OpsCode Chef, Puppet, PowerShell DSC. Consider moving to those to drive configuration.</p>
+</blockquote>
+<h1 id="known-issues">Known issues</h1>
+<p>A bug exists currently where if the number of elements in the sequence array is less than 2, <code>ImageMaintenance\Get-Tasks</code> will fail to process this sequence file. To workaround, simply create another empty element at the end of the collection.</p>
+</body>
+</html>

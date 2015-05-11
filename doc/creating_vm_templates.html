@@ -1,0 +1,67 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#creating-vm-templates-from-instances">Creating VM Templates from instances</a><ul>
+<li><a href="#cloudstack-templates">CloudStack Templates</a></li>
+<li><a href="#xenserver-templates">XenServer Templates</a></li>
+<li><a href="#exporting-xenserver-templates-to-a-network-share">Exporting XenServer Templates to a network share</a><ul>
+<li><a href="#exporting-templates-as-.xva">Exporting templates as .xva</a></li>
+<li><a href="#exporting-.vhd-files">Exporting .vhd files</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</div>
+<h1 id="creating-vm-templates-from-instances">Creating VM Templates from instances</h1>
+<p>Once box instances are installed and prepared, it may be necessary to create templates of these for reuse.</p>
+<h2 id="cloudstack-templates">CloudStack Templates</h2>
+<p>This works by pattern matching (on the instance name) those instances that require templates to be created from.</p>
+<p>More than one instance can be considered to create templates from, e.g. the following command creates templates for multiple instances that match somewhere in the VM name</p>
+<pre><code># 201505 here is part of the VMs&#39; name label
+vizor cloudstack template create -f -p -r 201505</code></pre>
+<blockquote>
+<p>The parent instances that the templates are created from are not deleted in after this command returns and therefore they must be removed separately if needed. The <code>vizor cloudstack vm delete</code> command can be used for that purpose.</p>
+</blockquote>
+<h2 id="xenserver-templates">XenServer Templates</h2>
+<p>A pattern is supplied to the <code>vizor xenserver template create</code> command to match <em>all</em> those VMs that will be converted to instant templates.</p>
+<p>The following command converts all VMs to templates matching a particular pattern somewhere in the VM name-label.</p>
+<pre><code>vizor xenserver template create -n &#39;20150204&#39;</code></pre>
+<blockquote>
+<p>The parent VMs that templates are created from are not left behing i.e. The <code>is-a-template=true</code> is set for affected VMs.</p>
+</blockquote>
+<h2 id="exporting-xenserver-templates-to-a-network-share">Exporting XenServer Templates to a network share</h2>
+<p>XenServer templates can be exported to a network share for distribution and vizor provides some facility for exporting either .XVA or .VHD files.</p>
+<blockquote>
+<p>To speed up exports, xenserver VM/Template exports are done by <code>xe(1)</code> commands that are invoked directly from Dom0 on the pool master. To that effect mount-points below are created on the pool-master and not on the vizor host.</p>
+</blockquote>
+<h3 id="exporting-templates-as-.xva">Exporting templates as .xva</h3>
+<pre><code>export HOST=&#39;myxspool.example.com&#39;
+
+vizor xenserver mount \
+  -u &#39;nfs://nfserver.example.com/export&#39; \
+  -m &#39;/mnt/xvaexports&#39;
+
+vizor xenserver template export xva \
+  -m &#39;/mnt/xvaexports&#39; \
+  -n &#39;20150505&#39;</code></pre>
+<h3 id="exporting-.vhd-files">Exporting .vhd files</h3>
+<pre><code>export HOST=&#39;myxspool.example.com&#39;
+
+vizor xenserver mount \
+  -u &#39;nfs://nfserver.example.com/export&#39; \
+  -m &#39;/mnt/xvaexports&#39;
+
+vizor xenserver template export vhd \
+  -m &#39;/mnt/xvaexports&#39; \
+  -n &#39;20150505&#39; -m</code></pre>
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#building-vms">Building VMs</a><ul>
+<li><a href="#defining-iso-repositories">Defining ISO Repositories</a></li>
+<li><a href="#discovering-available-install-images-wim-files">Discovering available install images (WIM files)</a></li>
+<li><a href="#discovering-available-language-packs-lp.cab-files">Discovering available language packs (lp.cab files)</a></li>
+</ul></li>
+<li><a href="#infrastructure-setup">Infrastructure setup</a><ul>
+<li><a href="#preparations-for-cloudplatformcloudstack">Preparations for CloudPlatform/CloudStack</a></li>
+<li><a href="#preparing-a-xenserver-host-or-pool-access">Preparing a XenServer host or pool access</a></li>
+</ul></li>
+<li><a href="#setting-up-container-definitions">Setting up container definitions</a><ul>
+<li><a href="#cloudstackcloudplatform-instance-containers">CloudStack/CloudPlatform instance containers</a></li>
+<li><a href="#xenserver-vm-containers">XenServer VM containers</a></li>
+</ul></li>
+<li><a href="#defining-boxes">Defining Boxes</a><ul>
+<li><a href="#select-the-candidate-install-image">Select the candidate install image</a></li>
+<li><a href="#create-a-box-for-the-given-image.">Create a box for the given image.</a></li>
+<li><a href="#build-the-box-in-an-available-container">Build the box in an available container</a></li>
+<li><a href="#identifying-metadata-keys">Identifying metadata keys</a></li>
+</ul></li>
+<li><a href="#batch-operations">Batch operations</a><ul>
+<li><a href="#create-.vizor.json">Create <code>~/.vizor.json</code></a></li>
+<li><a href="#format-of-vizor.json">Format of <code>vizor.json</code></a></li>
+<li><a href="#examples-of-batch-builds">Examples of batch builds</a></li>
+</ul></li>
+</ul>
+</div>
+<h1 id="building-vms">Building VMs</h1>
+<p>This document serves as a how-to to perform automated windows installations on VMs on CloudStack or XenServer and the process of creating templates from VMs afterwards.</p>
+<blockquote>
+<p>The command set documented in this guide is not fully rationalized and therefore not stable as an API.</p>
+</blockquote>
+<h2 id="defining-iso-repositories">Defining ISO Repositories</h2>
+<p>Vizor's install image index is built up by scanning through the ISO files named in the ISO repository locations. These repositories are simply a local or network directory that contain one or more ISO files and vizor will scan all subdirectories recursively considering every ISO it encounters before storing information into the iso index.</p>
+<p>Atleast one ISO repository is required to be defined in <code>/etc/default/vizor.d/windows_iso_dirs</code>. Vizor uses NFS, CIFS or local directories/mount-points URLs naming one or more subdirectories to scan (e.g. the following only consider the <code>win7</code> and <code>win8</code> subdirectories on the server).</p>
+<pre><code>echo &quot;iso cifs://username:password@cifsserver.example.com/isos win7/ win8/&quot; &gt; /etc/default/vizor.d/windows_iso_dirs
+echo &quot;iso nfs://nfsserver.example.com/isos                     win7/ win8/&quot; &gt; /etc/default/vizor.d/windows_iso_dirs
+echo &quot;iso file:///path/to/isos                                 win7/ win8/&quot; &gt; /etc/default/vizor.d/windows_iso_dirs</code></pre>
+<p>The following commands then have vizor scan for ISOs and build up the ISO index.</p>
+<pre><code>vizor windows iso update  # May take several minutes for large ISO collections
+vizor iso list            # Lists the entries in the iso index</code></pre>
+<h2 id="discovering-available-install-images-wim-files">Discovering available install images (WIM files)</h2>
+<p>To discover the available install images (<code>sources\install.wim</code>, <code>sources\boot.wim</code>, etc) within each of the known ISOs and build up the image index.</p>
+<pre><code>vizor windows image update  # May take several minutes for large ISO collections
+vizor image list            # List the entries in the image index</code></pre>
+<h2 id="discovering-available-language-packs-lp.cab-files">Discovering available language packs (lp.cab files)</h2>
+<p>This is not required if VM boxes will be created from fully-localized install ISOs and is only required when building internationalized/localized VMs where language packs are applied on top of a base locale (e.g. en-US). Refer to <a href="https://technet.microsoft.com/en-gb/library/cc766472%28v=ws.10%29.aspx">Understanding Language Packs</a> for more information on fully and partially localized OSes/Language Packs.</p>
+<p>Language pack ISOs that do not contain install images will be considered by these commands but they must reside in an ISO respository named above.</p>
+<pre><code>vizor windows langpack update
+vizor windows langpack list</code></pre>
+<h1 id="infrastructure-setup">Infrastructure setup</h1>
+<p>The following section outlines the preparation needed to be made to vizor to have it build up an understanding of the the infrastructure (hypervisors and clouds, etc) that will be used to build VMs/VM Templates.</p>
+<p>These infrastructure pieces are required to be fully setup and functional before vizor can proceed.</p>
+<h2 id="preparations-for-cloudplatformcloudstack">Preparations for CloudPlatform/CloudStack</h2>
+<p>Use the <a href="https://cwiki.apache.org/confluence/display/CLOUDSTACK/CloudStack+cloudmonkey+CLI#CloudStackcloudmonkeyCLI-Gettingstarted">CloudMonkey Getting Started instructions</a> to set the URL and API/Secret keys for the management server in <code>~/.cloudmonkey/config</code></p>
+<p>Additionally, details about the zone are required (later) and so the following may need to be prepared upfront.</p>
+<ul>
+<li>Service Offerings</li>
+<li>Disk Offerings</li>
+<li>Guest Networks</li>
+<li>Zone Name (If multiple zones exist)</li>
+<li>Clusters for hypervisor types (e.g. XenServer, ESX, Hyper-V, etc)</li>
+</ul>
+<h2 id="preparing-a-xenserver-host-or-pool-access">Preparing a XenServer host or pool access</h2>
+<p>This copies the generated ipxe.iso boot image (generated in the vizor setup stage) and helper scripts to Dom0 on the XenServer host.</p>
+<pre><code>vizor xenserver -h xshost.example.com -u root -p s3cr3t</code></pre>
+<p>Scan the xenserver host for install template definitions, these are used to create the XenServer containers later.</p>
+<pre><code>vizor xenserver vm-container scan -h xshost.example.com</code></pre>
+<h1 id="setting-up-container-definitions">Setting up container definitions</h1>
+<p>Containers are the VM attribute definions of the hypervisor/cloud provider (Amounts of RAM, Numbers of CPUs, Hard Disk Sizes, etc) for the VM instances that a box is built in. e.g. To build Windows 2012 R2 Server VM for minimum requirements, a container with 2GiB RAM, 20GB Disk Space, etc will suffice. Equally, to support specialized use-case (e.g Database Servers) may require a container with 32GiB RAM, 16vCPUs and 2000GB Disk space, etc - however, the box definition does not change and is reused to build VMs across any suitable containers.</p>
+<blockquote>
+<p>As OSes in VMs are sensitive to constraints, it is essential that containers are created that meet the minimum requirements of the OS within. This is especially important during the OS install phase, even if the limits are likely to be changed later for derived VM instances.</p>
+</blockquote>
+<p>Depending on the numbers and requirements of VMs to be built, a number of different containers need to be created for each hypervisor or cloud that a box</p>
+<h2 id="cloudstackcloudplatform-instance-containers">CloudStack/CloudPlatform instance containers</h2>
+<p>Cloudstack containers take on details of the cloudstack cloud, service offerings, networks, etc that will be used to house the box.</p>
+<p>E.g. The following creates a CS container in a zone named 'zone01' with the service offerings and hypervisor types of that zone.</p>
+<pre><code>vizor container create -t cloudstack \
+   -n &#39;zone01-stage-60gbhdd-2vcpu-2gbram-guestnet01&#39; \
+   -d &#39;60gb&#39;                 \
+   -s &#39;std.vm 2vcpu 2GB RAM&#39; \
+   -z zone01                 \
+   -N guestnet01             \
+   -k us                     \
+   -g imageprep              \
+   -h XenServer</code></pre>
+<p>Refer to the help in <code>vizor container create -t cloudstack -h</code> for additional arguments.</p>
+<p>Various helper commands are provided in vizor to discover details about cloudstack service/disk offerings, networks, etc. Refer to the help for the sub-commands under <code>vizor cloudstack</code>.</p>
+<h2 id="xenserver-vm-containers">XenServer VM containers</h2>
+<p>XenServer containers take on details of the XenServer host/pool and the install templates used to build a box in.</p>
+<p>This is done by taking one of the XenServer-provided install templates and overridding any of the parameters such as RAM, CPU, etc.</p>
+<p>e.g. To install a Windows 7 64-bit VM in a new container</p>
+<p>First select an appropriate container from the cache</p>
+<pre><code>vizor xenserver vm-container list  # Make note of the $id
+                                   # e.g. Windows_7-x86_64-1_VCPUs-02.00_GiB_RAM-24.00_GiB_HDD</code></pre>
+<p>Create a xenserver container for vizor overridding any of the values.</p>
+<pre><code>vizor container create -t xenserver -n &#39;my_windows_7_vm_container&#39; \
+    -I &quot;$id&quot;             \
+    -c 2                 \
+    -M $((2*1024**3))    \
+    -d $((100*1024**3))  \
+    -s &#39;Local storage&#39;   \
+    -N &#39;Public Network&#39;  \
+    -i ipxe.iso</code></pre>
+<p>Refer to the help in <code>vizor container create -t xenserver -h</code> for additional arguments.</p>
+<blockquote>
+<p>Xenserver provides install templates that are recommendations for the parameters a VM should take and so containers are required to be created for every OS type that VMs will be built against. i.e. a <code>Windows 7 (32-bit)</code> install template is only recommended for the <code>Windows 7</code> family and cannot be used for the <code>Windows Server 2012 R2</code> family.</p>
+</blockquote>
+<h1 id="defining-boxes">Defining Boxes</h1>
+<p>To build a VM, a box definition is required to map an install image to a VM container in the infrastructure provider (hypervisor).</p>
+<p>A single box definition can then be used to build the same VM on any of the VM containers known to the system.</p>
+<h3 id="select-the-candidate-install-image">Select the candidate install image</h3>
+<pre><code>vizor image list                             # Make note of the required image&#39;s ID (i.e. $image_id)</code></pre>
+<h3 id="create-a-box-for-the-given-image.">Create a box for the given image.</h3>
+<pre><code>vizor box create -i $image_id                # Make note of the returned Id (i.e. $box_id)</code></pre>
+<h3 id="build-the-box-in-an-available-container">Build the box in an available container</h3>
+<p>Set the box to build in a given infrastructure provider (via the container definition).</p>
+<pre><code>vizor box build -b $box_id -c $container_id  # Variables may need to quoted if contents have spaces, etc.</code></pre>
+<p>Additionally and optionally, razor metadata can be supplied for razor to make use of when evaluating the .erb templates for the razor task used (<code>winpe.task</code>).</p>
+<p>This is an example of minimal metadata that customizes the box (see section below on how to specify other metadata).</p>
+<pre><code>declare metadata=&#39;
+  { &quot;administrative_password&quot;: &quot;s3cr3t&quot;,
+    &quot;windows_timezone&quot;:        &quot;Eastern Standard time&quot;,
+    &quot;wsus_url&quot;:                &quot;http://wsus.example.com:8530&quot;,
+    &quot;kms_server&quot;:              &quot;kms.example.com&quot;,
+    &quot;ntp_server_list&quot;:         &quot;ntp.example.com&quot;,
+    &quot;install_dotnet35&quot;:        true,
+    &quot;l18n_input_locale&quot;:       &quot;en-US&quot;
+  }
+&#39;
+vizor box build -b $box_id -c $container_id -m &quot;$metadata&quot;</code></pre>
+<p>For the most part, vizor will attempt to default most of the metadata to reduce the amount of metadata needed to be supplied at build time.</p>
+<h3 id="identifying-metadata-keys">Identifying metadata keys</h3>
+<p>To determine which metadata tags to use/override, an inspection of the ruby templates (.erb) in the razor winpe task is needed.</p>
+<p>e.g. to list the metadata keys in all the .erb files</p>
+<pre><code>root@vizor# cd razor/task/winpe.task/
+root@vizor# grep -Ehio &#39;node.metadata[^]]+\]&#39; *.erb | sort -u
+
+node.metadata[&#39;default_locale&#39;]
+node.metadata[&#39;input_locale&#39;]
+node.metadata[&#39;l18n_input_locale&#39;]
+node.metadata[&#39;l18n_system_locale&#39;]
+node.metadata[&#39;l18n_user_locale&#39;]
+node.metadata[&#39;system_locale&#39;]
+node.metadata[&#39;user_locale&#39;]
+...</code></pre>
+<p>Any of the keys listed here can be overridden by extending the JSON metadata structure to the <code>vizor box build</code> command (example shown above).</p>
+<h1 id="batch-operations">Batch operations</h1>
+<p>Batch operations allow for multiple boxes to be built at once e.g. for a new set of VM templates for a periodic refresh or to build all VM templates of a particular hypervisor/cloud type.</p>
+<h2 id="create-.vizor.json">Create <code>~/.vizor.json</code></h2>
+<p><code>~/.vizor.json</code> contains the box-container maps and associated metadata for batch operations to consume.</p>
+<p>No tools currently exist to create this file and so must be modelled using the example template <code>batch/vizor.json</code> from the source tree with appropriate edits made.</p>
+<pre><code>cp /usr/src/vizor/batch/vizor.json ~/.vizor.json
+$EDITOR ~/.vizor.json                  # Make edits as appropriate (see the format section below)
+jq -S &#39;.&#39; ~/.vizor.json                # To validate the JSON syntax of the file.</code></pre>
+<h2 id="format-of-vizor.json">Format of <code>vizor.json</code></h2>
+<p><code>vizor.json</code> is used to contain definitions of boxes, the various containers they can be built in and locales that can be iterated through for every box.</p>
+<p>The metadata section contains the metadata key-value pairs that are substituted in the razor (.erb) templates when processes running in the box being prepared request these via the razor web api.</p>
+<p>For a list of the keys that can be overridden refer to the <code>Identifying metadata keys</code> section above.</p>
+<p>The follow minimal example shows how two box-container-locale definitions are represented with a minimal metadata section.</p>
+<pre><code>{
+  &quot;metadata&quot; : {
+    &quot;administrative_password&quot;: &quot;p455w0rd&quot;,
+    &quot;windows_timezone&quot;:        &quot;Eastern Standard Time&quot;,
+    &quot;wsus_url&quot;:                &quot;http://wsus2.example.com:8530&quot;,
+    &quot;kms_server&quot;:              &quot;kms.example.com&quot;,
+    &quot;ntp_server_list&quot;:         &quot;ntp.example.com&quot;,
+    &quot;install_dotnet35&quot;:        true,
+    &quot;install_windows_update&quot;:  true,
+    &quot;l18n_input_locale&quot;:       &quot;en-US&quot;
+  },
+  &quot;boxes&quot; : {
+    &quot;win7_ent-x86-sp1-us-7601&quot;: {
+      &quot;container&quot;: {
+        &quot;cloudstack-stage&quot;: &quot;stage-xenserver-vlan384-4vCPU-4GB-Large_disk&quot;,
+        &quot;cloudstack-prod&quot;:  &quot;production-xenserver-vlan348-4vCPU-4GB-Large_disk&quot;,
+        &quot;xenserver-6.2&quot;:    &quot;Windows_7-x86-2_VCPUs-2.00_GiB_RAM-100.00_GiB_HDD-Public&quot;,
+        &quot;xenserver-6.5&quot;:    &quot;Windows_7-x86-2_VCPUs-2.00_GiB_RAM-100.00_GiB_HDD-Public&quot;
+      },
+      &quot;locales&quot;: [ &quot;en-US&quot;, &quot;fr-FR&quot;, &quot;de-DE&quot;, &quot;es-ES&quot;, &quot;ru-RU&quot;,
+                   &quot;ja-JP&quot;, &quot;ko-KR&quot;, &quot;zh-CN&quot;, &quot;zh-HK&quot;, &quot;th-TH&quot; ]
+    },
+    &quot;win7_ent-x64-sp1-us-7601&quot;: {
+      &quot;container&quot;: {
+        &quot;cloudstack-stage&quot;: &quot;stage-xenserver-vlan384-4vCPU-4GB-Large_disk&quot;,
+        &quot;cloudstack-prod&quot;:  &quot;production-xenserver-vlan348-4vCPU-4GB-Large_disk&quot;,
+        &quot;xenserver-6.2&quot;:    &quot;Windows_7-x86_64-2_VCPUs-2.00_GiB_RAM-100.00_GiB_HDD-Public&quot;,
+        &quot;xenserver-6.5&quot;:    &quot;Windows_7-x86_64-2_VCPUs-2.00_GiB_RAM-100.00_GiB_HDD-Public&quot;
+      },
+      &quot;locales&quot;: [ &quot;en-US&quot;, &quot;fr-FR&quot;, &quot;de-DE&quot;, &quot;es-ES&quot;, &quot;ru-RU&quot;,
+                   &quot;ja-JP&quot;, &quot;ko-KR&quot;, &quot;zh-CN&quot;, &quot;zh-HK&quot;, &quot;th-TH&quot; ]
+    }
+}</code></pre>
+<p>The boxes section requires extending for all the boxes that are candidates for batch operations.</p>
+<blockquote>
+<p>No schema exists to validate <code>~/.vizor.json</code> and so must be crafted with due care.</p>
+</blockquote>
+<h2 id="examples-of-batch-builds">Examples of batch builds</h2>
+<p>These commands use <code>~/.vizor.json</code> and so require it to be present and populated.</p>
+<pre><code>vizor batch build -l &#39;en&#39; -t cloudstack-stage -n  # build all english boxes on the cloudstack-stage containers
+
+vizor batch build -b &#39;win8|w2k12r2&#39; -l &#39;th|kr&#39; -t xenserver-6.5 -n  # build Windows 8.1/2012 R2 boxes for thai/korean on xenserver-6.5
+
+vizor batch build -n                              # build all known boxes across all containers and all locales</code></pre>
+</body>
+</html>

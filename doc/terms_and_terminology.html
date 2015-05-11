@@ -1,0 +1,35 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#terms-used-in-this-guide">Terms used in this guide</a></li>
+</ul>
+</div>
+<h2 id="terms-used-in-this-guide">Terms used in this guide</h2>
+<ul>
+<li><p>box</p>
+<p>Is an ISO/install image + optional metadata definition (e.g. Win7-x86, Win10beta-x64, etc) from which VM instances will be built. Boxes are defined once with the view of being provisioned on multiple different cloud or hypervisor providers (via containers).</p></li>
+<li><p>container</p>
+<p>Is a hypervisor/cloud offering (of RAM, CPU, Networks, Storage, etc) to deploy VMs to build boxes in. An image is associated with one of more boxes.</p></li>
+<li><p>metadata</p>
+<p>Is the data (runtime parameters) that is used to customize the build of one or more boxes.</p></li>
+<li><p>image</p>
+<p>Is an install image (e.g. install.wim, boot.wim, etc) contained with an .iso file. An image is associated with one or more boxes.</p></li>
+<li><p>instance</p>
+<p>In the context of vizor, this is an instance of a box (that defines a XenServer VM or a Cloudstack instance, etc).In the context of CloudStack, this is a virtual machine.</p></li>
+<li><p>template</p>
+<p>Is a virtual machine template in the context of virtual machines instances. In the context of razor, this is a ruby template (.erb).</p></li>
+<li><p>node</p>
+<p>Is a virtual or physical machine that is to be provisioned by razor.</p></li>
+</ul>
+</body>
+</html>

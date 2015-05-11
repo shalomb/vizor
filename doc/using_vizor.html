@@ -1,0 +1,199 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<div id="TOC">
+<ul>
+<li><a href="#using-vizor">Using vizor</a><ul>
+<li><a href="#setup-command-autocompletion">Setup Command Autocompletion</a></li>
+<li><a href="#command-discovery">Command discovery</a><ul>
+<li><a href="#command-groups">Command groups</a></li>
+<li><a href="#tab-completion">Tab-completion</a></li>
+</ul></li>
+<li><a href="#command-help">Command Help</a></li>
+</ul></li>
+<li><a href="#example-uses-of-vizor">Example Uses of vizor</a><ul>
+<li><a href="#listing-vms">Listing VMs</a></li>
+<li><a href="#listing-templates">Listing templates</a></li>
+<li><a href="#listing-offerings">Listing offerings</a></li>
+<li><a href="#isos-install-images-and-language-packs">ISOs, Install Images and Language Packs</a></li>
+<li><a href="#boxes-and-containers">Boxes and containers</a></li>
+<li><a href="#building-vms">Building VMs</a></li>
+<li><a href="#converting-vms-to-templates">Converting VMs to templates</a></li>
+<li><a href="#exporting-templates-and-root-disks-for-distribution">Exporting templates and root disks for distribution</a></li>
+</ul></li>
+</ul>
+</div>
+<h1 id="using-vizor">Using vizor</h1>
+<p>This section assumes vizor is <a href="installing_vizor.html">installed</a> and functional.</p>
+<h2 id="setup-command-autocompletion">Setup Command Autocompletion</h2>
+<blockquote>
+<p>This is needed to prepare the vizor command for the shell. Without it you may encounter a <code>-bash: vizor: command not found</code> error message.</p>
+</blockquote>
+<pre><code>source /usr/src/vizor/lib/completion.sh</code></pre>
+<p>This command can be set up in <code>~/.bashrc</code> to make ensure vizor is available in every shell instance.</p>
+<h2 id="command-discovery">Command discovery</h2>
+<h3 id="command-groups">Command groups</h3>
+<p>vizor attempts to draw a list of available commands and their synopses for the user to discover sub-commands pertaining to a particular operation.</p>
+<p>e.g. Discovering available XenServer operations</p>
+<pre><code>root@vizor:~# vizor 
+
+vizor
+
+Subcommands
+
+    batch                    Build batches of VMs
+    bin                      Binaries/Scripts used by vizor.
+    box                      Manipulate boxes to build instances/vms.
+    cloudstack               Manipulate cloudstack/cloudplatform via cloudmonkey.
+    container                Manipulate containers for box building.
+    image                    Manipulate the install image catalog.
+    instance                 Information about instances/VMs being built.
+    iso                      Manipulate object in the ISO catalogue.
+    node                     Work with nodes.
+    razor                    Task definitions for razor.
+    setup                    Setup vizor and necessary components.
+    ssh                      SSH scripts/binaries.
+    windows                  Work with windows ISOs/Install Images, Language Packs, etc.
+    xenserver                Utilities for working with XenServer hosts.
+
+root@vizor:~# vizor xenserver
+
+xenserver    Utilities for working with XenServer hosts.
+
+Subcommands
+
+    host                     Use &#39;xenserver host&#39; to navigate sub-commands.
+    iso-sr                   Use &#39;xenserver iso-sr&#39; to navigate sub-commands.
+    mount                    Mount URLs (NFS, CIFS, etc) on a XenServer host.
+    template                 Use &#39;xenserver template&#39; to navigate sub-commands.
+    vm                       Use &#39;xenserver vm&#39; to navigate sub-commands.
+    vm-container             Use &#39;xenserver vm-container&#39; to navigate sub-commands.
+
+root@vizor:~# vizor xenserver vm
+
+vm
+
+Subcommands
+
+    create
+    list                     List VMs on a XenServer host/pool
+    reboot                   Manage VMs on a XenServer host/pool
+    shutdown                 Manage VMs on a XenServer host/pool
+    suspend                  Manage VMs on a XenServer host/pool
+    template                 Manage VMs on a XenServer host/pool
+
+root@vizor:~# vizor xenserver vm shutdown -h
+
+  vizor xenserver vm reboot - Manage VMs on a XenServer host/pool
+
+    -H    -- host
+    -n    -- name_regex
+    -f    -- force
+    -h    -- show_help</code></pre>
+<h3 id="tab-completion">Tab-completion</h3>
+<p>Vizor's command tab-completion allows for the user to discover commands in a less obstrusive way.</p>
+<p>e.g. To discover how cloudstack templates are created</p>
+<pre><code>root@vizor:~# vizor &lt;tab&gt;&lt;tab&gt;
+batch       bin         box         cloudstack  container   dev         doc         etc
+image       instance    iso         lib         razor       README.md   setup       ssh
+vizor       windows     xenserver
+
+root@vizor:~# vizor cloudstack &lt;tab&gt;&lt;tab&gt;
+cloudmonkey      conf    help.txt         iso              ostype           setup
+vm               volume  cloudstack       diskoffering     hypervisor       network
+serviceoffering  template         vm-container     zone
+
+root@vizor:~# vizor cloudstack template &lt;tab&gt;&lt;tab&gt;
+create    delete    list      template
+
+root@vizor:~# vizor cloudstack template create -h
+
+    vizor cloudstack template create - Create cloudstack templates from instances.
+
+      -d    -- description
+      -i    -- instance_name
+      -n    -- template_name
+      -f    -- is_featured
+      -p    -- is_public
+      -r    -- name_regex
+      -h    -- show_help</code></pre>
+<h2 id="command-help">Command Help</h2>
+<p>Most vizor commands take a help (-h) param that lists options that be supplied.</p>
+<pre><code>root@stage-vizor:~# vizor xenserver template create -h
+
+  vizor xenserver template create - Convert VMs to Instant Templates
+
+    -H    -- host
+    -n    -- name_regex
+    -h    -- show_help</code></pre>
+<blockquote>
+<p>Help messages are autogenerated and so may not contain enough detail (or in someplaces is lacking).</p>
+</blockquote>
+<h1 id="example-uses-of-vizor">Example Uses of vizor</h1>
+<blockquote>
+<p>The below examples are not a comprehensive list of commands. To discover additional vizor commands, use the command discovery processes detailed above.</p>
+</blockquote>
+<h3 id="listing-vms">Listing VMs</h3>
+<pre><code>vizor cloudstack vm list
+vizor xenserver vm list</code></pre>
+<h3 id="listing-templates">Listing templates</h3>
+<pre><code>vizor cloudstack template list
+vizor xenserver template list</code></pre>
+<h3 id="listing-offerings">Listing offerings</h3>
+<pre><code>vizor cloudstack zone list
+vizor cloudstack network list
+vizor cloudstack serviceoffering list
+vizor xenserver vm-container list</code></pre>
+<h3 id="isos-install-images-and-language-packs">ISOs, Install Images and Language Packs</h3>
+<pre><code>vizor windows iso update
+vizor windows image update
+vizor windows langpack update
+vizor iso list
+vizor image list
+vizor langpack list</code></pre>
+<h3 id="boxes-and-containers">Boxes and containers</h3>
+<pre><code>vizor box create -i &quot;$image_id&quot;
+vizor box list
+
+vizor container create -t xenserver -I Windows_Server_2012_R2-x86_64-1_VCPUs-01.00_GiB_RAM-32.00_GiB_HDD
+vizor container list</code></pre>
+<h3 id="building-vms">Building VMs</h3>
+<p>Build a new box in a specififed container</p>
+<pre><code>vizor box list        # Make note of wanted box id
+vizor container list  # Make note of the wanted container id
+vizor box build -b &quot;$box_id&quot; -c &quot;$container_id&quot;</code></pre>
+<p>Build the same box but set a password</p>
+<pre><code>vizor box build -b &quot;$box_id&quot; -c &quot;$container_id&quot; -m &#39;{&quot;administrative_password&quot;:&quot;S3cr3t&quot;}&#39;</code></pre>
+<p>Build the same box but point to an alternative WSUS server</p>
+<pre><code>vizor box build -b &quot;$box_id&quot; -c &quot;$container_id&quot; -m &#39;{&quot;wsus_url&quot;:&quot;http://wsus.example.com:8530&quot;}&#39;</code></pre>
+<p>Build all win7 VMs marked for the 'en-US' locale in the the cloudstack provider (requires a populated <code>~/.vizor.json</code>)</p>
+<pre><code>vizor batch build -b win7 -l &#39;en-US&#39; -c cloudstack</code></pre>
+<p>Build all Win10 boxes for build 10108 on the staging environments (matching all containers with the pattern 'stage' in them)</p>
+<pre><code>vizor batch build -b 10108 -c stage</code></pre>
+<p>Build the same boxes on the production</p>
+<pre><code>vizor batch build -b 10108 -c production</code></pre>
+<p>Build all boxes for given locales set, pausing 1 hour between locale sets</p>
+<pre><code>for locale in &#39;en-US&#39; &#39;fr-FR&#39; &#39;de-DE&#39; &#39;es-ES&#39; &#39;ru-RU&#39; &#39;ko-KR&#39;; do
+  vizor batch build -l &quot;$locale&quot; -c stage
+  sleep 3600
+done</code></pre>
+<h3 id="converting-vms-to-templates">Converting VMs to templates</h3>
+<p>Create a new template(s) for the VM instance(s) that matches <em>sql_server_2014_20150520</em> somewhere in the name. This could match multiple VM instances.</p>
+<pre><code>vizor cloudstack template create -r &#39;sql_server_2014__20150520&#39;</code></pre>
+<p>Convert to instant VM templates all those VMs that have the string <em>20150520</em> somewhere in the name-label</p>
+<pre><code>vizor xenserver template create -n 20150520</code></pre>
+<h3 id="exporting-templates-and-root-disks-for-distribution">Exporting templates and root disks for distribution</h3>
+<p>Export all templates matching '201505' somewhere in the name label to a mount point on the xenserver.</p>
+<pre><code>vizor xenserver template export xva -m &#39;/mnt/my/disk/export/path&#39; -n 201505</code></pre>
+<p>Same as above, except export the .VHD VDisk for the templates.</p>
+<pre><code>vizor xenserver template export vhd -m &#39;/mnt/my/disk/export/path&#39;</code></pre>
+</body>
+</html>

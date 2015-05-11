@@ -1,0 +1,62 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <link rel="stylesheet" href="pandoc.css" type="text/css" />
+</head>
+<body>
+<h1 id="debugging-the-winpe-task">Debugging the WinPE Task</h1>
+<p>The WinPE task is set up to download a set of scripts and dependencies for the main powershell sequence to be run. All configuration of the node is done by a single sequence (i.e. <code>nodeprep.seq.ps1</code>)</p>
+<h1 id="debugging-the-rendering-of-the-ruby-.erb-templates">Debugging the rendering of the ruby (.erb) templates</h1>
+<p>Since the ruby templates (.erb) used by razor expand metadata (e.g. <code>node.metadata['key']</code>) supplied by the user, templates can fail to render or can be rendered in a way that they are not valid by the applications using the output (e.g. Windows Installer, Sysprep, nodeprep.seq.ps1)</p>
+<p>e.g To ensure <code>unattended.xml.erb</code> renders appropriately for the windows installer in the WinPE stage.</p>
+<p>First determine the node ID using <code>razor nodes</code> or making note of the ID from the log output of the <code>vizor box build</code> command. And then request the template from razor using any standard web client.</p>
+<pre><code># node_id here is 1332
+curl -ssfL &#39;http://vizor.example.com:8080/svc/file/1332/unattended.xml&#39;</code></pre>
+<p>For this example, the output here has to be valid XML that the windows installer can use.</p>
+<p>The process works for any .erb templates in the razor task. However, as each of these cater for different purposes during template create - the output (and validity) matters to the use/context.</p>
+<h1 id="debugging-nodeprep.seq.ps1">Debugging nodeprep.seq.ps1</h1>
+<p>The file <code>nodeprep.seq.ps1</code> is run by the cmdlets in the <code>ImageMaintenance</code> powershell module to execute the tasks defined the sequence.</p>
+<p>Tasks in the sequence will fail on any unexpected/error conditions which in turn cause the entire sequence to fail. Execution of the sequence pauses to allow for inspection of the VM state.</p>
+<p>The last error/exception output on the console pertains the output of the last task run and would the first thing to examine to determine failure. Most failures in running the sequence can be identified this way.</p>
+<h2 id="entering-the-imageprep-shell">Entering the imageprep shell</h2>
+<p>Start the image prep shell by running the following command in a cmd/powershell window</p>
+<pre><code>\ip.cmd</code></pre>
+<h2 id="viewing-the-powershell-transcript-of-nodeprep.seq.ps1">Viewing the powershell transcript of <code>nodeprep.seq.ps1</code></h2>
+<p>The output of every run of <code>nodeprep.seq.ps1</code> is logged in a powershell transcript (logged under <code>%ProgramData%\imageprep\log</code>).</p>
+<pre><code>Show-Transcript  # and select the last transcript (default)</code></pre>
+<p>The contents of the bottom of the file highlight the last problem encountered. Once the problem is resolved, the sequence can be rerun to continue from the last failed task.</p>
+<pre><code>Resume-ImageMaintenance  # Simply rerun the sequence</code></pre>
+<p>or</p>
+<pre><code>.\firstboot.cmd    # Downloads all files fresh run the razor server
+                   # and starts Resume-ImageMaintenance</code></pre>
+<h2 id="running-a-single-task-from-the-sequence">Running a single task from the sequence</h2>
+<p>This is useful if the objective is to run a subset of the tasks from the entire sequence.</p>
+<p>E.g. to run only those tasks that have windows_update in their name.</p>
+<pre><code>$Tasks = Get-Task -Sequence nodeprep.seq.ps1 -stage 0 -filter &#39;windows_update&#39;
+$Tasks | fl *
+$Tasks | Invoke-Task -Verbose  # -Force is needed if the task was previously run.</code></pre>
+<h1 id="extendingmodifying-nodeprep.seq.ps1-and-its-dependencies">Extending/Modifying nodeprep.seq.ps1 and its dependencies</h1>
+<p>Changes to nodeprep.seq.ps1 can be done directly to <code>razor/task/winpe.task/nodeprep.seq.ps1</code></p>
+<p>On re-running, firstboot.cmd on the node, these changes will automatically be downloaded and run.</p>
+<p>However, if any of the modules used by nodeprep.seq.ps1 are updated, the zip file that delivers these will need to be repackaged before <code>firstboot.cmd</code> is run.</p>
+<pre><code>cd razor/task/winpe.task/imageprep
+zip -r ../imageprep.zip ./</code></pre>
+<h2 id="bootstrapping-vm-templates-prepared-outside-of-vizor">Bootstrapping VM templates prepared outside of vizor</h2>
+<p>Copy the following files from the razor <code>winpe.task</code> into the <code>\ProgramData\firstboot</code> directory on the target VM (create it if it does not exist).</p>
+<ul>
+<li>Start-Bootstrap.cmd</li>
+<li>Start-Bootstrap.ps1</li>
+<li>Start-AsyncAsfDiscovery.ps1</li>
+<li>Set-CADIFirewall.ps1</li>
+<li>Invoke-DefaultBootstrapScript.ps1.erb</li>
+</ul>
+<p>And register <code>Start-Bootstrap.cmd</code> as a windows startup task using the following command in a <code>cmd.exe</code> window.</p>
+<pre><code> reg.exe add &quot;HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run&quot;  ^
+     /f /v %SystemDrive%\ProgramData\Start-Bootstrap.cmd /t REG_SZ ^
+     /d %SystemDrive%\ProgramData\firstboot\Start-Bootstrap.cmd</code></pre>
+</body>
+</html>
