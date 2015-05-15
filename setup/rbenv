@@ -30,6 +30,13 @@ done
 
 RBENV_ROOT="$working_dir/rbenv"
 
+if type -P rbenv &>/dev/null && [[ -d $RBENV_ROOT ]]; then
+  if [[ -z ${FORCE-} ]]; then
+    echo "rbenv ($(type -P rbenv)) already installed .. skipping."
+    exit 0
+  fi
+fi
+
 tmpdir="$(mktemp -d)"
 outfile="$tmpdir/${src_url##*/}"
 wget -q -c "$src_url" -O "$outfile"
@@ -45,7 +52,7 @@ if [[ -d \$RBENV_ROOT ]]; then
   eval "\$(rbenv init - --no-rehash)"
 fi
 EOF
-  
+
 source "$RBENV_ROOT/.profile"
 
 grep -iq "source '$RBENV_ROOT/.profile'"    ~/.profile || \
