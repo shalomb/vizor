@@ -1,0 +1,2 @@
+SYNOPSIS
+Manipulate object in the ISO catalogue.
