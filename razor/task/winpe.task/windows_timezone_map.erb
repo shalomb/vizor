@@ -272,7 +272,7 @@ end
 
 def get_timezone_for_country(country)
   timezones = JSON.parse( get_timezone_map )
-  if (values=(res = timezones.select { |k,v| !(k =~ /#{country}/i).nil? }).values).length >= 1
+  if (values=(res = timezones.select { |k,v| !(k =~ /^#{country}$/i).nil? }).values).length >= 1
     [ res.values ]
   else
     raise "Found '#{values.length}' candidates found for country '#{country}' [%s]" % res.collect{ |k,v| v }.join(",")
