@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# SYNOPSIS
+#  Set the node hostname
+
+source defaults.sh
+source utils.sh
+
+declare hostname="${1:-$(hostname -f)}"
+
+[[ -z $hostname ]] && die "hostname not defined."
+
+[[ $hostname != *.* ]] && die "hostname is not a FQDN"
+
+echo "${hostname%%.*}" > /etc/hostname
+
+if grep -iq "$hostname" /etc/hosts; then
+  sed -i "/$hostname/d" /etc/hosts
+fi
+
+if host "$hostname" | grep -iq 'has address'; then
+  host "$hostname" | awk '/has address/{print $4"\t"$1"\t"$1}' | sed -r 's/\.[^ \t]+$//'
+else
+  echo -e "127.0.1.1\t$hostname\t${hostname%%.*}"
+fi >> /etc/hosts
+
+hostname "${hostname%%.*}"
+/etc/init.d/hostname.sh
+
