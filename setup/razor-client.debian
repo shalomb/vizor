@@ -4,6 +4,7 @@ pkgs_to_install=()
 
 for pkg in \
     autoconf automake bison build-essential git git-core \
+    libffi-dev \
  ; do
   if ! dpkg -s "$pkg" &> /dev/null; then
     pkgs_to_install+=( "$pkg" )
