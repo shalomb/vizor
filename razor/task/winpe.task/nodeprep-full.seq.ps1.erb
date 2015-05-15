@@ -55,6 +55,7 @@ $Env:NTP_SERVERS  = '<%= node.metadata["ntp_server_list"] ||= 'pool.ntp.org,time
 
 $Env:INSTALL_DOTNET35       = <%= node.metadata["install_dotnet35"]       ? '$True' : '$False' %>
 $Env:INSTALL_WINDOWS_UPDATE = <%= node.metadata["install_windows_update"] ? '$True' : '$False' %>
+$Env:ENABLE_SYSPREP         = <%= node.metadata["enable_sysprep"]         ? '$True' : '$False' %>
 
 $Env:COMPUTER_DESCRIPTION = '<%= node.metadata["computer_description"] ||= node.metadata['vstring_long'] %>'
 
@@ -69,6 +70,7 @@ $Env:CpuArchitecture    =  [System.String](Get-Cpu -Architecture)
 $Env:CurrentBuild       =  [System.Double]$OSVersion.CurrentBuild
 $Env:CurrentVersion     =  [System.Double]$OSVersion.CurrentVersion
 $Env:InstallationType   =  [System.String]$OSVersion.InstallationType
+$Env:OSArchitecture     =  [System.String]$OSVersion.OSArchitecture
 $Env:OSCaptionAlt       =  [System.String]$OSVersion.CaptionAlt
 $Env:OSCaption          =  [System.String]$OSVersion.Caption
 $Env:OSType             =  [System.String]$OSVersion.OSType
@@ -189,6 +191,9 @@ Command=ToggleDesktop
         Assert-IsTrue { $Env:InstallationType -eq 'Client' } 'OS InstallationType != Client'
       };
       post   = { 1 }; }
+  @{ name    =   'disable_first_logon_animations';
+      script = { try { Enable-FirstLogonAnimations } catch {} };
+      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'install_ipconfig_registerdns_on_logon';
       script = {
         Install-GlobalLogonScript -Name 'IpconfigRegisterDnsOnLogon' -Script 'ipconfig.exe /registerdns'
@@ -248,7 +253,7 @@ Command=ToggleDesktop
   @{ name    =   'disable_server_manager';
       script = {
         reg.exe add 'HKLM\SOFTWARE\Microsoft\ServerManager\Oobe' /f /v DoNotOpenInitialConfigurationTasksAtLogon /t REG_DWORD /d 1
-        reg.exe add 'HKLM\SOFTWARE\Microsoft\ServerManager'      /f /v DoNotOpenServerManagerAtLogon             /t REG_DWORD /d 1
+        # reg.exe add 'HKLM\SOFTWARE\Microsoft\ServerManager'      /f /v DoNotOpenServerManagerAtLogon             /t REG_DWORD /d 1
       }
       pre    = {
         Assert-IsTrue { $Env:InstallationType -eq 'Server' } 'OS InstallationType != Server'
@@ -373,9 +378,9 @@ Command=ToggleDesktop
         # TODO. This is needed to ensure Windows Update lookups are timely and succeed.
         # 'A servicing stack update is available for Windows 8 and Windows Server 2012'
         #   http://support.microsoft.com/kb/2771431
-        $Url = Switch ( $Env:CpuArchitecture ) {
-          'x86' { 'http://download.microsoft.com/download/E/A/8/EA8B764E-CFED-4B27-9830-A278882F920D/Windows8-RT-KB2771431-x86.msu' }
-          'x64' { 'http://download.microsoft.com/download/4/2/A/42A19755-CBA5-4090-A6B8-8F7DA482114C/Windows8-RT-KB2771431-x64.msu' }
+        $Url = Switch -Regex ( $Env:OSArchitecture ) {
+          '32' { 'http://download.microsoft.com/download/E/A/8/EA8B764E-CFED-4B27-9830-A278882F920D/Windows8-RT-KB2771431-x86.msu' }
+          '64' { 'http://download.microsoft.com/download/4/2/A/42A19755-CBA5-4090-A6B8-8F7DA482114C/Windows8-RT-KB2771431-x64.msu' }
         }
         try { Install-Msu $Url } catch {} # Non-fatal as update is delivered by WU anyway.
       };
@@ -520,7 +525,10 @@ Command=ToggleDesktop
       post   = { 1 }; }
   @{ name    =   'install_dotnet35_on_2008r2';
       pre    = {
-        Assert-IsTrue { $Env:INSTALL_DOTNET35 -ieq $True }    'DotNet3.5 disabled'
+        # DotNet 3.5 on 2008R2 is required for
+        #   * Set-ScreenResolution
+        #   * XenTools
+        # Assert-IsTrue { $Env:INSTALL_DOTNET35 -ieq $True }    'DotNet3.5 disabled'
         Assert-IsTrue { $Env:CurrentVersion   -ieq 6.1   }    'OS CurrentVersion != 6.1'
         Assert-IsTrue { $Env:InstallationType -ieq 'Server' } 'OS InstallationType != Server'
       };
@@ -533,6 +541,7 @@ Command=ToggleDesktop
         }
       };
       post   = { 1 }; }
+
   @{ name    =   "install_language_packs";
       # N.B: This must come after the installation of .Net 3.5 (if applicable)
       script = {
@@ -590,11 +599,28 @@ Command=ToggleDesktop
       };
       pre    = { 1 }; post   = { 1 }; }
 
+# @{ name    =   'reboot_machine_post_l18n_settings_application';
+#     script = {
+#       # If we have language packs installed that are not the current locale, reboot so that
+#       # we continue with the l18n settings applied to the System and UI.
+#       # This should always be the case if multiple language packs are installed.
+#       if ( dism.exe /english /online /get-intl |
+#              ?{ $_ -imatch 'Installed Language' } |
+#              ?{ $_ -inotmatch "Installed Language.*$((Get-UICulture).Parent.Name)" } ) {
+#         shutdown.exe -r -t 2 -c "Language packs not matching current locale found. Rebooting .."
+#       }
+#     };
+#     pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'install_kb2697738_on_windows_7_2008r2';
       pre    = {
-        Assert-IsTrue    { $Env:CurrentVersion -eq 6.1 }                     'OS CurrentVersion != 6.1'
-        Assert-IsNotTrue { (Get-UICulture).Parent.Name -eq 'en' }            'UICulture == en'
-        Assert-IsNotTrue { Get-Hotfix | ?{ $_.HotFixId -imatch '2697738' } } 'Hotfix KB2697738 is installed'
+        Assert-IsNotTrue { Get-Hotfix -Id KB2697738 -ea 0 }                    'Hotfix KB2697738 is installed'
+        Assert-IsTrue    { ([Double](Get-OSVersion).CurrentVersion) -eq 6.1 }  'OS CurrentVersion != 6.1'
+        Assert-IsTrue    { dism.exe /english /online /get-intl |
+                            ?{ $_ -imatch 'Installed Language' } |
+                            ?{ $_ -inotmatch "Installed Language.*$((Get-UICulture).Parent.Name)" }
+                         } 'Multiple language packs not installed'
+        # Assert-IsNotTrue { (Get-UICulture).Parent.Name -eq 'en' }            'UICulture == en'
       };
       script = {
         # TODO. Workaround to allow for WinRM/PSRemoting to succeed on l18n OSes
@@ -602,19 +628,22 @@ Command=ToggleDesktop
         #  "Enable-PSRemoting -force" PowerShell command on a Windows 7-based or 
         #  Windows Server 2008 R2-based computer that uses Czech as the display language'
         #  http://support.microsoft.com/kb/2697738
-        $Url = Switch -Regex ( $Env:CpuArchitecture ) {
-          'x86' { 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446309_intl_i386_zip.exe' }
-          'x64' { 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446305_intl_x64_zip.exe'  }
-          default { Throw "Unknown OS Architecture for hotfix, $Env:CpuArchitecture" }
+        $Url = Switch -Regex ( $Env:OSArchitecture ) {
+          '32' { 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446309_intl_i386_zip.exe' }
+          '64' { 'http://hotfixv4.microsoft.com/Windows 7/Windows Server2008 R2 SP1/sp2/Fix397737/7600/free/446305_intl_x64_zip.exe'  }
+          default { Throw "Unknown OS Architecture for hotfix, $Env:OSArchitecture" }
         }
-        $ZipFile = "$PWD\kb2697738-{0}.zip" -f $Env:CpuArchitecture
+        $ZipFile = "$PWD\kb2697738-{0}.zip" -f $Env:OSArchitecture
         Write-Verbose "Downloading $Url to $ZipFile"
         (New-Object Net.WebClient).DownloadFile($Url, $ZipFile)
         .\unzip.exe -o -q $ZipFile -d .
-        $MsuFile = ls *KB2697738*.msu | Select -Expand FullName
-        mkdir -Force "$PWD\log" | Out-Null
-        Write-Warning "Installing MSU $MsuFile"
-        Start-Process -Wait 'wusa.exe' @($MsuFile,'/quiet','/norestart','/log:log\kb2697738.log') -NoNewWindow
+        if ( Test-Path ($MsuFile = ls *KB2697738*.msu | Select -Expand FullName) ) {
+          mkdir -Force "$PWD\log" | Out-Null
+          Write-Warning "Installing MSU $MsuFile"
+          Start-Process -Wait 'wusa.exe' @($MsuFile,'/quiet','/norestart','/log:log\kb2697738.log') -NoNewWindow -Verbose:$VerbosePreference
+        } else {
+          Throw "Unable to find KB2697738 MSU file"
+        }
       };
       post   = { Get-HotFix | ?{ $_.HotFixId -imatch '2697738' } }; }
 
@@ -664,7 +693,7 @@ Command=ToggleDesktop
     }; post   = { 1 }; }
   @{ name    =   "start_defrag_on_local_drives_for_boot_optimization_pre_windows_update-$(Get-Date -Uformat %Y%m%d%H)";
       script = {
-        Start-Process defrag.exe -ArgumentList @('-f','-v','-b',$Env:SystemDrive) -wait -NoNewWindow
+        Start-Process defrag.exe -ArgumentList @('-f','-v','-b',$Env:SystemDrive) -wait -NoNewWindow -ea 0
       };
     pre    = { 1 }; post   = { 1 }; }
 
@@ -1315,6 +1344,19 @@ Command=ToggleDesktop
         Assert-IsTrue { [Double]$Env:CurrentVersion -ge 6.0 } 'OS CurrentVersion < 6.0'
       };
       post   = { 1 }; }
+  @{ name    =   "pre_sysprep_remove_appx_provisioned_packages-$(Get-Date -Uformat %s)";
+      script = {
+        # TODO, this is a workaround to get windows 10 TP to sysprep
+        # remove/resolve ASAP.
+        ipmo AppX;
+        Get-AppXPackage -AllUsers | Remove-AppXPackage -Verbose -ea 0
+      };
+      pre    = {
+        Assert-IsTrue { $Env:CurrentVersion -ge 10.0 }   'OS CurrentVersion < 10.0'
+        Assert-IsTrue { $Env:ENABLE_SYSPREP }            'Sysprep is not enabled'
+        Assert-IsTrue { Get-Module -ListAvailable AppX } 'AppX module not available'
+      };
+      post   = { 1 }; }
   @{ name    =   'enable_clear_pagefile_at_shutdown';
       script = { Enable-ClearPagefileAtShutdown -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
@@ -1364,12 +1406,51 @@ Command=ToggleDesktop
   @{ name    =   'set_timezone'; # Will fail on 2008R2 without .Net3.5
       script = { Get-TimeZone -TimeZoneName "${Env:TIMEZONE}" | Set-TimeZone -Verbose:$VerbosePreference };
          pre = { 1 }; post   = { (Gwmi Win32_TimeZone) -imatch "${Env:TIMEZONE}" }; }
+
+  @{ name    =   'add_powershell_assembLies_to_ngen_queue_2';
+      script = { Add-AssemblyToNgenQueue -CurrentDomainAssemblies -Verbose:$VerbosePreference };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'start_ngen_queued_tasks_2';
+      script = {
+        # Execute pending ngen tasks before sealing image
+        # 'Installing updates for the Microsoft .NET Framework 4 can take longer than expected in some scenarios'
+        #   http://support.microsoft.com/kb/2570538
+        # 'FIX: Computer stops responding when the Mscorsvw.exe process starts in the .NET Framework 4'
+        #   http://support.microsoft.com/kb/2571181
+        # 'Citrix Virtual Memory Optimization Service can lead to .NET application corruption'
+        #   http://support.microsoft.com/kb/2480607
+        # TODO. Forcing ngen to execute queued items like this is reported to take up
+        #       considerable space on Windows 2012 R2 (and other?) images.
+        #       However, not invoking it causes .Net apps/windows update to run slowly.
+        # Start-NgenQueuedTasks -Update -Force -Verbose:$VerbosePreference
+        # Get-ScheduledTask | ?{ $_.TaskName -imatch 'ngen.*critical' } | %{
+        #   $Task = $_.TaskName
+        #   schtasks.exe /change /enable /tn $Task | Write-Verbose
+        #   try { schtasks.exe /run /tn $Task | Write-Verbose } catch {}
+        # }
+        Get-NgenTask | ?{$_} | %{
+          Write-Host -Fore Cyan "[[ $_ ]]"
+          & $_ /RuntimeWide /Critical | Write-Verbose
+        }
+      };
+      pre    = { 1 }; post   = { 1 }; }
+
   @{ name    =   'activate_windows_stage_1';
       script = { Invoke-WindowsActivation };
       pre    = { 1 }; post   = { Get-WindowsActivation }; }
   @{ name    =   'sync_ntp_time_stage_1';
       script = { Sync-W32Time };
       pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   "pre_sysprep_stop_processes-$(Get-Date -Uformat %s)";
+      script = {
+        Get-Service *home*,*inst*,*app*,*audio*,*fd*,*theme*,*sysmain*,*search* |
+          Stop-Service -Verbose:$VerbosePreference
+        Get-Process *search*,*onedrive* | Stop-Process -Force -Verbose:$VerbosePreference
+      };
+      pre    = {
+        Assert-IsTrue { $Env:ENABLE_SYSPREP } 'Sysprep is not enabled'
+      };
+      post   = { 1 }; }
   @{ name    =   'uninstall_browserchoice_startup_command';
       pre    = { 1 };
       script = { Get-StartupCommand | ?{ $_.Caption -imatch 'BrowserChoice' } | Uninstall-StartupCommand -Verbose:$VerbosePreference }; post   = { 1 }; }
@@ -1377,7 +1458,7 @@ Command=ToggleDesktop
       script = { Show-W32tmStatus -Status };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'eject_cdrom_devices_1';
-      script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
+      script = { try { Dismount-CDROMDevice -All -Verbose:$VerbosePreference } catch {} };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'set_console_window_dimensions';
       script = {
@@ -1399,25 +1480,6 @@ Command=ToggleDesktop
   @{ name    =   'restart_winmgmt_service_post_reset';
       # wimgmt/wmi is set to startuptype disabled on Win8.1 localized
       script = { Get-Service -Name winmgmt | Set-Service -StartupType Automatic -PassThru | Restart-Service -Verbose:$VerbosePreference };
-      pre    = { 1 }; post   = { 1 }; }
-
-  @{ name    =   'add_powershell_assembLies_to_ngen_queue_2';
-      script = { Add-AssemblyToNgenQueue -CurrentDomainAssemblies -Verbose:$VerbosePreference };
-      pre    = { 1 }; post   = { 1 }; }
-  @{ name    =   'start_ngen_queued_tasks_2';
-      script = {
-        # Execute pending ngen tasks before sealing image
-        # 'Installing updates for the Microsoft .NET Framework 4 can take longer than expected in some scenarios'
-        #   http://support.microsoft.com/kb/2570538
-        # 'FIX: Computer stops responding when the Mscorsvw.exe process starts in the .NET Framework 4'
-        #   http://support.microsoft.com/kb/2571181
-        # 'Citrix Virtual Memory Optimization Service can lead to .NET application corruption'
-        #   http://support.microsoft.com/kb/2480607
-        # TODO. Forcing ngen to execute queued items like this is reported to take up
-        #       considerable space on Windows 2012 R2 (and other?) images.
-        #       However, not invoking it causes .Net apps/windows update to run slowly.
-        Start-NgenQueuedTasks -Update -Force -Verbose:$VerbosePreference
-      };
       pre    = { 1 }; post   = { 1 }; }
 
   # # NGEN Service
@@ -1698,9 +1760,6 @@ Command=ToggleDesktop
 #     };
 #     pre    = { 1 }; post   = { 1 }; }
 
-  @{ name    =   'eject_cdrom_devices_2';
-      script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
-      pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'bcdedit_set_bootlog_off';
       script = { bcdedit.exe /set bootlog no };
       pre    = { 1 }; post   = { 1 }; }
@@ -1714,10 +1773,6 @@ Command=ToggleDesktop
       }; post   = { 1 }; }
   @{ name    =   'disable_clear_pagefile_on_shutdown';
       script = { Disable-ClearPageFileAtShutdown -Verbose:$VerbosePreference };
-      pre    = { 1 }; post   = { 1 }; }
-
-  @{ name    =   'eject_cdrom_devices_2';
-      script = { Dismount-CDROMDevice -All -Verbose:$VerbosePreference };
       pre    = { 1 }; post   = { 1 }; }
 
   @{ name    =   'initialize_bginfo';
@@ -1740,11 +1795,18 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
 
   @{ name    =   "sysprep_os-$(Get-Date -Uformat %s)";
-      script = { Invoke-Sysprep -Generalize -Oobe -Quit -AnswerFile 'sysprep.xml' };
-      pre    = { 1 };
+      script = {
+        Invoke-Sysprep -Generalize -Oobe -Quit -AnswerFile 'sysprep.xml' -Verbose:$VerbosePreference
+      };
+      pre    = {
+        Assert-IsTrue { $Env:ENABLE_SYSPREP } 'Sysprep is not enabled'
+      };
       post   = { 1 }; }
   @{ name    =  "clear_event_logs-$(date -uformat %s)";
       script = { Get-EventLog -LogName * | %{ Clear-EventLog -LogName $_.Log -Verbose:$VerbosePreference } };
+      pre    = { 1 }; post   = { 1 }; }
+  @{ name    =   'enable_administrator_account';
+      script = { net.exe user administrator /active:yes };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'gpupdate_stage_1';
       script = { gpupdate.exe };
@@ -1791,7 +1853,7 @@ Command=ToggleDesktop
         # TODO. This step fails on Win7/2008R2, Windows 10. Possibly because
         #       of a shutdown attempt in a previous step.
         while (1) {
-          sleep 60
+          sleep 10
           try {
             Write-Verbose $ShutdownMsg
             try { shutdown.exe -a } catch {}  # -ea 0
