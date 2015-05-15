@@ -249,10 +249,40 @@ while($true)
   }
 
   $dhcpservers = @($nics | foreach{$_.GetIPProperties()} | foreach{$_.DhcpServerAddresses} | foreach {$_.IPAddressToString  })
+  $gatewayservers = @($nics | foreach{$_.GetIPProperties()} | foreach{$_.GatewayAddresses} | foreach {$_.Address.ToString()  })
 
   if($dhcpservers.Count -eq 0)
   {
     Write-Warning "Main: No DHCP servers found"
+  }
+  
+  if($gatewayservers.Count -eq 0)
+  {
+    Write-Warning "Main: No Gateways found"
+  }
+
+  try
+  {
+    $gatewayservers | foreach{
+            try
+            {
+              $global:state = Get-UserData -UserDataServer $_
+            }
+            catch
+            {
+              Write-Warning "Main: Get UserData failed: $($Error[0])"
+            }
+          }
+
+    if($global:state -ne [State]::Failed)
+    {
+        Write-Host "Main: Userdata excecution complete"
+        break;
+    }
+  }
+  catch
+  {
+    Write-Warning "Main: Userdata excecution failed: $($Error[0])"
   }
 
   try
