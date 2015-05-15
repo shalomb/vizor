@@ -177,21 +177,16 @@ function clear_db {
     done
 }
 
-if (( $# == 0 )); then
-  mkdir -p "$iso_list_dir"
+mkdir -p "$iso_list_dir"
 
-  if (( clear_db == 1 )); then
-    echo -ne "\nClearing ISO DB ... " >&2
-    clear_db;
-  fi
-
-  echo -e "\nScanning for ISOs ..." >&2
-  gen_iso_cache_list;
-
-  echo -ne "\nGenerating ISO metadata ($iso_master_list) ">&2
-  gen_iso_master_list "$iso_master_list"
-else
-  # Shortcut way of invoking just one particular script function
-  "$0" "$@"
+if (( clear_db == 1 )); then
+  echo -ne "\nClearing ISO DB ... " >&2
+  clear_db;
 fi
+
+echo -e "\nScanning for ISOs ..." >&2
+gen_iso_cache_list;
+
+echo -ne "\nGenerating ISO metadata ($iso_master_list) ">&2
+gen_iso_master_list "$iso_master_list"
 
