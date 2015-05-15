@@ -37,3 +37,5 @@ TIME=${TIME%.*}
 
 TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
 
+HOSTNAME_FQDN=$(hostname -f)
+
