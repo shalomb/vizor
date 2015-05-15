@@ -1,3 +1,7 @@
+#!/bin/bash
+
+# SYNOPSIS
+#   Install wimboot dependencies on debian.
 set -eu
 
 pkgs_to_install=()
