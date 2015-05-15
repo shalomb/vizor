@@ -18,7 +18,7 @@ esac
 version=
 working_dir='/usr/src'
 url='https://github.com/puppetlabs/razor-client.git'
-ruby_required_ver=2.1.2
+ruby_required_ver=2.2.1
 
 while getopts ":o:w:u:" opt; do
   case $opt in
@@ -43,8 +43,11 @@ git pull
 rbenv rehash && rbenv local "$ruby_required_ver" || true
 
 if ! rbenv which ruby | grep -iq "$ruby_required_ver"; then
-  CONFIGURE_OPTS="--disable-install-doc" \
-  CFLAGS="-march=native -Os" \
+  # CFLAGS="-march=native -Os" \
+  # CFLAGS="-Os" \
+  CFLAG="-Os -fPIC" \
+  RUBY_CONFIGURE_OPTS="--enable-shared"   \
+  CONFIGURE_OPTS="--disable-install-doc"  \
     rbenv install "$ruby_required_ver"
 fi
 
@@ -52,7 +55,6 @@ ruby -S gem list | grep -iq '^bundler' || \
   ruby -S gem install bundler
 
 ruby -S bundle check || true
-ruby -S bundle install
 
 ruby -S bundle install
 gem query -n json_pure | grep -iq json_pure || ruby -S gem install json_pure
@@ -63,3 +65,4 @@ exec "$PWD/bin/razor" "\$@"
 EOF
 
 install "$PWD/razor" /usr/bin/razor
+
