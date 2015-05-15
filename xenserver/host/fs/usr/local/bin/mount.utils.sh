@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # TODO : apache.sh is not available on remote hosts
-source apache.sh 2>/dev/null || true
+if type -P apache.sh &>/dev/null; then
+  source apache.sh 2>/dev/null || true
+fi
 
 DOCUMENT_ROOT="${DOCUMENT_ROOT:-/mnt}"
 
