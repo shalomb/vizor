@@ -17,7 +17,12 @@ case "$distro" in
   ;;
 esac
 
-declare host= url= api_key= secret_key= username= password=
+declare host=                            \
+  url="${CLOUDSTACK_API_URL-}"           \
+  api_key="${CLOUDSTACK_API_KEY-}"       \
+  secret_key="${CLOUDSTACK_SECRET_KEY-}" \
+  username="${CLOUDSTACK_USERNAME-}"     \
+  password="${CLOUSTACK_PASSWORD-}"
 
 while getopts ":h:a:s:u:p:U:" opt; do
   case $opt in
