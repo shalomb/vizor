@@ -13,7 +13,7 @@ source utils.sh
 
 function usage {
   local help_msg=''
-  
+
   if [[ -e "$DIR/help.txt" ]]; then
     help_msg="$(get_cmd_synopis "$DIR/help.txt")"
   fi
