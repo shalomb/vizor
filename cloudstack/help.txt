@@ -1,0 +1,2 @@
+SYNOPSIS
+Manipulate cloudstack/cloudplatform via cloudmonkey.

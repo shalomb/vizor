@@ -1,0 +1,2 @@
+SYNOPSIS
+Manipulate the install image catalog.
