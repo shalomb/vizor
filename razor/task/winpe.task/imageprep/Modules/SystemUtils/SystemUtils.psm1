@@ -356,11 +356,14 @@ function Get-Ngen {
     [Switch] $Current
   )
 
-  $CurrentNgen = ls (Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'ngen.exe')
+  $CurrentNgen = Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'ngen.exe'
 
-  if ( $Current ) { return $CurrentNgen }
+  if ( $Current ) {
+    return ($CurrentNgen | ?{ Test-Path $_ })
+  }
 
-  ls ((Join-Path $Env:WinDir 'Microsoft.NET\Framework*\*\ngen.exe'), $CurrentNgen) | Get-Unique
+  ((Join-Path $Env:WinDir 'Microsoft.NET\Framework*\*\ngen.exe'), $CurrentNgen) |
+      %{ Resolve-Path $_ -ea 0 | %{ ls $_ -ea 0 } } | ?{ Test-Path $_ } | Get-Unique
 <#
 .SYNOPSIS
 Get the versions of ngen available for the installed .NET frameworks
@@ -375,14 +378,18 @@ function Get-NgenTask {
     [Switch] $Current
   )
 
-  $CurrentNgen = ls (Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'ngentask.exe')
+  $CurrentNgen = Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'ngentask.exe'
 
-  if ( $Current ) { return $CurrentNgen }
+  if ( $Current ) {
+    return ($CurrentNgen | ?{ Test-Path $_ })
+  }
 
-  ls ((Join-Path $Env:WinDir 'Microsoft.NET\Framework*\*\ngentask.exe'), $CurrentNgen) | ?{ Test-Path $_ } | Get-Unique
+  ((Join-Path $Env:WinDir 'Microsoft.NET\Framework*\*\ngentask.exe'), $CurrentNgen) |
+      %{ Resolve-Path $_ -ea 0 | %{ ls $_ -ea 0 } } | ?{ Test-Path $_ } | Get-Unique
+
 <#
 .SYNOPSIS
-Get the versions of ngen available for the installed .NET frameworks
+Get the versions of ngentask.exe available for the installed .NET frameworks
 
 .PARAMETER Current
 Get the ngen for the current (process) .NET runtime
