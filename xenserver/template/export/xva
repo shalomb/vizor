@@ -47,7 +47,7 @@ done
 
 "$host" destination_dir="$destination_dir" include_vms="$include_vms" \
   export_metadata="$export_metadata" export_vhd="$export_vhd" '
-  # set -eu 
+  # set -eu
 
   if [[ ! -d $destination_dir ]]; then
     if mkdir -p "$destination_dir"; then
@@ -75,6 +75,7 @@ done
       xe_grep "print uuid,name_label if name_label =~ /'"$name_regex"'/" |
       while read uuid name; do
 
+        echo "Exporting $uuid $name ..."
         time {
           if (( export_vhd == 1 )); then
 
