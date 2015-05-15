@@ -282,7 +282,7 @@ end
 
 def get_geoid_from_country(country)
   geoids = JSON.parse( get_geoid_map )
-  keys = (geoids.select { |k| ! (geoids[k].to_s =~ /#{country}/i).nil? }).keys
+  keys = (geoids.select { |k| ! (geoids[k].to_s =~ /^#{country}$/i).nil? }).keys
   if keys.length == 1; return keys[0]; end
   keys
 end
