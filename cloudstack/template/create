@@ -7,9 +7,9 @@ source defaults.sh
 source utils.sh
 
 declare instance_name= template_name= is_featured=false is_public=false 
-        snapshot_id= volume_id= description=
+        snapshot_id= volume_id= description= name_regex=
 
-while getopts ":d:fhi:n:p" opt; do
+while getopts ":d:fhi:n:r:p" opt; do
   case $opt in
     d) description="$OPTARG"
       ;;
@@ -21,10 +21,29 @@ while getopts ":d:fhi:n:p" opt; do
       ;;
     p) is_public=true
       ;;
+    r) name_regex="$OPTARG"
+      ;;
     h) show_help; exit 3;
       ;;
   esac
 done
+
+if [[ $name_regex ]]; then
+
+  cloudmonkey list virtualmachines |
+    jq -c -e -r -S '.virtualmachine[] | select(.name | contains ("'"$name_regex"'")) | {id:.id,name:.name}' |
+    while read str; do
+      name=$(jq -c -e -r '.name' <<<"$str")
+      id=$(jq -c -e -r '.id' <<<"$str")
+      [[ $name ]] || die "no name for $str"
+      args=()
+      [[ $is_featured = true ]] && args+=( '-f' )
+      [[ $is_public   = true ]] && args+=( '-p' )
+      vizor cloudstack template create -i "$name" ${args[@]-}
+    done
+
+    exit $?
+fi
 
 [[ -z $instance_name ]] && die "No instance id (-i) specified."
 
@@ -46,7 +65,7 @@ case "$container_type" in
     template_name="${template_name:-$instance_name}"
     template_name="${template_name:0:32}" # TODO, this truncation is not what the user would prefer
 
-    log "Creating $container_type template '$template_name' (instance '$instance_name')"
+    log "Creating $container_type template '$template_name' (instance '$instance_name', featured:$is_featured, public:$is_public)"
 
     # TODO, template from snapshot case not implemented.
     if [[ -z $snapshot_id ]]; then
