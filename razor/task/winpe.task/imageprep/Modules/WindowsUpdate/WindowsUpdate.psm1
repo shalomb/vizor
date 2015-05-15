@@ -649,7 +649,7 @@ Download but do not apply windows update
 
 function Install-ImportantWindowsUpdates {
   [CmdletBinding()] Param(
-    [Int32]  $WorkingSetSize    = 0x30,
+    [Int32]  $WorkingSetSize    = 0x90,
     [Int32]  $NumberOfRounds    = 0x04,
     [Switch] $RebootIfNecessary = $True
   )
@@ -729,7 +729,10 @@ round of applying updates.
 If a reboot occurs, the update results collection is not returned.
 
 .PARAMETER WorkingSetSize
-Maximum number of updates to consider when installing updates.
+Maximum number of updates to consider in one round of installing windows
+updates. The higher the value, the longer the round takes (and may not
+complete on older hardware). The shorter the value, the more the number
+of windows update rounds (and possibly reboots) needed.
 
 .PARAMETER NumberOfRounds
 Number of times to search for and install updates if no reboots are needed.
