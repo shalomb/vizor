@@ -7,11 +7,13 @@ source apache.sh
 declare box_name= container_name= hostname= instance_name= metadata= \
         metadata_file= root_password= boot_iso_def=
 
-while getopts "b:B:c:C:m:M:n:" opt; do
+while getopts "b:B:c:C:hm:M:n:" opt; do
   case $opt in
     b) box_name="$OPTARG"
       ;;
     c) container_name="$OPTARG"
+      ;;
+    h) show_help; exit 3;
       ;;
     m) metadata="$OPTARG"
       ;;
@@ -257,7 +259,7 @@ case "$container_type" in
   ;;
 
   xenserver)
-                 host=$( jq -c -e -r '.host'                <<< "$container_def" )
+                 host="${HOST:-$( jq -c -e -r '.host'       <<< "$container_def" )}"
              iso_name=$( jq -c    -r '.iso_name // empty'   <<< "$container_def" )
              iso_name="${iso_name:-ipxe.iso}"
     memory_static_max=$( jq -c -e -r '.memory_static_max'   <<< "$container_def" )
