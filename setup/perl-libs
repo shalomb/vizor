@@ -1,4 +1,8 @@
 #!/bin/bash
 
+# SYNOPSIS
+# Install perl libs via cpanm.
+
 cpanm MIME::Base32 MIME::Base64 JSON Text::CSV Text::TabularDisplay \
   ExtUtils::Manifest
+

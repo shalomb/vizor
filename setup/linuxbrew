@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SYNOPSIS
+#   Install linuxbrew
+
 FORCE="$FORCE"
 DEBUG="$DEBUG"
 

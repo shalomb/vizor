@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SYNOPSIS
+#   Install cpanm
+
 if ! type -a /usr/local/bin/cpanm &>/dev/null; then
   curl -sS -f -L http://cpanmin.us | \
     perl - App::cpanminus 

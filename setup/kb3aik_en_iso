@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SYNOPSIS
-#   Download the KB3AIK_EN.iso, needed to prepare WinPE images for razor.
+#   Download the KB3AIK_EN.iso to build the WinPE v3 .wim images.
 
 [[ $DEBUG ]] && set -xv
 set -eu

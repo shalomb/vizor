@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SYNOPSIS
+#   Cleanup vizor components on debian.
+
 source defaults.sh
 source utils.sh
 

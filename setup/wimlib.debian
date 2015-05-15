@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SYNOPSIS
-#   Build WimLib from source.
+#   Install wimblib dependencies on debian.
 
 # Installing wimlib
 
