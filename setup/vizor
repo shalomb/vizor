@@ -1,56 +1,89 @@
 #!/bin/bash
 
 # SYNOPSIS
-#   Setup/build vizor on this system.
+#   Setup vizor on this system.
 
 source defaults.sh
 source utils.sh
-source razor-winpe.sh
 
 TIMEFORMAT='Real: %3lR  User: %3lU  Sys: %3lS  CPU: %P'
 
-distro=$(lsb_release -is | tr 'A-Z' 'a-z')
-if [[ -z $distro ]]; then
-  grep -Eqi -e 'centos|fedora|redhat' /etc/redhat-release && distro=rhel
-fi
-
-case "$distro" in
-  debian|ubuntu)
-    source "${DIR}/${SCRIPT##*/}.$distro"
-  ;;
-  centos|rhel)
-    source "${DIR}/${SCRIPT##*/}.rhel"
-    ;;
-  *)
-    die "Unsupported distribution '$distro'.";
-  ;;
-esac
-
-
-dev_env=
-official_env=
-build_winpe=
-build_client=
+declare dev_env="${dev_env:-1}" official_env="${official_env:-0}"         \
+        build_winpe="${build_winpe:-1}" build_client="${build_client:-1}" \
+        silent=0
 
 while getopts ":cdow" opt; do
   case $opt in
     c) build_client=1
-    ;;
+      ;;
     d) dev_env=1
       ;;
     o) official_env=1
-    ;;
+      ;;
+    s) silent=1
+      ;;
     w) build_winpe=1
-    ;;
+      ;;
   esac
 done
 
-ssh-keys
+function prompt {
+  local msg="$1"
+  local answer="${2-}"
+  read -p "$(printf '  %-32s %s' "$msg" "[${answer:-Y/n}] ")"
 
-if (( $# == 0 )); then
+  if [[ -n $answer ]]; then
+    echo ${REPLY:-$answer}
+  else
+    if [[ -z $REPLY || $REPLY = @(Y|y) ]]; then
+      echo 1
+    else
+      echo 0
+    fi
+  fi
+}
+
+if (( silent == 0 )); then
+
+  echo ''
+  log "Setup of vizor on $(hostname -f)"
+  echo ''
+
+  set -a
+
+  HOSTNAME_FQDN="${HOSTNAME_FQDN:-$(prompt 'vizor server DNS FQDN? ' $(hostname -f))}"
+  dev_env="${dev_env:-$(prompt 'Setup razor environment?')}"
+  RAZOR_DB_PASSWORD="${RAZOR_DB_PASSWORD:-$(prompt '  Razor DB Password? ' 'razor')}"
+  build_client="${build_client:-$(prompt 'Install razor-client?')}"
+   build_winpe="${build_winpe:-$(prompt 'Setup WinPE?')}"
+
+   if [[ $build_winpe = [1Yy]* ]]; then
+        WINPE_X86_WIM="${WINPE_X86_WIM:-$(prompt '  WinPE x86 file? '    ' ')}"
+     WINPE_X86_64_WIM="${WINPE_X86_64_WIM:-$(prompt '  WinPE x86_64 file? ' ' ')}"
+   fi
+
+   set +a
+
+   cat <<EOF
+
+  The setup process will now continue to install and configure the
+  various vizor components. This may take about ~10 minutes.
+
+EOF
+elif (( $# == 0 )); then
   warn "No arguments ($@ == $#) supplied .. building dev environment." || true
   dev_env=1
 fi
+
+source razor-winpe.sh
+
+log "Installing dependencies"
+source install_dependencies.sh
+
+log "Setting hostname"
+"$DIR"/hostname
+log "Setting up ssh keys"
+"$DIR"/ssh-keys
 
 if [[ $dev_env ]]; then
   export DEBIAN_FRONTEND=noninteractive
@@ -58,7 +91,7 @@ if [[ $dev_env ]]; then
   log "Installing cpanm"
   time { "$DIR"/cpanm; }
   log "Setting up loop devices"
-  time { "$DIR"/loop-devices -m 1024; }
+  time { "$DIR"/loop-devices -m 2048; }
   log "Installing perl libs"
   time { "$DIR"/perl-libs; }
   log "Installing cloudmonkey"
@@ -68,11 +101,13 @@ if [[ $dev_env ]]; then
   log "Installing couchdb"
   time { "$DIR"/couchdb; }
   log "Setting up CouchDB and ES Databases"
-  time { "$DIR"/elasticsearch-river-couchdb -d iso -d image -d container -d box; }
+  time {
+    for db in box config container image instance iso template metadata; do
+      "$DIR"/elasticsearch-river-couchdb -d "$db"
+    done
+  }
   log "Installing apache"
   time { "$DIR"/apache; }
-  log "Installing wimlib"
-  time { "$DIR"/wimlib ; }
   log "Installing postgres"
   time { "$DIR"/postgres; }
   log "Installing rbenv"
@@ -82,8 +117,8 @@ if [[ $dev_env ]]; then
   log "Installing razor-server-dev"
   time { "$DIR"/razor-server-dev ; }
   log "Installing razor-server init script"
-  time { 
-    cp -a "$DIR/../etc/init.d/razor-server" /etc/init.d/razor-server; 
+  time {
+    cp -a "$DIR/../etc/init.d/razor-server" /etc/init.d/razor-server;
   }
   log "Installing torquebox logrotate.script"
   time {
@@ -97,7 +132,9 @@ elif [[ $official_env ]]; then
 fi
 
 if [[ $build_winpe ]]; then
+  log "Installing samba"
   "$DIR"/razor-samba
+  log "Setting up razor-winpe"
   "$DIR"/razor-winpe
 fi
 
@@ -105,3 +142,9 @@ if [[ $build_client ]]; then
   log "Installing razor-client"
   time { "$DIR"/razor-client ; }
 fi
+
+cat <<EOF
+
+  vizor setup is now complete.
+
+EOF
