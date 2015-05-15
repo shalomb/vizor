@@ -1,4 +1,4 @@
 
 SYNOPSIS
-  Work with Vizor Windows objects.
+  Work with windows ISOs/Install Images, Language Packs, etc.
 
