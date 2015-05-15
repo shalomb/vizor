@@ -18,7 +18,9 @@ esac
 
 version=
 working_dir='/usr/src'
+razor_server_url='https://github.com/puppetlabs/razor-server/archive/0.15.0.tar.gz'
 url='https://github.com/puppetlabs/razor-server.git'
+RAZOR_ROOT="${RAZOR_ROOT:-/usr/src/razor-server}"
 
 while getopts ":o:w:u:" opt; do
   case $opt in
@@ -38,6 +40,8 @@ mkdir -p /var/lib/razor
 adduser razor --home /var/lib/razor --shell /bin/false --system || true
 adduser razor src
 
+set -xv
+
 # Test Database access
 RAZOR_DB_PASSWORD="${RAZOR_DB_PASSWORD:-$(die "RAZOR_DB_PASSWORD is not set")}"
 echo "localhost:5432:razor:razor:$RAZOR_DB_PASSWORD" > /var/lib/razor/.pgpass
@@ -46,23 +50,28 @@ sudo -u razor psql -U razor razor -w -l
 
 cd "${working_dir:-/usr/src/}"
 
-RAZOR_ROOT="$working_dir/razor-server-0.15.0"
+razor_file="razor-server-${razor_server_url##*/}"
+razor_root="$working_dir/${razor_file%.tar.gz}"
 
-if [[ ! -d  razor-server-0.15.0 ]]; then
-  wget -c "https://github.com/puppetlabs/razor-server/archive/0.15.0.tar.gz" -O razor-server-0.15.0.tar.gz
-  mkdir razor-server-0.15.0/
-  tar xf razor-server-0.15.0.tar.gz 
+if [[ ! -d $razor_root ]]; then
+  wget -c "$razor_server_url" -O "$razor_file"
+  mkdir -pv "$razor_root"
+  tar xf "$razor_file" -C "$razor_root/.."
 fi
 
-cd razor-server-0.15.0/
+[[ -e "$RAZOR_ROOT" ]] && rm -f "$RAZOR_ROOT"
+ln -svf "$razor_root/" "$RAZOR_ROOT"
 
+cd "$RAZOR_ROOT"
+
+# pull from git master branch
 # [[ -d razor-server ]] || git clone "$url"
 # cd razor-server
 # git checkout master
 # git pull
 # [[ $version ]] && git checkout "$version"
 
-jruby_required_ver=$( grep -i '^ruby' "$RAZOR_ROOT/Gemfile" | \
+jruby_required_ver=$( grep -i '^ruby' "$razor_root/Gemfile" | \
   sed -r 's/,\ +/\n/g'  | \
   awk '/engine_version/{print $3}' |\
   sed -r "s/'//g" )
