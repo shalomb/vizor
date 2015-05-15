@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SYNOPSIS
+#   Install jq
+
 source defaults.sh
 source utils.sh
 
@@ -17,6 +20,7 @@ case "$arch" in
     ;;
 esac
 
+sleep 2
 chmod +x /usr/local/bin/jq
 
 jq_ver=$( jq -V )

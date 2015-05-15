@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # SYNOPSIS
-#   Create a number of loop devices upfront for vizor to mount
-#   images against.
+#   Create loop devices to mount images against.
 
 source defaults.sh
 source utils.sh

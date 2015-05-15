@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SYNOPSIS
+#   Install apache2 on debian
+
 set -eu
 
 pkgs_to_install=()
