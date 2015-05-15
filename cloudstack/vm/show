@@ -1,0 +1,54 @@
+#!/bin/bash
+
+source defaults.sh
+source utils.sh
+
+declare id=() name_label= name_regex=
+
+while getopts ":i:n:r:" opt; do
+  case $opt in
+    i) id+=( "$OPTARG" )
+      ;;
+    n) name_label="$OPTARG"
+      ;;
+    r) name_regex="$OPTARG"
+      ;;
+    *) die "Unrecognized/Unimplemented option '$opt'"
+      ;;
+  esac
+done
+shift "$((OPTIND - 1))"
+
+[[ -z ${id[@]-} && -z ${name_label-} && -z ${name_regex-} ]] &&
+  die "No VM ID (-i), name label (-n), name regex (-r) specified."
+
+declare ret=
+
+if [[ -n ${id[@]-} ]]; then
+  ret=$( cloudmonkey list virtualmachines id="$id" |
+    sed -r '1 s/\..*\{/{/' )
+fi
+
+if [[ -n $name_label ]]; then
+  ret=$( cloudmonkey list virtualmachines keyword="$name_label" |
+      sed -r '1 s/\..*\{/{/' )
+fi
+
+if [[ -n $name_regex ]]; then
+  cloudmonkey list virtualmachines filter=id,name |
+    sed -r '1 s/\..*\{/{/' |
+    jq -c -e -r '.virtualmachine[] | [.id,.name]' |
+    sed -r -e 's/\["|"\]//g' -e 's/","/ /' |
+    while read id name; do
+      if grep -Eiq "$name_regex" <<<"$name"; then
+        vizor cloudstack vm show -i "$id" 
+      fi
+    done
+    exit
+fi
+
+if grep -iq 'Error' <<<"$ret"; then
+  die "Error starting VM '$id' : $ret"
+else
+  jq -S -e '.' <<<"$ret"
+fi
