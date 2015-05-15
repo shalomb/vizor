@@ -6,11 +6,11 @@
 
   * container
 
-    Is a hypervisor/cloud offering (of RAM, CPU, Networks, Storage, etc) to deploy VMs to build boxes in. An image is associated with one of more boxes.
+    Is a hypervisor/cloud offering (of RAM, CPU, Networks, Storage, etc) to deploy VMs and build boxes in.
 
   * metadata
 
-    Is the data (runtime parameters) that is used to customize the build of one or more boxes.
+    Is the data (runtime parameters used by script templates) that is used to customize the build of one or more boxes.
 
   * image
 
