@@ -25,11 +25,15 @@ done
   repo="${iso_file##*/}"
 }
 
+
 # FIXME : Workaround until razor supports UDF ISOs
-# Creating an empty ISO
+# Create an empty ISO
 empty_iso="/mnt/iso-src/${iso_file//[\/\ ]/_}.empty.iso"
-empty_iso_d="${empty_iso%/*}"; mkdir -p "$empty_iso_d"
+mkdir -p "${empty_iso%/*}"
+
+# empty_iso_d="${empty_iso%/*}"; mkdir -p "$empty_iso_d"
 empty_iso_d="$(mktemp -d)"
+# TODO: Empty ISOs never get purged.
 genisoimage -o "$empty_iso" "$empty_iso_d" &>/dev/null
 rmdir "$empty_iso_d"
 
@@ -39,7 +43,7 @@ razor create-repo --name    "$repo"             \
                   --iso-url "file://$empty_iso" \
                   --task    "$task"
 
-# Mount the ISO for the repo
+# Mount the real ISO where razor expects it
 mkdir -p /var/lib/razor/repo-store/"$repo"
 mount -o loop,ro "$iso_file" /var/lib/razor/repo-store/"$repo" || true
 
