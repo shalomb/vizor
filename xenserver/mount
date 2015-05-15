@@ -35,6 +35,7 @@ done
 "$host" url="$url" mount_point="$mount_point" mount_options="$mount_options" \
   test_writability="$test_writability" '
     set -eu
+    export TERM=rxvt
 
     shopt -s sourcepath
     source utils.sh
