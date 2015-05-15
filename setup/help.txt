@@ -1,0 +1,2 @@
+SYNOPSIS
+Setup vizor and necessary components.
