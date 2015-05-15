@@ -71,13 +71,18 @@ function Dismount-CDROMDevice {                 #M:CDROM
       } else {
         $Eject = "Eject"
       }
-      while (Get-CDROMDevice | %{Test-CDROMDevice -DriveLetter $_}) {
+
+      $c=0; while (Get-CDROMDevice | %{Test-CDROMDevice -DriveLetter $_}) {
         Write-Verbose "Ejecting CD-ROM Device $DriveLetter ($Eject $($Drive.Name))"
-        $Drive.InvokeVerb($Eject) 
+        $Drive.InvokeVerb($Eject)
+        $c++
+        if ( $c -gt 16 ) {
+          Throw "Unable to eject CD-ROM after $c tries";
+        }
       }  # Workaround for Vista
       [System.Runtime.Interopservices.Marshal]::ReleaseComObject($ShellApplication)
       Remove-Variable ShellApplication
-    } 
+    }
     catch [Exception] {
       Write-Error "Error dismounting CD-ROM Device"
     }
