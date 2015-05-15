@@ -20,7 +20,7 @@ pushd !THISDIR!
     ].each.collect { |url|
       file=url.split('/').last
       <<-eos
-!SystemRoot!\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -command "Set-PSDebug -Tr 0;$url='#{url}';$file='#{file}';rm -Force $file -ea 0;$retry=$False;do{try{(New-Object System.Net.WebClient).DownloadFile($url,$file);}catch{$retry=$True; $retry_count++;sleep 1}}while($retry -and ($retry_count -le 60))"
+!SystemRoot!\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -noninteractive -noprofile -nologo -executionpolicy bypass -command "Set-PSDebug -Tr 1;$url='#{url}';$file='#{file}';rm -Force $file -ea 0;$retry=$False;do{try{(New-Object System.Net.WebClient).DownloadFile($url,$file);}catch{$retry=$True; $retry_count++;sleep 1}}while($retry -and ($retry_count -le 60))"
 eos
     }).join("\r\n")
 %>
