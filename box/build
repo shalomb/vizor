@@ -31,7 +31,7 @@ box_url='http://localhost:5984/box/'"$box_name"
 if box_def=$( curl -fsS "$box_url" ) ec=$?; then
   image_id=$( jq -e -c -r '.image_id' <<<"$box_def" )
 else
-  die "Unable to find box definition for at '$box_url': $ec"
+  die "Unable to find box data for at '$box_url': $ec"
 fi
 
 [[ -z $image_id ]] && die "Unable to determine image ID."
@@ -41,21 +41,22 @@ if image_def=$( curl -fsS "$image_url" ) ec=$?; then
    vstring=$( jq -e -c -r '.vstring' <<<"$image_def" )
     iso_id=$( jq -e -c -r '.iso_id'  <<<"$image_def" )
   if [[ $iso_id ]]; then
-    if ! iso_def=$( curl -fsS "http://localhost:5984/iso/$iso_id" ) ec=$?; then
-      die "Unable to find ISO definition for image with ID '$iso_id'"
+    iso_url="http://localhost:5984/iso/$iso_id"
+    if ! iso_def=$( curl -fsS "$iso_url" ) ec=$?; then
+      die "Unable to find ISO data at '$iso_url' (image=$image_id,box=$box_name)"
     else
       iso_file=$( jq -e -c -r '.path' <<<"$iso_def" )
     fi
   fi
 else
-  die "Unable to find image definition at '$image_url': $ec"
+  die "Unable to find image data at '$image_url' (box=$box_name): $ec"
 fi
 
 container_url='http://localhost:5984/container/'"$container_name"
 if container_def=$( curl -fsS "$container_url" ) ec=$?; then
   container_type=$( jq -c -e -r '.type' <<<"$container_def" )
 else
-  die "Unable to find container definition at '$container_url': $ec"
+  die "Unable to find container data at '$container_url': $ec"
 fi
 
 if [[ -z $instance_name ]]; then
@@ -233,6 +234,7 @@ case "$container_type" in
     boot_iso_name=$( jq -c -e -r '.name'  <<<"$boot_iso_def" )
 
     log "Creating vm instance '$instance_name' to boot from iso '$boot_iso_name'"
+
     instance_def=$(
       vizor cloudstack vm create -S       \
         -d "$disk_offering_id"            \
@@ -251,11 +253,26 @@ case "$container_type" in
        job_result=$( jq -c -e -r '.jobresult' <<<"$instance_def" )
       instance_id=$( jq -c -e -r '.virtualmachine.id'   <<<"$job_result" )
     instance_name=$( jq -c -e -r '.virtualmachine.name' <<<"$job_result" )
-      mac_address=$( jq -c -e -r '.virtualmachine.nic[0].macaddress' <<<"$job_result" )
+      mac_address=$( jq -c    -r '.virtualmachine.nic[0].macaddress // empty' <<<"$job_result" )
 
     instance_ha_def=$( cloudmonkey update virtualmachine id="$instance_id" haenable=false isdynamicallyscalable=false ostypeid="$os_type_id" )
     instance_ha_status=$( jq -c -r '.virtualmachine.haenable' <<<"$instance_ha_def" )
     log "  Instance id : $instance_id ($instance_name/$mac_address) (haenable: $instance_ha_status)"
+
+     if [[ -z $mac_address ]]; then
+       log "  empty mac address '$mac_address', will start VM temporarily to try and determine this."
+       instance_def=$( cloudmonkey start virtualmachine id="$instance_id" )
+       c=0
+       while [[ -z $mac_address ]] && (( c < 30 )); do
+	 instance_def=$(cloudmonkey list virtualmachines id="$instance_id")
+         mac_address=$( jq -c -e -r '.virtualmachine[0].nic[0].macaddress // empty' <<<"$instance_def" )
+         log "  try $c/30, mac address : $mac_address"
+	 ((c++)) || true
+         sleep 5
+       done
+       cloudmonkey stop virtualmachine id="$instance_id" &>/dev/null
+     fi
+
   ;;
 
   xenserver)
