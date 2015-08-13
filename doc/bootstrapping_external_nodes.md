@@ -1,8 +1,9 @@
 # Preparing VM templates prepared outside of vizor for userdata bootstrap
 
-To prepare VMs that were created outside of vizor to include the userdata
-bootstrap scripts, the following startup scripts are required to be copied
-into the VM before a template is created from it.
+vizor prepares nodes with startup scripts for bootstrap, in order to have
+VMs that were prepared outside of vizor for the equivalent bootstrap
+functionality, these scripts need to be copied into those nodes manually
+and then registered as startup (logon) scripts.
 
 Copy the following files from the razor winpe.task into the
 ``\ProgramData\firstboot`` directory on the target VM (create it if it does not
@@ -44,5 +45,5 @@ reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"  `
 
 # TODO
 
-* These bootstrap scripts are framework specific and so require special 
+* These bootstrap scripts are framework specific and so require special
   consideration for distribution.
