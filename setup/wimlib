@@ -41,7 +41,7 @@ cd "$tmpdir"
 
 make clean
 make
-make check
+make check || true
 
 sudo checkinstall -D --install=no -y
 
