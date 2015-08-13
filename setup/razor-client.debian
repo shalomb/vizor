@@ -1,14 +1,16 @@
 #!/bin/bash
 
+# https://github.com/sstephenson/ruby-build/wiki
+
 pkgs_to_install=()
 
 for pkg in \
-    autoconf automake bison build-essential git git-core \
-    libffi-dev \
- ; do
-  if ! dpkg -s "$pkg" &> /dev/null; then
-    pkgs_to_install+=( "$pkg" )
-  fi
+  autoconf bison build-essential git git-core libffi-dev libgdbm3 libgdbm-dev \
+  libncurses5-dev libreadline6-dev libssl-dev libyaml-dev zlib1g-dev          \
+  ; do
+    if ! dpkg -s "$pkg" &> /dev/null; then
+      pkgs_to_install+=( "$pkg" )
+    fi
 done
 
 if (( ${#pkgs_to_install[@]} > 0 )); then
