@@ -47,7 +47,9 @@ Import-Module DotNetFramework
 Import-Module Logging    -Global
 Import-Module Assertions -Global
 
-#Define the environment for the run
+# Define the environment for the run
+# NOTE: Variable carrying powershell types (e.g. boolean, etc) do not
+#       hold when evaluated (they are env. vars) later. Ensure a string cast!
 $Env:WSUS_URL     = '<%= node.metadata["wsus_url"]    %>'
 $Env:KMS_SERVER   = '<%= node.metadata["kms_server"]  %>'
 $Env:KMS_PORT     = '<%= node.metadata["kms_server_port"] ||= 1688 %>'
@@ -61,6 +63,8 @@ $Env:COMPUTER_DESCRIPTION = '<%= node.metadata["computer_description"] ||= node.
 
 $Env:TIMEZONE     = '<%= node.metadata["windows_timezone"] ||= "GMT Standard Time" %>'
 $Env:L18NXML_URL  = '<%= file_url('l18n.xml') %>'
+
+$Env:AdministratorAccountName = '<%= node.metadata["admin_account_name" ||= "Administrator" %>'
 
 $Env:PATH += ";$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
 if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\SysInternals;" }
@@ -134,6 +138,16 @@ $Env:ServicePackVersion =  [System.Version]$OSVersion.ServicePackVersion
 
   @{ name    =   "uninstall_bootstrap_startup_script-$(date -uformat %s)";
       script = { Get-StartupCommand | ?{ $_.Command -imatch 'Start-BootStrap.cmd' } | Uninstall-StartupCommand -Verbose };
+      pre    = { 1 }; post   = { 1 }; }
+
+  @{ name    =   'rename_first_administrator_account';
+      script = {
+        Gwmi -Class Win32_UserAccount -Filter 'LocalAccount = TRUE' | ?{
+          $_.SID -imatch '^S-1-5-21-.*500'
+        } | %{
+          $_.Rename($Env:AdministratorAccountName)
+        }
+      };
       pre    = { 1 }; post   = { 1 }; }
 
   @{ name    =   'install_powershell_taskbar_shortcut';
@@ -428,7 +442,7 @@ Command=ToggleDesktop
             -UseWUServer
       };
       pre    = {
-        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled.'
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -imatch 'True' } 'Windows Update disabled.'
       }; post   = { 1 }; }
   @{ name    =   'enable_windows_update';
       script = {
@@ -445,7 +459,7 @@ Command=ToggleDesktop
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'install_dotnet35_sp1_on_win8_or_2012';
       pre    = {
-        Assert-IsTrue { $Env:INSTALL_DOTNET35 -eq $True }       'DotNet3.5 disabled.'
+        Assert-IsTrue { $Env:INSTALL_DOTNET35 -imatch 'True' }       'DotNet3.5 disabled.'
         Assert-IsTrue { $Env:CurrentVersion -imatch '6\.[23]' } 'OS Version != 6\.[23]'
       };
       script = {
@@ -479,7 +493,7 @@ Command=ToggleDesktop
       post   = { 1 }; }
   @{ name    =   'install_dotnet35_sp1_on_win10';
       pre    = {
-        Assert-IsTrue { $Env:INSTALL_DOTNET35 -eq $True } 'DotNet3.5 disabled'
+        Assert-IsTrue { $Env:INSTALL_DOTNET35 -imatch 'True' }       'DotNet3.5 disabled.'
         Assert-IsTrue { [Int]$Env:OSVersionMajor -ge 10 } 'OS Version < 10'
       };
       script = {
@@ -528,7 +542,7 @@ Command=ToggleDesktop
         # DotNet 3.5 on 2008R2 is required for
         #   * Set-ScreenResolution
         #   * XenTools
-        # Assert-IsTrue { $Env:INSTALL_DOTNET35 -ieq $True }    'DotNet3.5 disabled'
+        # Assert-IsTrue { $Env:INSTALL_DOTNET35 -imatch 'True' }       'DotNet3.5 disabled.'
         Assert-IsTrue { $Env:CurrentVersion   -ieq 6.1   }    'OS CurrentVersion != 6.1'
         Assert-IsTrue { $Env:InstallationType -ieq 'Server' } 'OS InstallationType != Server'
       };
@@ -665,7 +679,7 @@ Command=ToggleDesktop
         Start-NgenQueuedTasks -PriorityLevels 1 -Verbose:$VerbosePreference
       };
       pre    = {
-        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled'
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -imatch 'True' } 'Windows Update disabled'
       }; post   = { 1 }; }
   @{ name    =   "start_defrag_on_local_drives_pre_windows_update-$(Get-Date -UFormat %Y%m%d%H)";
       script = {
@@ -689,7 +703,7 @@ Command=ToggleDesktop
         }
       };
     pre    = {
-      Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled'
+      Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -imatch 'True' } 'Windows Update disabled'
     }; post   = { 1 }; }
   @{ name    =   "start_defrag_on_local_drives_for_boot_optimization_pre_windows_update-$(Get-Date -Uformat %Y%m%d%H)";
       script = {
@@ -712,11 +726,11 @@ Command=ToggleDesktop
         }
       };
       pre    = {
-        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled'
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -imatch 'True' } 'Windows Update disabled'
       }; post   = { 1 }; }
   @{ name    =   'install_windows_updates';
       pre    = {
-        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -eq $True } 'Windows Update disabled.'
+        Assert-IsTrue { $Env:INSTALL_WINDOWS_UPDATE -imatch 'True' } 'Windows Update disabled.'
       };
       script = {
         if ( $Env:CurrentVersion -eq 6.1 ) {
@@ -780,7 +794,9 @@ Command=ToggleDesktop
       };
       post   = { 1 }; }
   @{ name    =   'update_powershell_help';
-      script = { Update-Help -Verbose:$VerbosePreference };
+      script = {
+        try { Update-Help -Verbose:$VerbosePreference } catch {}
+      };
       pre    = {
         Assert-IsTrue { [Int]$Env:PSVersionMajor -ge 3 } 'PowerShell Major Version < 3'
       };
@@ -1353,7 +1369,7 @@ Command=ToggleDesktop
       };
       pre    = {
         Assert-IsTrue { $Env:CurrentVersion -ge 10.0 }   'OS CurrentVersion < 10.0'
-        Assert-IsTrue { $Env:ENABLE_SYSPREP }            'Sysprep is not enabled'
+        Assert-IsTrue { $Env:ENABLE_SYSPREP -imatch 'True' } 'Sysprep is not enabled'
         Assert-IsTrue { Get-Module -ListAvailable AppX } 'AppX module not available'
       };
       post   = { 1 }; }
@@ -1448,7 +1464,7 @@ Command=ToggleDesktop
         Get-Process *search*,*onedrive* | Stop-Process -Force -Verbose:$VerbosePreference
       };
       pre    = {
-        Assert-IsTrue { $Env:ENABLE_SYSPREP } 'Sysprep is not enabled'
+        Assert-IsTrue { $Env:ENABLE_SYSPREP -imatch 'True' } 'Sysprep is not enabled'
       };
       post   = { 1 }; }
   @{ name    =   'uninstall_browserchoice_startup_command';
@@ -1655,7 +1671,7 @@ Command=ToggleDesktop
   @{ name    =   'start_dism_component_store_cleanup_analysis';
       script = {
         try {
-          Start-Process dism.exe -argumentlist @('/Online', '/Cleanup-Image', '/AnalyzeComponentStore' ) -wait -NoNewWindow
+          Start-Process dism.exe -argumentlist @('/English', '/Online', '/Cleanup-Image', '/AnalyzeComponentStore', '/NoRestart') -wait -NoNewWindow
         } catch {}
       };
       pre    = {
@@ -1797,15 +1813,19 @@ Command=ToggleDesktop
   @{ name    =   "sysprep_os-$(Get-Date -Uformat %s)";
       script = {
         Invoke-Sysprep -Generalize -Oobe -Quit -AnswerFile 'sysprep.xml' -Verbose:$VerbosePreference
+        1;
       };
       pre    = {
-        Assert-IsTrue { $Env:ENABLE_SYSPREP } 'Sysprep is not enabled'
+        Assert-IsTrue { $Env:ENABLE_SYSPREP -imatch 'True' } 'Sysprep is not enabled'
       };
       post   = { 1 }; }
   @{ name    =  "clear_event_logs-$(date -uformat %s)";
       script = { Get-EventLog -LogName * | %{ Clear-EventLog -LogName $_.Log -Verbose:$VerbosePreference } };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'enable_administrator_account';
+      # This must be done post sysprep.
+      # This assumes the localized username is 'administrator', this may not always be the case.
+      # However, we do rename the localized administrator to 'administrator' in a previous step.
       script = { net.exe user administrator /active:yes };
       pre    = { 1 }; post   = { 1 }; }
   @{ name    =   'gpupdate_stage_1';
