@@ -64,14 +64,75 @@ vizor windows langpack list</code></pre>
 <p>The following section outlines the preparation needed to be made to vizor to have it build up an understanding of the the infrastructure (hypervisors and clouds, etc) that will be used to build VMs/VM Templates.</p>
 <p>These infrastructure pieces are required to be fully setup and functional before vizor can proceed.</p>
 <h2 id="preparations-for-cloudplatformcloudstack">Preparations for CloudPlatform/CloudStack</h2>
-<p>Use the <a href="https://cwiki.apache.org/confluence/display/CLOUDSTACK/CloudStack+cloudmonkey+CLI#CloudStackcloudmonkeyCLI-Gettingstarted">CloudMonkey Getting Started instructions</a> to set the URL and API/Secret keys for the management server in <code>~/.cloudmonkey/config</code></p>
-<p>Additionally, details about the zone are required (later) and so the following may need to be prepared upfront.</p>
+<p>Use the <a href="https://cwiki.apache.org/confluence/display/CLOUDSTACK/CloudStack+cloudmonkey+CLI#CloudStackcloudmonkeyCLI-Gettingstarted">CloudMonkey Getting Started instructions</a> to set the URL and API/Secret keys for the management server in <code>~/.cloudmonkey/config</code>. Also ensure that the <code>display</code> format is set to <code>json</code>.</p>
+<p>e.g.</p>
+<pre><code>[core]
+profile         = local
+asyncblock      = true
+paramcompletion = true
+history_file    = /root/.cloudmonkey/history
+cache_file      = /root/.cloudmonkey/cache
+log_file        = /root/.cloudmonkey/log
+
+[ui]
+prompt          = 🐵 &gt;
+color           = false
+display         = json
+
+[local]
+url             = http://management-server.example.com:8080/client/api
+apikey          = Zp3Wf0REQXYBXYRr9_5s_yhNo9vGk8mC-MLEXKZsQM_7v1eElO9wD7pO4azcb48mZQk-8D4xKoi93bGs9_Zixg
+secretkey       = C4hWSbCFdhlIy2t5-xj0QY7H5XaXHJuSP3T0bhIzhwIOhkYjkgpIUmZqsTNo6R8S-T8yClGu0goKUiYp_MA4Q
+expires         = 600
+timeout         = 3600</code></pre>
+<p>To test that vizor is able to communicate with cloudstack using these details, you could try listing some objects vizor would use.</p>
+<p>First test cloudmonkey</p>
+<pre><code>$ cloudmonkey list zones
+{
+  &quot;count&quot;: 1,
+  &quot;zone&quot;: [
+    {
+      &quot;allocationstate&quot;: &quot;Enabled&quot;,
+      &quot;dhcpprovider&quot;: &quot;VirtualRouter&quot;,
+      &quot;id&quot;: &quot;b10d5199-5fb1-45ad-90c0-36d35355f345&quot;,
+      &quot;localstorageenabled&quot;: false,
+      &quot;name&quot;: &quot;Global&quot;,
+      &quot;networktype&quot;: &quot;Basic&quot;,
+      &quot;securitygroupsenabled&quot;: true,
+      &quot;tags&quot;: [],
+      &quot;zonetoken&quot;: &quot;e3d2e61c-781e-39ff-835f-0864befac5a9&quot;
+    }
+  ]
+}</code></pre>
+<p>Then test vizor</p>
+<pre><code># vizor cloudstack zone list
+ -------------------------------------- -------- -------------- 
+| id                                   | name   | network type |
+ -------------------------------------- -------- -------------- 
+| b10d5199-5fb1-45ad-90c0-36d35355f345 | Global | Basic        |
+ -------------------------------------- -------- -------------- </code></pre>
+<p>Additionally, details about the zone are required (later in this document) and so the following may need to be created or details made available upfront.</p>
 <ul>
-<li>Service Offerings</li>
-<li>Disk Offerings</li>
-<li>Guest Networks</li>
-<li>Zone Name (If multiple zones exist)</li>
-<li>Clusters for hypervisor types (e.g. XenServer, ESX, Hyper-V, etc)</li>
+<li>Service Offerings
+<ul>
+<li>Name of offering from <code>vizor cloudstack serviceoffering list</code></li>
+</ul></li>
+<li>Disk Offerings
+<ul>
+<li>Name of offering from <code>vizor cloudstack diskoffering list</code></li>
+</ul></li>
+<li>Guest Networks
+<ul>
+<li>Name of network from <code>vizor cloudstack network list</code></li>
+</ul></li>
+<li>Zone Name (If multiple zones exist)
+<ul>
+<li>Name of zone from <code>vizor cloudstack zone list</code></li>
+</ul></li>
+<li>Clusters for hypervisor types (e.g. XenServer, ESX, Hyper-V, etc)
+<ul>
+<li>Name of hypervisor type from <code>vizor cloudstack hypervisor list</code></li>
+</ul></li>
 </ul>
 <h2 id="preparing-a-xenserver-host-or-pool-access">Preparing a XenServer host or pool access</h2>
 <p>This copies the generated ipxe.iso boot image (generated in the vizor setup stage) and helper scripts to Dom0 on the XenServer host.</p>

@@ -23,13 +23,16 @@ vizor sets out to accomplish these (amongst other) objectives
 * Provide assistive automation to users to build templates to differing requirements or specifications.
 
 ## Implementation
-vizor builds on top of the PuppetLabs [Razor baremetal provisioner](https://puppetlabs.com/solutions/next-generation-provisioning) by implementing a series of commands in a scripting layer that interface with
+vizor builds on top of the PuppetLabs [Razor](https://puppetlabs.com/solutions/next-generation-provisioning) provisioner
+([github.com/puppetlabs/razor-server](https://github.com/puppetlabs/razor-server))
+by implementing a series of commands in a scripting layer that interface with
 
-* Hypervizor/Cloud providers (currently XenServer and CloudStack) to manage virtual machine and associated lifecycle
+* Hypervizor/Cloud providers (currently XenServer and CloudStack) to create and manage virtual machines and associated lifecycles.
 * The razor web service to manage node-VM relationships, install repos, tasks, tags and policies to drive unattended installs within nodes.
 * ISO and install image catalogs (currently windows ISOs) to manage razor repos.
 
-The commands are implemented as a series of (mainly bash) scripts intending to provide a VM/VM template build, provisioning and distribution workflow.
+The commands are implemented as a series of (mainly bash but extensible in any language)
+scripts intending to provide a VM/VM template build, provisioning and distribution workflow.
 
 ## Components
 vizor's component stack is the assembly of following technologies on the Debian platform.

@@ -62,15 +62,77 @@ before vizor can proceed.
 ## Preparations for CloudPlatform/CloudStack
 
 Use the [CloudMonkey Getting Started instructions](https://cwiki.apache.org/confluence/display/CLOUDSTACK/CloudStack+cloudmonkey+CLI#CloudStackcloudmonkeyCLI-Gettingstarted)
-    to set the URL and API/Secret keys for the management server in ``~/.cloudmonkey/config``
+to set the URL and API/Secret keys for the management server in 
+``~/.cloudmonkey/config``. Also ensure that the ``display`` format is set
+to ``json``.
 
-Additionally, details about the zone are required (later) and so the following may need to be prepared upfront.
+e.g.
+
+    [core]
+    profile         = local
+    asyncblock      = true
+    paramcompletion = true
+    history_file    = /root/.cloudmonkey/history
+    cache_file      = /root/.cloudmonkey/cache
+    log_file        = /root/.cloudmonkey/log
+
+    [ui]
+    prompt          = 🐵 >
+    color           = false
+    display         = json
+
+    [local]
+    url             = http://management-server.example.com:8080/client/api
+    apikey          = Zp3Wf0REQXYBXYRr9_5s_yhNo9vGk8mC-MLEXKZsQM_7v1eElO9wD7pO4azcb48mZQk-8D4xKoi93bGs9_Zixg
+    secretkey       = C4hWSbCFdhlIy2t5-xj0QY7H5XaXHJuSP3T0bhIzhwIOhkYjkgpIUmZqsTNo6R8S-T8yClGu0goKUiYp_MA4Q
+    expires         = 600
+    timeout         = 3600
+
+To test that vizor is able to communicate with cloudstack using these details,
+you could try listing some objects vizor would use.
+
+First test cloudmonkey
+
+    $ cloudmonkey list zones
+    {
+      "count": 1,
+      "zone": [
+        {
+          "allocationstate": "Enabled",
+          "dhcpprovider": "VirtualRouter",
+          "id": "b10d5199-5fb1-45ad-90c0-36d35355f345",
+          "localstorageenabled": false,
+          "name": "Global",
+          "networktype": "Basic",
+          "securitygroupsenabled": true,
+          "tags": [],
+          "zonetoken": "e3d2e61c-781e-39ff-835f-0864befac5a9"
+        }
+      ]
+    }
+
+Then test vizor
+
+    # vizor cloudstack zone list
+     -------------------------------------- -------- -------------- 
+    | id                                   | name   | network type |
+     -------------------------------------- -------- -------------- 
+    | b10d5199-5fb1-45ad-90c0-36d35355f345 | Global | Basic        |
+     -------------------------------------- -------- -------------- 
+
+Additionally, details about the zone are required (later in this document) and
+so the following may need to be created or details made available upfront.
 
   * Service Offerings
+      * Name of offering from ``vizor cloudstack serviceoffering list``
   * Disk Offerings
+      * Name of offering from ``vizor cloudstack diskoffering list``
   * Guest Networks
+      * Name of network from ``vizor cloudstack network list``
   * Zone Name (If multiple zones exist)
+      * Name of zone from ``vizor cloudstack zone list``
   * Clusters for hypervisor types (e.g. XenServer, ESX, Hyper-V, etc)
+      * Name of hypervisor type from ``vizor cloudstack hypervisor list``
 
 ## Preparing a XenServer host or pool access
 
@@ -102,7 +164,14 @@ containers.
 
 Depending on the numbers and requirements of VMs to be built, a number
 of different containers need to be created for each hypervisor or cloud that
-a box 
+a box is to be built on. e.g. To provide a standard ``Windows 8.1 32-bit``
+box on both ``cloudstack`` and ``xenserver``, two containers are required
+(one on cloudstack, one on xenserver) to provide VMs to house the box.
+While the VMs for the boxes are disparate instances and share no common
+lineage (i.e. are not clones or are converted images of the same parent)
+- they will be setup by vizor to hold identical configuration and so to
+apps and services running within these instances there is (ideally) no
+difference.
 
 ## CloudStack/CloudPlatform instance containers
 
@@ -314,3 +383,10 @@ These commands use ``~/.vizor.json`` and so require it to be present and populat
 
     vizor batch build -n                              # build all known boxes across all containers and all locales
 
+# Known issues and mitigations
+
+    Error 431: Can't specify network Ids in Basic Zone
+
+    Cloudstak does not support specifying network in the basic zone
+    configuration model.
+    Workaround: Do not specify the network when creating the container.
