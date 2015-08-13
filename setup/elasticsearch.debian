@@ -22,7 +22,7 @@ done
 
 if (( ${#pkgs_to_install[@]} > 0 )); then
   export DEBIAN_FRONTEND=noninteractive
-  cmd="aptitude install -y -t stable --without-recommends ${pkgs_to_install[@]}"
+  cmd="aptitude install -y --without-recommends ${pkgs_to_install[@]}"
   if whoami | grep -iq root; then
     aptitude update
     $cmd

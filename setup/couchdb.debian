@@ -32,7 +32,7 @@ done
 
 if (( ${#pkgs_to_install[@]} > 0 )); then
   DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y -t stable --no-install-recommends "${pkgs_to_install[@]}"
+    apt-get install -y --no-install-recommends "${pkgs_to_install[@]}"
 fi
 
 mv /etc/apt/sources.list.d/sid.list{,_}
