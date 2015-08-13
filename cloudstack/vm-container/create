@@ -113,7 +113,7 @@ if [[ -z $zone_id ]]; then
   fi
 fi
 
-if [[ -z $network_id ]]; then
+if [[ -z $network_id ]] && [[ -n $network ]]; then
   if networks=$( cloudmonkey list networks listall=true keyword="$network" ); then
     [[ -z $networks ]] && die "No networks for '$network' found."
     if ! network_id=$( jq_get_attrib 1 '.id' <<<"$networks"); then
