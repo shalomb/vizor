@@ -19,7 +19,7 @@ done
 
 if (( ${#pkgs_to_install[@]} > 0 )); then
   DEBIAN_FRONTEND=noninteractive \
-    aptitude install -y -t stable --without-recommends "${pkgs_to_install[@]}"
+    aptitude install -y --without-recommends "${pkgs_to_install[@]}"
 fi
 
 if dpkg -s wimlib &>/dev/null; then
