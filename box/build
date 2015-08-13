@@ -259,19 +259,22 @@ case "$container_type" in
     instance_ha_status=$( jq -c -r '.virtualmachine.haenable' <<<"$instance_ha_def" )
     log "  Instance id : $instance_id ($instance_name/$mac_address) (haenable: $instance_ha_status)"
 
-     if [[ -z $mac_address ]]; then
-       log "  empty mac address '$mac_address', will start VM temporarily to try and determine this."
-       instance_def=$( cloudmonkey start virtualmachine id="$instance_id" )
-       c=0
-       while [[ -z $mac_address ]] && (( c < 30 )); do
-	 instance_def=$(cloudmonkey list virtualmachines id="$instance_id")
-         mac_address=$( jq -c -e -r '.virtualmachine[0].nic[0].macaddress // empty' <<<"$instance_def" )
-         log "  try $c/30, mac address : $mac_address"
-	 ((c++)) || true
-         sleep 5
-       done
-       cloudmonkey stop virtualmachine id="$instance_id" &>/dev/null
-     fi
+    # Workaround for CCP basic zone - a created VM may not have a MAC address at
+    # the time it is created. We start it temporarily until such time it has an
+    # address and then shut it down again .. ugghh. TODO. CCP Bug?
+    if [[ -z $mac_address ]]; then
+      log "  empty mac address '$mac_address', will start VM temporarily to try and determine this."
+      instance_def=$( cloudmonkey start virtualmachine id="$instance_id" )
+      c=0
+      while [[ -z $mac_address ]] && (( c < 30 )); do
+        instance_def=$(cloudmonkey list virtualmachines id="$instance_id")
+        mac_address=$( jq -c -e -r '.virtualmachine[0].nic[0].macaddress // empty' <<<"$instance_def" )
+        log "  try $c/30, mac address : $mac_address"
+        ((c++)) || true
+        sleep 2
+      done
+      cloudmonkey stop virtualmachine id="$instance_id" &>/dev/null
+    fi
 
   ;;
 
