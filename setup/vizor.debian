@@ -6,11 +6,11 @@ pkgs_to_install=()
 
 aptitude update -y || true
 
-for pkg in    \
-  sudo expect aptitude ack-grep libjson-perl cifs-utils nfs-common \
-  genisoimage libmime-base64-urlsafe-perl libjson-xs-perl libxml-simple-perl \
-  python-pip zip unzip curl build-essential make autoconf automake git \
-  shared-mime-info libxml2-utils ntp ntpdate \
+for pkg in \
+  ack-grep aptitude autoconf automake build-essential cifs-utils curl \
+  debian-keyring expect genisoimage git libjson-perl libjson-xs-perl  \
+  libmime-base64-urlsafe-perl libxml2-utils libxml-simple-perl make   \
+  nfs-common ntp ntpdate python-pip shared-mime-info sudo unzip zip   \
  ; do
   if ! dpkg -s "$pkg" &> /dev/null; then
     pkgs_to_install+=( "$pkg" )
