@@ -38,12 +38,13 @@ $startUpCmdRegKeyNameDisabled = "$startUpCmdRegKeyName -disabled"
 #TODO check for CADI and ASF
 
 $discovery     = Join-Path $scriptDir "Start-AsyncAsfDiscovery.ps1"
+$XenStoreBootStrap = Join-Path $scriptDir "Invoke-XenStoreBootStrap.ps1"
 $cadiFw        = Join-Path $scriptDir "Set-CADIFirewall.ps1"
 $networkScript = Join-Path $scriptDir "Invoke-DefaultBootstrapScript.ps1"
 
 $sw = [Diagnostics.Stopwatch]::StartNew()
 
-Start-Transcript -Path $logDir\bootstrap.log -append
+Start-Transcript -Path "$logDir\bootstrap.log" -append
 $VerbosePreference = "continue"
 
 $CadiFWSet = $false
@@ -231,10 +232,16 @@ Function Get-UserData
 
 Write-Host "Main: Bootstrap using User-data"
 
+while($true) {
 
+  # Invoke XenStore Bootstrap
+  try {
+    Write-Host -Fore Cyan "Attempting bootstrap from XenStore"
+    $global:state = & $XenStoreBootStrap
+  } catch {
+    Write-Warning "XenStore bootstrap failed, $_."
+  }
 
-while($true)
-{
   # get all the interfaces for this machine from inside loop in case DHCP is slow
   # exclude IPv4 LinkLayerAddress address 169.254.x.x as Udpclient fails
   $nics = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()| Where-Object{$_.OperationalStatus -eq "Up"}
@@ -255,29 +262,26 @@ while($true)
   {
     Write-Warning "Main: No DHCP servers found"
   }
-  
+
   if($gatewayservers.Count -eq 0)
   {
     Write-Warning "Main: No Gateways found"
   }
 
-  try
-  {
+  try {
     $gatewayservers | foreach{
-            try
-            {
-              $global:state = Get-UserData -UserDataServer $_
-            }
-            catch
-            {
-              Write-Warning "Main: Get UserData failed: $($Error[0])"
-            }
-          }
+      try {
+        $global:state = Get-UserData -UserDataServer $_
+      }
+      catch {
+        Write-Warning "Main: Get UserData failed: $($Error[0])"
+      }
+    }
 
     if($global:state -ne [State]::Failed)
     {
-        Write-Host "Main: Userdata excecution complete"
-        break;
+      Write-Host "Main: Userdata excecution complete"
+      break;
     }
   }
   catch
@@ -285,23 +289,20 @@ while($true)
     Write-Warning "Main: Userdata excecution failed: $($Error[0])"
   }
 
-  try
-  {
-    $dhcpservers | foreach{
-            try
-            {
-              $global:state = Get-UserData -UserDataServer $_
-            }
-            catch
-            {
-              Write-Warning "Main: Get UserData failed: $($Error[0])"
-            }
-          }
+  try {
+    $dhcpservers | foreach {
+      try {
+        $global:state = Get-UserData -UserDataServer $_
+      }
+      catch {
+        Write-Warning "Main: Get UserData failed: $($Error[0])"
+      }
+    }
 
     if($global:state -ne [State]::Failed)
     {
-        Write-Host "Main: Userdata excecution complete"
-        break;
+      Write-Host "Main: Userdata excecution complete"
+      break;
     }
   }
   catch
@@ -309,7 +310,8 @@ while($true)
     Write-Warning "Main: Userdata excecution failed: $($Error[0])"
   }
 
-  &$discovery
+  # Invoke ASF MulticastDiscovery
+  & $discovery
 
   if($global:state -eq [State]::Disabled)
   {
