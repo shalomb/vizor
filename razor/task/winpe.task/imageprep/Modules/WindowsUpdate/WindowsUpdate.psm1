@@ -70,6 +70,8 @@ Set the windows update service startup type to be one of Manual (default) or Dis
 
 function Set-WindowsUpdatePreference {
   # KB328010
+  # 'How to configure automatic updates by using Group Policy or registry settings'
+  #   https://support.microsoft.com/en-us/kb/328010
   [CmdletBinding()] Param(
     [Switch] $AUDisabled,
     [Switch] $AUNotifyOfDownloadAndInstallation,
@@ -195,7 +197,7 @@ function Update-WUA {
 
     Install-Msu $PkgUrl -NoLog
   }
-  elseif ( $OSVersion -imatch '6.2' ) {
+  elseif ( $OSVersion -imatch '6.2' ) { # Windows 8
     $PkgUrl = Switch -Regex ( $OS.Architecture ) {
       '32-bit' { 'http://download.microsoft.com/download/6/7/0/670287B4-32F0-458E-83AE-4316B0B1D0B8/Windows8-RT-KB2937636-x86.msu' }
       '64-bit' { 'http://download.microsoft.com/download/A/A/8/AA842D3A-D5B0-4307-89F1-3485D88A1853/Windows8-RT-KB2937636-x64.msu' }
@@ -223,12 +225,22 @@ function Install-MSU {
   }
 
   if ( Test-Path ($File = (ls (Resolve-Path $File).Path)) ) {
-    $Args = @($File, '/quiet', '/norestart')
-    $LogFile = if ($LogFile) { $LogFile } else { Join-Path $Env:TEMP "$File.wusa.install.log" }
-    if ( -not($NoLog) ) { $Args+=("/log:$LogFile") }
+    if ( $File -imatch 'msu$' ) {
+      $Args = @($File, '/quiet', '/norestart')
+      $LogFile = if ($LogFile) { $LogFile } else { Join-Path $Env:TEMP "$File.wusa.install.log" }
+      if ( -not($NoLog) ) { $Args+=("/log:$LogFile") }
 
-    Write-Verbose "Installing '$File' $Args"
-    $Process = Start-Process 'wusa.exe' -ArgumentList $Args -NoNewWindow -Wait
+      Write-Verbose "Installing wusa.exe $File $Args"
+      $Process = Start-Process 'wusa.exe' -ArgumentList $Args -NoNewWindow -Wait
+    }
+    elseif ( $File -imatch 'exe$' ) {
+      $Args = @('/quiet', '/norestart','/wuforce')
+      Write-Verbose "Installing '$File' $Args"
+      $Process = Start-Process $File -ArgumentList $Args -NoNewWindow -Wait
+    }
+    else {
+      Throw "No implementation exists to install update of type '$File'"
+    }
   }
   else {
     Throw "File '$File' does not exist"
