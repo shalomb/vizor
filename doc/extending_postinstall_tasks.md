@@ -4,15 +4,17 @@
 > and then pushed to the vizor host via SSH, SCP or similar.
 
 ``nodeprep.seq.ps1`` consumes a set of PowerShell modules which contain the
-implementations of CmdLets used in the tasks for the sequence. And most code changes
-occur in this file or any of its dependencies (PowerShell Modules, binaries, etc).
+implementations of CmdLets used in the provisioning tasks for this sequence.
+
+Most changes to the in-VM provisioning logic occur in this file or its 
+dependencies (PowerShell Modules, binaries, etc).
 
 ## Layout of the winpe.task directory
 The following documents the layout of ``winpe.task``
 
     unattended.xml.erb    # Template for unattended.xml used by Windows Setup, also the entry-point for post-install processing.
     firstboot.cmd         # Wrapper around firstboot.ps1, called from unattended.xml 
-    firstboot.ps1         # Main powershell script that sets up the environment before invoking nodeprep.seq.ps1
+    firstboot.ps1         # Main powershell provisioner script that sets up the environment before invoking nodeprep.seq.ps1
     nodeprep.seq.ps1.erb  # Template for nodeprep.seq.ps1, main sequence that drives all the post-install configuration on the node.
     Install-Prerequisites.ps1.erb # Script that downloads and refreshes the local layout of the files in winpe.task from the razor server
     sysrep.xml.erb        # Template for sysprep.xml, is a subset of unattended.xml, used by the sysprep task(s)
@@ -60,9 +62,10 @@ On the node being prepared
 
 ## Automatically keeping winpe.task in sync
 
-If setting up vizor for prolonged development, then running the above commands may
-become repetetive and error-prone. The following directory watcher can be setup
-to automatically trigger those commands on any file changes (recursively).
+If setting up vizor for prolonged development, then running the above commands
+may become repetetive and error-prone. The following directory watcher can be
+setup to automatically trigger those commands on any file changes (recursively)
+under the ``razor-server/tasks/winpe.task`` directory.
 
 ```
 aptitude install inotify-tools
