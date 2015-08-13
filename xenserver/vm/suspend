@@ -29,7 +29,6 @@ done
 [[ $host ]]       || die "No host (-H) specified."
 [[ $name_regex ]] || die "No name regex (-n) specified"
 
-set -xv
 "$host" vm_action="$vm_action" force="$force" '
   xe vm-list is-control-domain=false is-a-template=false \
                is-a-snapshot=false params= |
