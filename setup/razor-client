@@ -4,6 +4,7 @@
 #   Build puppetlabs/razor-client from source.
 
 source defaults.sh
+source utils.sh
 
 distro=$(lsb_release -is | tr 'A-Z' 'a-z')
 case "$distro" in
@@ -15,10 +16,11 @@ case "$distro" in
   ;;
 esac
 
-version=
 working_dir='/usr/src'
 url='https://github.com/puppetlabs/razor-client.git'
-ruby_required_ver=2.2.1
+version='0.15.1'
+ruby_required_ver=2.1.2
+export RAZOR_API="${RAZOR_API:-http://localhost:8080/api}"
 
 while getopts ":o:w:u:" opt; do
   case $opt in
@@ -32,17 +34,19 @@ while getopts ":o:w:u:" opt; do
   esac
 done
 
+working_dir="$working_dir/razor-client"
+
+if [[ ! -d $working_dir ]]; then
+  git clone -b "${version:-master}"  --depth 1 "$url" "$working_dir"
+fi
+
 cd "$working_dir"
 
-[[ -d razor-client ]] || git clone "$url"
-cd razor-client
-git checkout master
-git pull
-[[ $version ]] && git checkout "$version"
+log "git checkout $version # $url"
+git checkout "${version:-master}"
+git pull || true
 
-rbenv rehash && rbenv local "$ruby_required_ver" || true
-
-if ! rbenv which ruby | grep -iq "$ruby_required_ver"; then
+if ! rbenv versions | grep -iq "[ *] $ruby_required_ver"; then
   # CFLAGS="-march=native -Os" \
   # CFLAGS="-Os" \
   CFLAG="-Os -fPIC" \
@@ -50,6 +54,8 @@ if ! rbenv which ruby | grep -iq "$ruby_required_ver"; then
   CONFIGURE_OPTS="--disable-install-doc"  \
     rbenv install "$ruby_required_ver"
 fi
+
+rbenv rehash && rbenv local "$ruby_required_ver" || true
 
 ruby -S gem list | grep -iq '^bundler' || \
   ruby -S gem install bundler
@@ -61,8 +67,24 @@ gem query -n json_pure | grep -iq json_pure || ruby -S gem install json_pure
 
 > razor cat <<EOF
 #!/bin/sh
-exec "$PWD/bin/razor" "\$@"
+
+# cd to "$PWD" as rbenv has set MRI as the ruby locally.
+cd "$PWD"
+
+exec bin/razor "\$@"
 EOF
 
 install "$PWD/razor" /usr/bin/razor
+
+hash -r
+
+log "Testing curl API access (RAZOR_API=${RAZOR_API-})"
+curl -vfsSL "$RAZOR_API" | jq -c -e -r '.version.server // empty' > /dev/null
+
+log "Testing razor-client API access (RAZOR_API=${RAZOR_API-})"
+if razor | grep -i 'Could not connect'; then
+  die "razor-client ($(which razor)) is unable to connect to api.\n"\
+      "  Please set RAZOR_API (export RAZOR_API=http://razor:8080/api)"
+fi
+
 
