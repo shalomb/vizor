@@ -1,5 +1,5 @@
 #
-# WindowsUpdate.psm1
+# WinUpdate.psm1
 
 $ErrorActionPreference = "STOP"
 Set-StrictMode -Version 2.0
