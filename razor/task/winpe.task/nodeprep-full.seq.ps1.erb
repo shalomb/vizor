@@ -65,7 +65,7 @@ $Env:COMPUTER_DESCRIPTION = '<%= node.metadata["computer_description"] ||= node.
 $Env:TIMEZONE     = '<%= node.metadata["windows_timezone"] ||= "GMT Standard Time" %>'
 $Env:L18NXML_URL  = '<%= file_url('l18n.xml') %>'
 
-$Env:AdministratorAccountName = '<%= node.metadata["admin_account_name" ||= "Administrator" %>'
+$Env:AdministratorAccountName = '<%= node.metadata["admin_account_name"] ||= "Administrator" %>'
 
 $Env:PATH += ";$Env:IPBaseDir\bin;$Env:IPBaseDir\bin\SysInternals"
 if ( (Test-Path "bin\SysInternals") ) { $Env:PATH += "$($PWD.ProviderPath)\bin\SysInternals;" }
