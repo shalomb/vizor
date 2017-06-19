@@ -1,7 +1,8 @@
 # About
 
-vizor is a toolset that extends PuppetLabs Razor to automate the building of
-Window VMs & VM images on the following platforms
+vizor is a toolset that builds upon [PuppetLabs razor-server](https://github.com/puppetlabs/razor-server)
+to automate the building of Window VMs & VM images from vanilla ISOs on the
+following platforms
 
 - Xen Cloud Platform
 - Citrix XenServer
@@ -10,8 +11,11 @@ Window VMs & VM images on the following platforms
 
 ## Usage
 
-Please refer to the [doc/][doc/] directory for extended documentation on
+Please refer to the [doc/](doc/) directory for extended documentation on
 pre-requisites, installation and setup, usage, etc.
+
+As the documentation is pandoc-generated HTML, it is best viewed offline
+starting at [index.html](doc/index.md).
 
 ## License
 vizor VM builder
