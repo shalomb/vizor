@@ -1,0 +1,238 @@
+#!/bin/bash
+
+function show_help {
+  cat <<EOF
+
+$0 operation vm_label_regex
+
+clone_templates       - clone vms from templates
+start_vms             - start vms matching regex
+eject_cd              - eject cds from vms matching regex
+convert_to_templates  - convert VMs to templates
+export_vhds           - export VHDs from templates matching regex
+
+EOF
+}
+
+subcommand="$1"; shift;
+args="$@"
+
+vm_prefix=
+clone_templates=
+regex=
+start_vms=
+eject_cd=
+convert_to_templates=
+export_vhds=
+stop_vms=
+sr_uuid=
+include_vms=
+create_tmp_sr=
+mount_nfs_url=
+
+case "$subcommand" in
+  clone_templates)
+    clone_templates=1
+    regex="$1"
+    vm_prefix="$2"
+    ;;
+  start_vms)
+    start_vms=1
+    ;;
+  eject_cd)
+    eject_cd=1
+    regex="$1"
+    ;;
+  convert_to_templates)
+    convert_to_templates=1
+    regex="$1"
+    ;;
+  export_vhds)
+    export_vhds=1
+    regex="$1"
+    destination_path="$2"
+    ;;
+  mount_nfs_url)
+    mount_nfs_url=1
+    url="$1"
+    ;;
+  *)
+    echo "Unsupported operation : $1" >&2
+    show_help
+    exit 3
+    ;;
+esac
+
+set -eu
+
+function mount_nfs_url {
+  local url="$1"
+  local url="${url#*://}"
+  local hostname="${url%%[:/]*}"
+  local path="/${url#*[:/]}"
+
+  mount_point="/mnt/${hostname}_${path//\//_}"
+  mkdir -p "$mount_point"
+
+  if ! grep -i "$mount_point " /etc/mtab; then
+    mount -t nfs -o 'rw,bg,intr,soft,tcp' "$hostname:$path" "$mount_point"
+  fi
+
+  echo "$mount_point"
+}
+
+if [[ $mount_nfs_url ]]; then
+  nfs_mount_point=$( mount_nfs_url "$url" )
+fi
+
+if [[ -n $clone_templates ]]; then
+xe template-list params=all | \
+  xe_grep 'print uuid,name_label if name_label =~ /'"$regex"'/' | \
+  while read uuid name; do
+    [[ -n $vm_prefix ]] && vm_prefix="${vm_prefix}_"
+    new_uuid=$(xe vm-clone uuid="$uuid" new-name-label="$new_name")
+    image_id="${new_uuid:0:8}"
+    vdi_uuid=$(xe vbd-list vm-uuid="$new_uuid" type=Disk params='vdi-uuid' --minimal)
+    vdi_size=$(xe vdi-list uuid="$vdi_uuid" params=virtual-size --minimal)
+    vdi_size_g="$((vdi_size/1024/1024/1024))"
+    name_label="${vm_prefix}${new_name}.${vdi_size_g}G.$image_id"
+    echo "Starting $new_uuid ($name_label) from $uuid ($name) " >&2
+    xe template-param-set uuid="$new_uuid" is-a-template=false && \
+      xe vm-start uuid="$new_uuid"
+    desc=$(xe vm-list uuid="$new_uuid" params=name-description --minimal)
+    desc="$desc, disk_size:${vdi_size_g}GiB, image_id:$image_id, preptime:$(date +%s)"
+    xe vm-param-set uuid="$new_uuid" name-label="$name_label" name-description="$desc" other-config:instant=true
+  done
+  exit
+fi
+
+if [[ -n $start_vms ]]; then
+  xe vm-list params=all | \
+    xe_grep 'print uuid,name_label if name_label =~ /P1$/' | \
+    while read uuid name; do
+      echo "$uuid starting $name_label"
+      xe vm-start uuid="$uuid" &
+    done
+  exit
+fi
+
+if [[ -n $stop_vms ]]; then
+  xe vm-list params=all | \
+    xe_grep 'print uuid,name_label if name_label =~ /P1$/' | \
+    while read uuid name; do
+      echo "$uuid shutdown $name_label [force=$force]"
+      if [[ $force ]]; then
+        xe vm-shutdown uuid="$uuid" force=true &
+      else
+        xe vm-shutdown uuid="$uuid" &
+      fi
+    done
+  exit
+fi
+
+if [[ -n $eject_cd ]]; then
+  echo "eject_cd"
+  xe vm-list is-control-domain=false | \
+    xe_grep 'print uuid,name_label if name_label =~ /'$regex'/' | \
+    while read uuid vm_name; do
+      echo "VM $vm_name"
+      vbd_uuids=( $(xe vbd-list vm-uuid="$uuid" type=CD currently-attached=true unpluggable=true --minimal | sed 's/,/\n/g') )
+      for vbd in "${vbd_uuids[@]}"; do
+        vdi_name=$(xe vdi-list vbd-uuids:contains="$vbd" params=name-label --minimal)
+        echo "  Ejecting $vbd $vdi_name (vm=$uuid $vm_name)"
+        xe vbd-eject uuid="$vbd" 2> >( grep -iv -e 'drive is empty' -e '^vbd:' ) || true
+      done
+    done
+  exit
+fi
+
+if [[ -n $convert_to_templates ]]; then
+  echo "convert_to_templates"
+  xe vm-list is-control-domain=false | \
+    xe_grep 'print uuid,name_label if name_label =~ /'$regex'/' | \
+    while read uuid name; do
+      echo "$uuid convert-to-template $name_label" >&2
+      xe vm-param-set       uuid="$uuid" is-a-template=true
+      xe template-param-set uuid="$uuid" other-config:instant=true
+    done
+  exit
+fi
+
+if [[ -n $create_tmp_sr ]]; then
+  sr_name_label=="temp_vhd_export-$(date +%s)"
+  autostack.xenserver.sr.nfs_vm.create -u nfs://nfs01.cam.onelab.citrix.com/mnt/hpsan/t -s "sr_name_label"
+fi
+
+if [[ -n $export_vhds ]]; then
+  echo "export_vhds"
+
+  if [[ -z $destination_path ]]; then
+    echo "No destination path ($destination_path) specified .. aborting." >&2
+    exit 3
+  fi
+
+  { [[ $include_vms ]] && xe vm-list is-control-domain=false
+    xe template-list other-config:instant=true
+  } |
+    xe_grep 'print uuid,name_label if name_label =~ /'$regex'/' |
+    while read uuid vm_name_label; do
+      xe vbd-list vm-uuid="$uuid" type=Disk params= |
+        xe_grep 'print uuid,vdi_uuid,userdevice,vm_name_label' |
+        while read vbd_uuid vdi_uuid userdevice vm_name; do
+
+          echo "Copying $vdi_uuid ($vm_name_label/$vdi_uuid)"
+          is_new_vdi=0
+
+          sr_uuid=$( xe vdi-list uuid="$vdi_uuid" params=sr-uuid --minimal)
+          parent_vdi=$( xe vdi-list uuid="$vdi_uuid" params=sm-config --minimal)
+
+          if grep -iq 'vhd-parent' <<<"$parent_vdi"; then
+            # This VDI is a child, we require a coalesced VDI, so we copy
+            is_new_vdi=1
+            echo -n "Copying VDI $vdi_uuid ... "
+            new_vdi_uuid=$(xe vdi-copy uuid="$vdi_uuid" sr-uuid="$sr_uuid")
+            echo "  $new_vdi_uuid"
+          else
+            # Parent
+            new_vdi_uuid="$vdi_uuid"
+          fi
+
+          time {
+            mkdir -p   "$destination_path/xen"
+            chmod g+rwxs,o+rx "$destination_path/xen"
+
+            rsync -tOP   "/var/run/sr-mount/$sr_uuid/$new_vdi_uuid.vhd" \
+                         "$destination_path/xen/"
+
+            chmod u+r,g+r,o+r "$destination_path/xen/$new_vdi_uuid.vhd"
+
+            if [[ -e "$destination_path/xen/$vm_name_label.${userdevice}.metadata.xml" ]]; then
+              rm -f  "$destination_path/xen/$vm_name_label.${userdevice}.metadata.xml"
+            fi
+
+            xe template-export template-uuid="$uuid" metadata=true \
+                               filename="$destination_path/xen/$vm_name_label.${userdevice}.metadata.xml"
+            chmod u+r,g+r,o+r           "$destination_path/xen/$vm_name_label.${userdevice}.metadata.xml"
+
+            if cd "$destination_path"; then
+              ln -sf            "xen/$new_vdi_uuid.vhd" "$vm_name_label.${userdevice}.vhd"
+              chmod u+r,g+r,o+r "xen/$new_vdi_uuid.vhd" "$vm_name_label.${userdevice}.vhd"
+            fi
+
+            if cd "$destination_path/xen"; then
+              [[ $new_vdi_uuid != $vdi_uuid ]] &&
+                ln -sf   "$new_vdi_uuid.vhd" "$vdi_uuid.vhd"
+            fi
+
+            (( is_new_vdi == 1 )) &&
+              echo "destroying temporary vdi $new_vdi_uuid" &&
+              xe vdi-destroy uuid="$new_vdi_uuid"
+          }
+
+          echo ''
+        done
+    done
+  exit
+fi
+
+exit "$?"
