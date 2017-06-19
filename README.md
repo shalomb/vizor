@@ -1,7 +1,7 @@
 # About
 
-vizor is a Virtual Machine builder toolset for building Window VMs, VM images
-on the following platforms
+vizor is a toolset that extends PuppetLabs Razor to automate the building of
+Window VMs & VM images on the following platforms
 
 - Xen Cloud Platform
 - Citrix XenServer
