@@ -30,7 +30,7 @@ Write-Host -Fore Cyan ('-' * 75)
      file_url('Start-AsyncAsfDiscovery.ps1', true),
      file_url('Invoke-DefaultBootstrapScript.ps1'),
      file_url('Install-Prerequisites.ps1'),
-     file_url('Invoke-XenStoreBootstrap.ps1'),
+     file_url('Invoke-XenStoreBootstrap.ps1', true),
 
   ].each.collect { |url| %q{'%s'} % url }).join(",\n\t")
 
