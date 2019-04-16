@@ -95,7 +95,7 @@ images, etc and will manage the installation and configuration of all the
 components needed by vizor. This process takes about ~20 minutes.
 
 Upon successful completion, vizor is ready to begin building VMs. 
-Please refer to the [Building VMs](building_vms.html) document for
+Please refer to the [Building VMs](building_vms.md) document for
 a guide and how-to.
 
 # Known Issues and Mitigations
