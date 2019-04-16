@@ -38,7 +38,7 @@ phase, their output (and validity) matters to the use/context.
 
 i.e.
 
-* nodeprep.seq.ps1.erb must render to valid [powershell object](about_sequences.html)
+* nodeprep.seq.ps1.erb must render to valid [powershell object](about_sequences.md)
 * l18n.xml.erb must render to valid [XML for localization/globalization](http://support.microsoft.com/kb/2764405)
 * unattended.xml.erb must render to valid XML for [Windows Setup](https://technet.microsoft.com/en-us/library/cc766245(v=ws.10).aspx)
 * sysprep.xml.erb must render to valid XML for [Windows sysprep](https://technet.microsoft.com/en-gb/library/hh824849.aspx)
@@ -47,7 +47,7 @@ and so on.
 
 # Debugging nodeprep.seq.ps1
 
-Refer to [About Post-Install Sequences](about_sequences.html) for 
+Refer to [About Post-Install Sequences](about_sequences.md) for 
 
 The sequence of configuration tasks in ``nodeprep.seq.ps1`` is currently driven
 by the cmdlets in the ``ImageMaintenance`` powershell module which execute these
@@ -96,7 +96,7 @@ the last failed task by simply running
     Resume-ImageMaintenance  # Simply rerun the sequence
 
 or if edits have been made to the code or sequences, then the code needs to be
-pushed to vizor and razor. Refer to the [Extending Post-Install Tasks](extending_postinstall_tasks.html)
+pushed to vizor and razor. Refer to the [Extending Post-Install Tasks](extending_postinstall_tasks.md)
 document on how to prepare vizor and the razor ``winpe.task`` for this.
 
     .\firstboot.cmd    # Downloads all files fresh run the razor server

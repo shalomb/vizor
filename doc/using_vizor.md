@@ -1,6 +1,6 @@
 # Using vizor
 
-This section assumes vizor is [installed](installing_vizor.html) and functional.
+This section assumes vizor is [installed](installing_vizor.md) and functional.
 
 ## Setup Command Autocompletion
 
